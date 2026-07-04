@@ -97,17 +97,19 @@ st.markdown(
 if result.fallback_reason:
     log_event("snapshot_fallback_used", severity="WARNING", reason=result.fallback_reason)
     st.info(f"Cloud data chưa sẵn sàng; đang dùng demo snapshot. Lý do: {result.fallback_reason}")
+if result.freshness_warning:
+    log_event("stale_live_snapshot", severity="WARNING", reason=result.freshness_warning)
+    st.error(result.freshness_warning)
 if any(zone.is_simulated for zone in zones):
     st.warning(
         "Demo scenario: một phần dữ liệu vận hành hoặc thời tiết là mô phỏng; "
         "xem source và timestamp trước khi phê duyệt."
     )
-
 metric_cols = st.columns(4)
 metric_cols[0].metric("Tài xế đang hoạt động", f"{active_drivers:,}")
 metric_cols[1].metric("Hotspot nguy hiểm", danger_zones, delta=f"Top: {top_zone.name}", delta_color="off")
 metric_cols[2].metric("Cohort ưu tiên", f"{priority_drivers:,}", delta="Hoạt động ≥2 giờ", delta_color="off")
-metric_cols[3].metric("Đã bảo vệ", f"{protected_drivers:,}", delta="Intervention audit", delta_color="off")
+metric_cols[3].metric("Đã mô phỏng", f"{protected_drivers:,}", delta="Decision audit", delta_color="off")
 
 map_col, detail_col = st.columns([1.8, 1], gap="large")
 
@@ -171,10 +173,23 @@ with detail_col:
         ],
     )
     selected = next(zone for zone in zones if zone.name == zone_name)
-    demand_forecast = load_demand_forecast(selected.zone_id, 30, scenario)
-    selected_with_forecast = replace(
-        selected, forecast_requests_30m=demand_forecast.predicted_requests
-    )
+    try:
+        demand_forecast = load_demand_forecast(selected.zone_id, 30, scenario)
+        forecast_available = True
+        selected_with_forecast = replace(
+            selected, forecast_requests_30m=demand_forecast.predicted_requests
+        )
+    except Exception as exc:
+        demand_forecast = None
+        forecast_available = False
+        selected_with_forecast = selected
+        log_event(
+            "demand_forecast_unavailable",
+            severity="WARNING",
+            zone_id=selected.zone_id,
+            error_type=type(exc).__name__,
+        )
+        st.error(f"Demand forecast unavailable: {exc}")
     tier = heat_tier(selected.heat_index_c)
     score = operational_priority(selected)
     st.markdown(
@@ -184,8 +199,7 @@ with detail_col:
           <h2 style="margin:.2rem 0;color:#ff9a62">{score}/100 · {priority_label(score)}</h2>
           <p><b>{selected.heat_index_c:.1f}°C</b> Heat Index · {TIER_LABELS[tier]}</p>
           <p>{selected.active_drivers} active · {selected.exposed_2h} exposed ≥2h · {selected.exposed_4h} exposed ≥4h</p>
-          <p>{demand_forecast.predicted_requests} forecast requests / 30 min
-             ({demand_forecast.lower_bound}–{demand_forecast.upper_bound})</p>
+          <p>{demand_forecast.predicted_requests if demand_forecast else 'Unavailable'} forecast requests / 30 min</p>
           <p>CoolStop: <b>{selected.coolstop_name}</b> <small>(illustrative)</small></p>
         </div>
         """,
@@ -196,8 +210,23 @@ st.divider()
 st.subheader("SafePause Simulator")
 st.caption(
     "Smart Pause + Earnings Guard + CoolStop Partner. "
-    f"Demand source: {demand_forecast.source}. Tất cả impact bên dưới là scenario estimate."
+    f"Demand source: {demand_forecast.source if demand_forecast else 'Unavailable'}. "
+    "Tất cả impact bên dưới là scenario estimate."
 )
+if demand_forecast and demand_forecast.points:
+    forecast_points = pd.DataFrame(
+        [
+            {
+                "Time": point.forecast_at,
+                "Median": point.predicted_requests,
+                "Lower (pointwise)": point.lower_bound,
+                "Upper (pointwise)": point.upper_bound,
+            }
+            for point in demand_forecast.points
+        ]
+    ).set_index("Time")
+    st.line_chart(forecast_points)
+    st.caption("Khoảng 90% áp dụng cho từng mốc 15 phút; không phải confidence interval của tổng 30 phút.")
 
 control_cols = st.columns(4)
 pause_minutes = control_cols[0].select_slider("Pause duration", options=[10, 15, 20, 25, 30], value=20)
@@ -205,7 +234,15 @@ waves = control_cols[1].select_slider("Staggered waves", options=[1, 2, 3, 4, 5]
 budget_cap = control_cols[2].number_input("Platform cost cap (VND)", min_value=0, value=1_000_000, step=100_000)
 sponsor_per_driver = control_cols[3].number_input("Partner contribution / driver", min_value=0, value=8_000, step=1_000)
 
-proposal_key = (selected.zone_id, pause_minutes, waves, budget_cap, sponsor_per_driver)
+proposal_key = (
+    selected.zone_id,
+    selected.snapshot_id,
+    demand_forecast.predicted_requests if demand_forecast else None,
+    pause_minutes,
+    waves,
+    budget_cap,
+    sponsor_per_driver,
+)
 if st.session_state.get("proposal_key") != proposal_key:
     st.session_state.proposal = simulate_safepause(
         selected_with_forecast,
@@ -244,22 +281,31 @@ with approval_col:
         f"Pause in {proposal.waves} wave(s), tối đa {proposal.planned_paused_driver_slots} tài xế/wave.</p></div>",
         unsafe_allow_html=True,
     )
-    confirm = st.checkbox("Tôi xác nhận đây là action mô phỏng có audit trail")
+    st.info("Demo only: thao tác này chỉ ghi một decision audit mô phỏng, không gửi lệnh tới tài xế.")
+    confirm = st.checkbox("Tôi xác nhận đây là can thiệp mô phỏng")
     if st.button(
-        "Approve SafePause",
+        "Record simulated intervention",
         type="primary",
-        disabled=not (confirm and proposal.within_guardrails and proposal.eligible_drivers > 0),
+        disabled=not (
+            confirm
+            and forecast_available
+            and result.data_fresh
+            and proposal.within_guardrails
+            and proposal.eligible_drivers > 0
+        ),
         width="stretch",
     ):
         event = audit.approve(proposal)
         log_event(
-            "intervention_approved",
+            "simulated_intervention_recorded",
             intervention_id=event.intervention_id,
             proposal_id=proposal.proposal_id,
             zone_id=proposal.zone_id,
             audit_backend=audit.backend,
         )
-        st.success(f"Approved intervention {event.intervention_id[:8]} · audit đã được ghi.")
+        st.success(
+            f"Recorded simulation {event.intervention_id[:8]} · không có operational command được gửi."
+        )
         st.cache_data.clear()
         st.rerun()
 
@@ -301,6 +347,9 @@ with st.sidebar:
     st.header("Demo controls")
     st.write(f"Mode: **{result.mode}**")
     st.write(f"Snapshot: `{zones[0].observed_at.isoformat()}`")
+    st.write(f"Snapshot ID: `{zones[0].snapshot_id}`")
+    st.write(f"Weather time: `{zones[0].weather_observed_at.isoformat()}`")
+    st.write(f"Operations time: `{zones[0].operations_observed_at.isoformat()}`")
     st.write(f"Source: {zones[0].source}")
     st.write(f"Audit backend: **{audit.backend}**")
     st.caption("Set HEATSAFE_MODE=cloud to require BigQuery or snapshot for fully offline demo.")

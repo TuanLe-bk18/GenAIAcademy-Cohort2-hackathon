@@ -10,6 +10,8 @@ from .models import ZoneSnapshot
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SNAPSHOT = ROOT / "data" / "demo_snapshot.json"
+FORECAST_CONTEXT_DAYS = 21
+FORECAST_CONTEXT_POINTS = 2_016
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,24 @@ class SnapshotResult:
     mode: str
     source_label: str
     fallback_reason: str | None = None
+    data_fresh: bool = True
+    freshness_warning: str | None = None
+
+
+@dataclass(frozen=True)
+class ForecastPoint:
+    forecast_at: datetime
+    predicted_requests: int
+    lower_bound: int
+    upper_bound: int
+
+    def to_dict(self) -> dict:
+        return {
+            "forecast_at": self.forecast_at.isoformat(),
+            "predicted_requests": self.predicted_requests,
+            "lower_bound": self.lower_bound,
+            "upper_bound": self.upper_bound,
+        }
 
 
 @dataclass(frozen=True)
@@ -25,22 +45,35 @@ class DemandForecast:
     zone_id: str
     horizon_minutes: int
     predicted_requests: int
-    lower_bound: int
-    upper_bound: int
     source: str
+    status: str
+    points: tuple[ForecastPoint, ...]
 
     def to_dict(self) -> dict:
         return {
             "zone_id": self.zone_id,
             "horizon_minutes": self.horizon_minutes,
             "predicted_requests": self.predicted_requests,
-            "lower_bound": self.lower_bound,
-            "upper_bound": self.upper_bound,
             "source": self.source,
+            "status": self.status,
+            "points": [point.to_dict() for point in self.points],
         }
 
 
-def _parse_zone(raw: dict, *, observed_at: datetime, source: str, simulated: bool) -> ZoneSnapshot:
+class ForecastUnavailable(RuntimeError):
+    pass
+
+
+def _parse_datetime(value: datetime | str) -> datetime:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    return parsed.astimezone(UTC)
+
+
+def _parse_zone(raw: dict, *, source: str) -> ZoneSnapshot:
+    observed_at = _parse_datetime(raw["observed_at"])
+    weather_at = _parse_datetime(raw.get("weather_observed_at", observed_at))
+    operations_at = _parse_datetime(raw.get("operations_observed_at", observed_at))
+    simulated = bool(raw.get("is_simulated", True))
     return ZoneSnapshot(
         zone_id=raw["zone_id"],
         name=raw["name"],
@@ -50,6 +83,10 @@ def _parse_zone(raw: dict, *, observed_at: datetime, source: str, simulated: boo
         humidity_percent=float(raw["humidity_percent"]),
         heat_index_c=float(raw["heat_index_c"]),
         observed_at=observed_at,
+        scenario_id=str(raw.get("scenario_id", "heatwave")),
+        snapshot_id=str(raw.get("snapshot_id", "local-demo")),
+        weather_observed_at=weather_at,
+        operations_observed_at=operations_at,
         active_drivers=int(raw["active_drivers"]),
         fresh_drivers=int(raw["fresh_drivers"]),
         exposed_2h=int(raw["exposed_2h"]),
@@ -61,7 +98,8 @@ def _parse_zone(raw: dict, *, observed_at: datetime, source: str, simulated: boo
         coolstop_latitude=float(raw["coolstop_latitude"]),
         coolstop_longitude=float(raw["coolstop_longitude"]),
         source=source,
-        is_simulated=simulated,
+        weather_is_simulated=bool(raw.get("weather_is_simulated", simulated)),
+        operations_is_simulated=bool(raw.get("operations_is_simulated", simulated)),
     )
 
 
@@ -72,22 +110,43 @@ class SnapshotRepository:
     def load(self) -> SnapshotResult:
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         observed_at = datetime.fromisoformat(raw["scenario_time"]).astimezone(UTC)
-        zones = [
-            _parse_zone(item, observed_at=observed_at, source="Hackathon demo snapshot", simulated=True)
-            for item in raw["zones"]
-        ]
+        zones = []
+        for item in raw["zones"]:
+            enriched = {
+                **item,
+                "observed_at": observed_at,
+                "weather_observed_at": observed_at,
+                "operations_observed_at": observed_at,
+                "scenario_id": "heatwave",
+                "snapshot_id": "local-heatwave-replay",
+                "weather_is_simulated": True,
+                "operations_is_simulated": True,
+            }
+            zones.append(_parse_zone(enriched, source="Hackathon demo snapshot"))
         return SnapshotResult(zones, "snapshot", raw["scenario_name"])
 
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
         zone = next(zone for zone in self.load().zones if zone.zone_id == zone_id)
-        predicted = round(zone.forecast_requests_30m * horizon_minutes / 30)
+        horizon_minutes = max(15, min(240, horizon_minutes))
+        intervals = max(1, round(horizon_minutes / 15))
+        per_interval = zone.forecast_requests_30m / 2
+        start = datetime.now(UTC).replace(second=0, microsecond=0)
+        points = tuple(
+            ForecastPoint(
+                forecast_at=start + timedelta(minutes=15 * (index + 1)),
+                predicted_requests=round(per_interval),
+                lower_bound=round(per_interval * 0.9),
+                upper_bound=round(per_interval * 1.1),
+            )
+            for index in range(intervals)
+        )
         return DemandForecast(
             zone_id=zone_id,
             horizon_minutes=horizon_minutes,
-            predicted_requests=predicted,
-            lower_bound=round(predicted * 0.9),
-            upper_bound=round(predicted * 1.1),
+            predicted_requests=sum(point.predicted_requests for point in points),
             source="Demo snapshot heuristic",
+            status="HEURISTIC",
+            points=points,
         )
 
     def forecast_demand_many(
@@ -100,7 +159,7 @@ class SnapshotRepository:
 
 
 class BigQueryRepository:
-    """Read the production-shaped zone_snapshots view; never falls back silently."""
+    """Read scenario-safe current snapshots and bounded TimesFM forecasts."""
 
     def __init__(
         self,
@@ -115,71 +174,135 @@ class BigQueryRepository:
         self.scenario = (scenario or self.settings.scenario).lower()
         if self.scenario not in {"live", "heatwave"}:
             raise ValueError("HEATSAFE_SCENARIO must be live or heatwave")
-        view_name = "zone_snapshots_live" if self.scenario == "live" else "zone_snapshots_heatwave"
-        self.table = f"{self.dataset}.{view_name}"
+        self.table = f"{self.dataset}.{self.settings.current_snapshot_table}"
+        self._client_instance = None
+
+    def _client(self):
+        if self._client_instance is None:
+            from google.cloud import bigquery
+
+            self._client_instance = bigquery.Client(project=self.project_id)
+        return self._client_instance
+
+    @staticmethod
+    def _job_config(parameters: list, maximum_bytes_billed: int):
+        from google.cloud import bigquery
+
+        return bigquery.QueryJobConfig(
+            query_parameters=parameters,
+            maximum_bytes_billed=maximum_bytes_billed,
+            labels={"app": "heatsafe", "component": "demo"},
+        )
 
     def load(self) -> SnapshotResult:
         from google.cloud import bigquery
 
-        client = bigquery.Client(project=self.project_id)
         query = f"""
             SELECT * FROM `{self.table}`
-            WHERE observed_at = (SELECT MAX(observed_at) FROM `{self.table}`)
+            WHERE scenario_id = @scenario_id
+            ORDER BY zone_id
         """
-        rows = [dict(row) for row in client.query(query).result()]
+        config = self._job_config(
+            [bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario)],
+            10_000_000,
+        )
+        rows = [dict(row) for row in self._client().query(query, job_config=config).result()]
         if not rows:
-            raise RuntimeError("zone_snapshots is empty")
-        observed_at = rows[0]["observed_at"].astimezone(UTC)
-        max_age_hours = self.settings.max_data_age_hours
-        if datetime.now(UTC) - observed_at > timedelta(hours=max_age_hours):
-            raise RuntimeError(f"cloud snapshot is older than {max_age_hours} hours")
-        zones = [
-            _parse_zone(
-                row,
-                observed_at=observed_at,
-                source=str(row.get("source", "BigQuery")),
-                simulated=bool(row.get("is_simulated", False)),
+            raise RuntimeError(f"No current snapshot for scenario {self.scenario}")
+        snapshot_ids = {row["snapshot_id"] for row in rows}
+        if len(snapshot_ids) != 1:
+            raise RuntimeError("Current snapshot is incomplete: mixed snapshot_id values")
+        zones = [_parse_zone(row, source=str(row.get("source", "BigQuery"))) for row in rows]
+        data_fresh = True
+        freshness_warning = None
+        if self.scenario == "live":
+            oldest_component = min(
+                min(zone.weather_observed_at, zone.operations_observed_at) for zone in zones
+            )
+            freshness = timedelta(minutes=self.settings.live_freshness_minutes)
+            if datetime.now(UTC) - oldest_component > freshness:
+                data_fresh = False
+                freshness_warning = (
+                    f"Live snapshot is older than {self.settings.live_freshness_minutes} minutes; "
+                    "simulated intervention recording is disabled"
+                )
+        return SnapshotResult(
+            zones,
+            "cloud",
+            f"BigQuery · {self.table} · {self.scenario}",
+            data_fresh=data_fresh,
+            freshness_warning=freshness_warning,
+        )
+
+    def _forecast_query(self, many: bool) -> str:
+        zone_filter = "zone_id IN UNNEST(@zone_ids)" if many else "zone_id = @zone_id"
+        id_cols = ", id_cols => ['zone_id']" if many else ""
+        return f"""
+            SELECT * FROM AI.FORECAST(
+              (SELECT {"zone_id," if many else ""} interval_start, requests
+               FROM `{self.dataset}.demand_history`
+               WHERE scenario_id = @scenario_id
+                 AND {zone_filter}
+                 AND interval_start >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {FORECAST_CONTEXT_DAYS} DAY)),
+              data_col => 'requests',
+              timestamp_col => 'interval_start'
+              {id_cols},
+              horizon => @horizon_intervals,
+              confidence_level => 0.9,
+              context_window => {FORECAST_CONTEXT_POINTS}
+            )
+            ORDER BY {"zone_id," if many else ""} forecast_timestamp
+        """
+
+    @staticmethod
+    def _build_forecast(zone_id: str, horizon_minutes: int, rows: list) -> DemandForecast:
+        if not rows:
+            raise ForecastUnavailable(f"No demand forecast for {zone_id}")
+        errors = sorted(
+            {
+                str(row.ai_forecast_status)
+                for row in rows
+                if getattr(row, "ai_forecast_status", None)
+            }
+        )
+        if errors:
+            raise ForecastUnavailable(f"TimesFM failed for {zone_id}: {'; '.join(errors)}")
+        points = tuple(
+            ForecastPoint(
+                forecast_at=row.forecast_timestamp.astimezone(UTC),
+                predicted_requests=round(row.forecast_value),
+                lower_bound=round(row.prediction_interval_lower_bound),
+                upper_bound=round(row.prediction_interval_upper_bound),
             )
             for row in rows
-        ]
-        return SnapshotResult(zones, "cloud", f"BigQuery · {self.table}")
+            if row.forecast_value is not None
+        )
+        if not points:
+            raise ForecastUnavailable(f"TimesFM returned no valid points for {zone_id}")
+        return DemandForecast(
+            zone_id=zone_id,
+            horizon_minutes=horizon_minutes,
+            predicted_requests=sum(point.predicted_requests for point in points),
+            source="BigQuery ML · TimesFM AI.FORECAST",
+            status="OK",
+            points=points,
+        )
 
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
         from google.cloud import bigquery
 
         horizon_minutes = max(15, min(240, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
-        client = bigquery.Client(project=self.project_id)
-        query = f"""
-            SELECT
-              CAST(ROUND(SUM(forecast_value)) AS INT64) AS predicted_requests,
-              CAST(ROUND(SUM(prediction_interval_lower_bound)) AS INT64) AS lower_bound,
-              CAST(ROUND(SUM(prediction_interval_upper_bound)) AS INT64) AS upper_bound
-            FROM AI.FORECAST(
-              (SELECT interval_start, requests
-               FROM `{self.dataset}.demand_history`
-               WHERE zone_id = @zone_id),
-              data_col => 'requests',
-              timestamp_col => 'interval_start',
-              horizon => {horizon_intervals},
-              confidence_level => 0.9
-            )
-        """
-        config = bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("zone_id", "STRING", zone_id)],
-            maximum_bytes_billed=50_000_000,
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
+                bigquery.ScalarQueryParameter("zone_id", "STRING", zone_id),
+                bigquery.ScalarQueryParameter("horizon_intervals", "INT64", horizon_intervals),
+            ],
+            100_000_000,
         )
-        row = next(iter(client.query(query, job_config=config).result()), None)
-        if not row:
-            raise RuntimeError(f"No demand forecast for {zone_id}")
-        return DemandForecast(
-            zone_id=zone_id,
-            horizon_minutes=horizon_minutes,
-            predicted_requests=int(row.predicted_requests),
-            lower_bound=int(row.lower_bound),
-            upper_bound=int(row.upper_bound),
-            source="BigQuery ML · TimesFM AI.FORECAST",
-        )
+        rows = list(self._client().query(self._forecast_query(False), job_config=config).result())
+        return self._build_forecast(zone_id, horizon_minutes, rows)
 
     def forecast_demand_many(
         self, zone_ids: list[str], horizon_minutes: int = 60
@@ -190,47 +313,22 @@ class BigQueryRepository:
             return {}
         horizon_minutes = max(15, min(240, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
-        query = f"""
-            SELECT
-              zone_id,
-              CAST(ROUND(SUM(forecast_value)) AS INT64) AS predicted_requests,
-              CAST(ROUND(SUM(prediction_interval_lower_bound)) AS INT64) AS lower_bound,
-              CAST(ROUND(SUM(prediction_interval_upper_bound)) AS INT64) AS upper_bound
-            FROM AI.FORECAST(
-              (SELECT zone_id, interval_start, requests
-               FROM `{self.dataset}.demand_history`
-               WHERE zone_id IN UNNEST(@zone_ids)),
-              data_col => 'requests',
-              timestamp_col => 'interval_start',
-              id_cols => ['zone_id'],
-              horizon => {horizon_intervals},
-              confidence_level => 0.9
-            )
-            GROUP BY zone_id
-        """
-        config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids)
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
+                bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
+                bigquery.ScalarQueryParameter("horizon_intervals", "INT64", horizon_intervals),
             ],
-            maximum_bytes_billed=100_000_000,
+            100_000_000,
         )
-        rows = self._query(query, config)
+        rows = list(self._client().query(self._forecast_query(True), job_config=config).result())
+        grouped = {zone_id: [] for zone_id in zone_ids}
+        for row in rows:
+            grouped.setdefault(row.zone_id, []).append(row)
         return {
-            row.zone_id: DemandForecast(
-                zone_id=row.zone_id,
-                horizon_minutes=horizon_minutes,
-                predicted_requests=int(row.predicted_requests),
-                lower_bound=int(row.lower_bound),
-                upper_bound=int(row.upper_bound),
-                source="BigQuery ML · TimesFM AI.FORECAST",
-            )
-            for row in rows
+            zone_id: self._build_forecast(zone_id, horizon_minutes, grouped[zone_id])
+            for zone_id in zone_ids
         }
-
-    def _query(self, query: str, config):
-        from google.cloud import bigquery
-
-        return list(bigquery.Client(project=self.project_id).query(query, job_config=config).result())
 
 
 class HybridRepository:
@@ -241,19 +339,24 @@ class HybridRepository:
             raise ValueError("HEATSAFE_MODE must be auto, cloud, or snapshot")
         self.snapshot = SnapshotRepository()
         self.scenario = (scenario or self.settings.scenario).lower()
-        self.cloud = BigQueryRepository(
-            self.settings.project_id, self.settings.dataset_id, self.scenario
-        )
-        self._active = self.snapshot if self.mode == "snapshot" else self.cloud
+        self.cloud = None
+        self._active = self.snapshot
+
+    def _cloud(self) -> BigQueryRepository:
+        if self.cloud is None:
+            self.cloud = BigQueryRepository(
+                self.settings.project_id, self.settings.dataset_id, self.scenario
+            )
+        return self.cloud
 
     def load(self) -> SnapshotResult:
         if self.mode == "snapshot":
             self._active = self.snapshot
             return self.snapshot.load()
-
         try:
-            result = self.cloud.load()
-            self._active = self.cloud
+            cloud = self._cloud()
+            result = cloud.load()
+            self._active = cloud
             return result
         except Exception as exc:
             if self.mode == "cloud":

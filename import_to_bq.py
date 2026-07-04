@@ -1,4 +1,4 @@
-"""Backward-compatible entrypoint for GCP provisioning and demo seeding."""
+"""Backward-compatible entrypoint for non-destructive GCP provisioning."""
 
 from infra.provision_gcp import main
 

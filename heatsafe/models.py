@@ -15,6 +15,10 @@ class ZoneSnapshot:
     humidity_percent: float
     heat_index_c: float
     observed_at: datetime
+    scenario_id: str
+    snapshot_id: str
+    weather_observed_at: datetime
+    operations_observed_at: datetime
     active_drivers: int
     fresh_drivers: int
     exposed_2h: int
@@ -26,11 +30,19 @@ class ZoneSnapshot:
     coolstop_latitude: float
     coolstop_longitude: float
     source: str
-    is_simulated: bool
+    weather_is_simulated: bool
+    operations_is_simulated: bool
+
+    @property
+    def is_simulated(self) -> bool:
+        return self.weather_is_simulated or self.operations_is_simulated
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["observed_at"] = self.observed_at.isoformat()
+        value["weather_observed_at"] = self.weather_observed_at.isoformat()
+        value["operations_observed_at"] = self.operations_observed_at.isoformat()
+        value["is_simulated"] = self.is_simulated
         return value
 
 
@@ -72,7 +84,9 @@ class InterventionEvent:
     proposal_id: str
     approved_at: datetime
     approved_by: str
+    actor_type: str
     status: str
+    dispatch_status: str
     proposal: SafePauseProposal
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,6 +95,8 @@ class InterventionEvent:
             "proposal_id": self.proposal_id,
             "approved_at": self.approved_at.isoformat(),
             "approved_by": self.approved_by,
+            "actor_type": self.actor_type,
             "status": self.status,
+            "dispatch_status": self.dispatch_status,
             "proposal": self.proposal.to_dict(),
         }

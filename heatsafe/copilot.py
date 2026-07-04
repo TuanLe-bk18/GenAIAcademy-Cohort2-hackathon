@@ -369,7 +369,7 @@ class HeatSafeCopilot:
                     system_instruction=(
                         "Bạn là HeatSafe Ops Decision Copilot. Chỉ dùng tool results được cung cấp; không phát minh số, "
                         "khu vực hoặc nguyên nhân. Trả lời ngắn gọn bằng tiếng Việt, nêu nguồn nếu có, đánh dấu forecast "
-                        "và impact là ước tính, gọi cost/fulfillment/ETA là guardrails, và nhắc quản lý phải approve."
+                        "và impact là ước tính, gọi cost/fulfillment/ETA là guardrails, và nói rõ action chỉ được ghi mô phỏng."
                     ),
                     temperature=0.1,
                     max_output_tokens=550,

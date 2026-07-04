@@ -10,6 +10,12 @@ from .config import Settings
 from .models import InterventionEvent, SafePauseProposal
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "interventions.db"
+DEMO_ACTOR = "Public demo session"
+DEMO_ACTOR_TYPE = "UNAUTHENTICATED_DEMO"
+
+
+def intervention_id_for(proposal_id: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"heatsafe:simulated:{proposal_id}"))
 
 
 class InterventionAuditStore:
@@ -32,7 +38,9 @@ class InterventionAuditStore:
                     proposal_id TEXT UNIQUE NOT NULL,
                     approved_at TEXT NOT NULL,
                     approved_by TEXT NOT NULL,
+                    actor_type TEXT NOT NULL DEFAULT 'UNAUTHENTICATED_DEMO',
                     status TEXT NOT NULL,
+                    dispatch_status TEXT NOT NULL DEFAULT 'NOT_APPLICABLE',
                     zone_id TEXT NOT NULL,
                     eligible_drivers INTEGER NOT NULL,
                     exposure_minutes_avoided INTEGER NOT NULL,
@@ -41,27 +49,53 @@ class InterventionAuditStore:
                 )
                 """
             )
+            columns = {
+                row[1] for row in db.execute("PRAGMA table_info(interventions)").fetchall()
+            }
+            if "actor_type" not in columns:
+                db.execute(
+                    "ALTER TABLE interventions ADD COLUMN actor_type TEXT NOT NULL "
+                    "DEFAULT 'UNAUTHENTICATED_DEMO'"
+                )
+            if "dispatch_status" not in columns:
+                db.execute(
+                    "ALTER TABLE interventions ADD COLUMN dispatch_status TEXT NOT NULL "
+                    "DEFAULT 'NOT_APPLICABLE'"
+                )
 
-    def approve(self, proposal: SafePauseProposal, approved_by: str = "Ops Manager") -> InterventionEvent:
+    def approve(
+        self,
+        proposal: SafePauseProposal,
+        approved_by: str = DEMO_ACTOR,
+        actor_type: str = DEMO_ACTOR_TYPE,
+    ) -> InterventionEvent:
         event = InterventionEvent(
-            intervention_id=str(uuid.uuid4()),
+            intervention_id=intervention_id_for(proposal.proposal_id),
             proposal_id=proposal.proposal_id,
             approved_at=datetime.now(UTC),
             approved_by=approved_by,
-            status="APPROVED",
+            actor_type=actor_type,
+            status="SIMULATED",
+            dispatch_status="NOT_APPLICABLE",
             proposal=proposal,
         )
         with self._connect() as db:
             db.execute(
                 """
-                INSERT OR IGNORE INTO interventions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO interventions (
+                    intervention_id, proposal_id, approved_at, approved_by,
+                    actor_type, status, dispatch_status, zone_id, eligible_drivers,
+                    exposure_minutes_avoided, net_platform_cost_vnd, proposal_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.intervention_id,
                     event.proposal_id,
                     event.approved_at.isoformat(),
                     event.approved_by,
+                    event.actor_type,
                     event.status,
+                    event.dispatch_status,
                     proposal.zone_id,
                     proposal.eligible_drivers,
                     proposal.exposure_minutes_avoided,
@@ -69,15 +103,29 @@ class InterventionAuditStore:
                     json.dumps(proposal.to_dict(), ensure_ascii=False),
                 ),
             )
-        return event
+            row = db.execute(
+                "SELECT intervention_id, approved_at, approved_by, actor_type, status, dispatch_status "
+                "FROM interventions WHERE proposal_id = ?",
+                (proposal.proposal_id,),
+            ).fetchone()
+        return InterventionEvent(
+            intervention_id=row["intervention_id"],
+            proposal_id=event.proposal_id,
+            approved_at=datetime.fromisoformat(row["approved_at"]).astimezone(UTC),
+            approved_by=row["approved_by"],
+            actor_type=row["actor_type"],
+            status=row["status"],
+            dispatch_status=row["dispatch_status"],
+            proposal=proposal,
+        )
 
     def list_recent(self, limit: int = 20) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
                 """
-                SELECT intervention_id, approved_at, approved_by, status,
-                       'LOCAL_SIMULATED' AS dispatch_status, zone_id,
-                       eligible_drivers, exposure_minutes_avoided, net_platform_cost_vnd
+                SELECT intervention_id, approved_at, approved_by, actor_type, status,
+                       dispatch_status, zone_id, eligible_drivers,
+                       exposure_minutes_avoided, net_platform_cost_vnd
                 FROM interventions ORDER BY approved_at DESC LIMIT ?
                 """,
                 (limit,),
@@ -87,147 +135,142 @@ class InterventionAuditStore:
     def protected_driver_count(self) -> int:
         with self._connect() as db:
             value = db.execute(
-                "SELECT COALESCE(SUM(eligible_drivers), 0) FROM interventions WHERE status = 'APPROVED'"
+                "SELECT COALESCE(SUM(eligible_drivers), 0) FROM interventions "
+                "WHERE status IN ('SIMULATED', 'APPROVED')"
             ).fetchone()[0]
         return int(value)
 
 
 class BigQueryInterventionAuditStore:
-    """Durable decision audit with a Pub/Sub dispatch command."""
+    """Durable audit for simulated demo decisions; it never dispatches commands."""
 
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings.from_env()
         self.dataset = self.settings.dataset_path
+        self._client_instance = None
 
     def _client(self):
+        if self._client_instance is None:
+            from google.cloud import bigquery
+
+            self._client_instance = bigquery.Client(project=self.settings.project_id)
+        return self._client_instance
+
+    @staticmethod
+    def _config(parameters: list, maximum_bytes_billed: int = 10_000_000):
         from google.cloud import bigquery
 
-        return bigquery.Client(project=self.settings.project_id)
+        return bigquery.QueryJobConfig(
+            query_parameters=parameters,
+            maximum_bytes_billed=maximum_bytes_billed,
+            labels={"app": "heatsafe", "component": "audit"},
+        )
 
-    def _publisher(self):
-        from google.cloud import pubsub_v1
-
-        publisher = pubsub_v1.PublisherClient()
-        topic = publisher.topic_path(self.settings.project_id, self.settings.dispatch_topic)
-        publisher.get_topic(request={"topic": topic})
-        return publisher, topic
-
-    def _existing(self, proposal: SafePauseProposal) -> InterventionEvent | None:
+    def approve(
+        self,
+        proposal: SafePauseProposal,
+        approved_by: str = DEMO_ACTOR,
+        actor_type: str = DEMO_ACTOR_TYPE,
+    ) -> InterventionEvent:
         from google.cloud import bigquery
 
+        intervention_id = intervention_id_for(proposal.proposal_id)
+        approved_at = datetime.now(UTC)
         query = f"""
-            SELECT intervention_id, approved_at, approved_by, status
-            FROM `{self.dataset}.intervention_events`
-            WHERE proposal_id = @proposal_id
-            ORDER BY approved_at DESC LIMIT 1
+        BEGIN TRANSACTION;
+        MERGE `{self.dataset}.intervention_proposals` target
+        USING (SELECT @proposal_id proposal_id) source
+        ON target.proposal_id = source.proposal_id
+          AND target.created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        WHEN NOT MATCHED THEN INSERT (
+          proposal_id, created_at, zone_id, eligible_drivers,
+          exposure_minutes_avoided, net_platform_cost_vnd,
+          projected_fulfillment_rate, within_guardrails, proposal_json
+        ) VALUES (
+          @proposal_id, @created_at, @zone_id, @eligible_drivers,
+          @exposure_minutes_avoided, @net_platform_cost_vnd,
+          @projected_fulfillment_rate, @within_guardrails,
+          PARSE_JSON(@proposal_json)
+        );
+        MERGE `{self.dataset}.intervention_events` target
+        USING (SELECT @intervention_id intervention_id) source
+        ON target.intervention_id = source.intervention_id
+          AND target.approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        WHEN NOT MATCHED THEN INSERT (
+          intervention_id, proposal_id, approved_at, approved_by, actor_type,
+          status, dispatch_status, zone_id, eligible_drivers,
+          exposure_minutes_avoided, net_platform_cost_vnd
+        ) VALUES (
+          @intervention_id, @proposal_id, @approved_at, @approved_by, @actor_type,
+          'SIMULATED', 'NOT_APPLICABLE', @zone_id, @eligible_drivers,
+          @exposure_minutes_avoided, @net_platform_cost_vnd
+        );
+        COMMIT TRANSACTION;
         """
-        config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("proposal_id", "STRING", proposal.proposal_id)
-            ],
-            maximum_bytes_billed=10_000_000,
-        )
-        row = next(iter(self._client().query(query, job_config=config).result()), None)
-        if not row:
-            return None
+        parameters = [
+            bigquery.ScalarQueryParameter("intervention_id", "STRING", intervention_id),
+            bigquery.ScalarQueryParameter("proposal_id", "STRING", proposal.proposal_id),
+            bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", proposal.created_at),
+            bigquery.ScalarQueryParameter("approved_at", "TIMESTAMP", approved_at),
+            bigquery.ScalarQueryParameter("approved_by", "STRING", approved_by),
+            bigquery.ScalarQueryParameter("actor_type", "STRING", actor_type),
+            bigquery.ScalarQueryParameter("zone_id", "STRING", proposal.zone_id),
+            bigquery.ScalarQueryParameter("eligible_drivers", "INT64", proposal.eligible_drivers),
+            bigquery.ScalarQueryParameter(
+                "exposure_minutes_avoided", "INT64", proposal.exposure_minutes_avoided
+            ),
+            bigquery.ScalarQueryParameter(
+                "net_platform_cost_vnd", "INT64", proposal.net_platform_cost_vnd
+            ),
+            bigquery.ScalarQueryParameter(
+                "projected_fulfillment_rate", "FLOAT64", proposal.projected_fulfillment_rate
+            ),
+            bigquery.ScalarQueryParameter(
+                "within_guardrails", "BOOL", proposal.within_guardrails
+            ),
+            bigquery.ScalarQueryParameter(
+                "proposal_json", "STRING", json.dumps(proposal.to_dict(), ensure_ascii=False)
+            ),
+        ]
+        self._client().query(
+            query, job_config=self._config(parameters, maximum_bytes_billed=50_000_000)
+        ).result()
         return InterventionEvent(
-            intervention_id=row.intervention_id,
+            intervention_id=intervention_id,
             proposal_id=proposal.proposal_id,
-            approved_at=row.approved_at.astimezone(UTC),
-            approved_by=row.approved_by,
-            status=row.status,
-            proposal=proposal,
-        )
-
-    def approve(self, proposal: SafePauseProposal, approved_by: str = "Ops Manager") -> InterventionEvent:
-        existing = self._existing(proposal)
-        if existing:
-            return existing
-
-        # Verify dispatch infrastructure before making the durable approval write.
-        publisher, topic = self._publisher()
-        event = InterventionEvent(
-            intervention_id=str(uuid.uuid4()),
-            proposal_id=proposal.proposal_id,
-            approved_at=datetime.now(UTC),
+            approved_at=approved_at,
             approved_by=approved_by,
-            status="APPROVED",
+            actor_type=actor_type,
+            status="SIMULATED",
+            dispatch_status="NOT_APPLICABLE",
             proposal=proposal,
         )
-        client = self._client()
-        proposal_errors = client.insert_rows_json(
-            f"{self.dataset}.intervention_proposals",
-            [
-                {
-                    "proposal_id": proposal.proposal_id,
-                    "created_at": proposal.created_at.isoformat(),
-                    "zone_id": proposal.zone_id,
-                    "eligible_drivers": proposal.eligible_drivers,
-                    "exposure_minutes_avoided": proposal.exposure_minutes_avoided,
-                    "net_platform_cost_vnd": proposal.net_platform_cost_vnd,
-                    "projected_fulfillment_rate": proposal.projected_fulfillment_rate,
-                    "within_guardrails": proposal.within_guardrails,
-                    "proposal_json": json.dumps(proposal.to_dict(), ensure_ascii=False),
-                }
-            ],
-            row_ids=[proposal.proposal_id],
-        )
-        if proposal_errors:
-            raise RuntimeError(f"BigQuery proposal insert failed: {proposal_errors}")
-        command = {
-            "schema_version": 1,
-            "command": "ACTIVATE_SAFEPAUSE",
-            "intervention_id": event.intervention_id,
-            "proposal": proposal.to_dict(),
-        }
-        future = publisher.publish(
-            topic,
-            json.dumps(command, ensure_ascii=False).encode("utf-8"),
-            intervention_id=event.intervention_id,
-            zone_id=proposal.zone_id,
-        )
-        future.result(timeout=15)
-        event_errors = client.insert_rows_json(
-            f"{self.dataset}.intervention_events",
-            [
-                {
-                    "intervention_id": event.intervention_id,
-                    "proposal_id": event.proposal_id,
-                    "approved_at": event.approved_at.isoformat(),
-                    "approved_by": event.approved_by,
-                    "status": event.status,
-                    "dispatch_status": "PUBLISHED",
-                    "zone_id": proposal.zone_id,
-                    "eligible_drivers": proposal.eligible_drivers,
-                    "exposure_minutes_avoided": proposal.exposure_minutes_avoided,
-                    "net_platform_cost_vnd": proposal.net_platform_cost_vnd,
-                }
-            ],
-            row_ids=[event.intervention_id],
-        )
-        if event_errors:
-            raise RuntimeError(f"BigQuery event insert failed: {event_errors}")
-        return event
 
     def list_recent(self, limit: int = 20) -> list[dict]:
         from google.cloud import bigquery
 
         limit = max(1, min(limit, 100))
         query = f"""
-            SELECT intervention_id, approved_at, approved_by, status, dispatch_status,
-                   zone_id, eligible_drivers, exposure_minutes_avoided, net_platform_cost_vnd
+            SELECT intervention_id, approved_at, approved_by, actor_type, status,
+                   dispatch_status, zone_id, eligible_drivers,
+                   exposure_minutes_avoided, net_platform_cost_vnd
             FROM `{self.dataset}.intervention_events`
-            ORDER BY approved_at DESC LIMIT {limit}
+            WHERE approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+            ORDER BY approved_at DESC LIMIT @limit
         """
-        return [dict(row) for row in self._client().query(query).result()]
+        config = self._config(
+            [bigquery.ScalarQueryParameter("limit", "INT64", limit)]
+        )
+        return [dict(row) for row in self._client().query(query, job_config=config).result()]
 
     def protected_driver_count(self) -> int:
         query = f"""
             SELECT COALESCE(SUM(eligible_drivers), 0) protected
             FROM `{self.dataset}.intervention_events`
-            WHERE status = 'APPROVED'
+            WHERE approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+              AND status IN ('SIMULATED', 'APPROVED')
         """
-        row = next(iter(self._client().query(query).result()))
+        row = next(iter(self._client().query(query, job_config=self._config([])).result()))
         return int(row.protected)
 
 
@@ -236,16 +279,21 @@ class HybridInterventionAuditStore:
         self.settings = Settings.from_env()
         self.mode = (mode or self.settings.mode).lower()
         self.local = InterventionAuditStore(local_db_path)
-        self.cloud = BigQueryInterventionAuditStore(self.settings)
+        self.cloud = None
         self.backend = "local" if self.mode == "snapshot" else "cloud"
         self.fallback_reason: str | None = None
+
+    def _cloud(self) -> BigQueryInterventionAuditStore:
+        if self.cloud is None:
+            self.cloud = BigQueryInterventionAuditStore(self.settings)
+        return self.cloud
 
     def _call(self, method: str, *args, **kwargs):
         if self.mode == "snapshot":
             self.backend = "local"
             return getattr(self.local, method)(*args, **kwargs)
         try:
-            value = getattr(self.cloud, method)(*args, **kwargs)
+            value = getattr(self._cloud(), method)(*args, **kwargs)
             self.backend = "cloud"
             self.fallback_reason = None
             return value
@@ -256,8 +304,13 @@ class HybridInterventionAuditStore:
             self.fallback_reason = str(exc)
             return getattr(self.local, method)(*args, **kwargs)
 
-    def approve(self, proposal: SafePauseProposal, approved_by: str = "Ops Manager") -> InterventionEvent:
-        return self._call("approve", proposal, approved_by)
+    def approve(
+        self,
+        proposal: SafePauseProposal,
+        approved_by: str = DEMO_ACTOR,
+        actor_type: str = DEMO_ACTOR_TYPE,
+    ) -> InterventionEvent:
+        return self._call("approve", proposal, approved_by, actor_type)
 
     def list_recent(self, limit: int = 20) -> list[dict]:
         return self._call("list_recent", limit)
