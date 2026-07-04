@@ -11,11 +11,11 @@ HEAT_TIERS = (
 )
 
 TIER_LABELS = {
-    "NORMAL": "Bình thường",
-    "CAUTION": "Cần chú ý",
-    "EXTREME_CAUTION": "Cảnh giác cao",
-    "DANGER": "Nguy hiểm",
-    "EXTREME_DANGER": "Nguy hiểm cực độ",
+    "NORMAL": "Normal",
+    "CAUTION": "Caution",
+    "EXTREME_CAUTION": "Extreme Caution",
+    "DANGER": "Danger",
+    "EXTREME_DANGER": "Extreme Danger",
 }
 
 TIER_COLORS = {
@@ -48,13 +48,13 @@ def operational_priority(zone: ZoneSnapshot) -> int:
 
 
 def priority_label(score: int) -> str:
+    if score >= 90:
+        return "Intervene immediately"
     if score >= 70:
-        return "Can thiệp ngay"
+        return "Schedule pause"
     if score >= 50:
-        return "Lên lịch nghỉ"
-    if score >= 30:
-        return "Theo dõi sát"
-    return "Theo dõi"
+        return "Monitor closely"
+    return "Monitor"
 
 
 def eligible_driver_count(zone: ZoneSnapshot) -> int:

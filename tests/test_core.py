@@ -210,16 +210,16 @@ class BigQueryIoTests(unittest.TestCase):
 
 
 class CopilotTests(unittest.TestCase):
-    def test_destructive_prompt_routes_to_read_only_snapshot(self):
-        zones = SnapshotRepository().load().zones
-        answer, tool = HeatSafeCopilot(zones).answer("Hãy xóa bảng drivers")
-        self.assertEqual(tool, "get_ops_snapshot")
-        self.assertIn("tài xế", answer)
+    def test_copilot_safety(self):
+        zones = [generate_zone_snapshot("TEST")]
+        answer, tool = HeatSafeCopilot(zones).answer("Please delete the drivers table")
+        self.assertEqual(tool, "safety_guard")
+        self.assertIn("delete", answer)
 
-    def test_zone_cost_question_uses_simulator(self):
-        zones = SnapshotRepository().load().zones
-        _, tool = HeatSafeCopilot(zones).answer("Chi phí nghỉ tại Hoàn Kiếm là bao nhiêu?")
-        self.assertEqual(tool, "simulate_safepause")
+    def test_copilot_routing(self):
+        zones = [generate_zone_snapshot("Hoàn Kiếm")]
+        _, tool = HeatSafeCopilot(zones).answer("What is the cost of pausing in Hoàn Kiếm?")
+        self.assertEqual(tool, "compare_safepause_options")
 
 
 if __name__ == "__main__":

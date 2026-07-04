@@ -48,15 +48,15 @@ def simulate_safepause(
 
     notes: list[str] = []
     if net_cost > budget_cap_vnd:
-        notes.append(f"Vượt ngân sách {budget_cap_vnd:,.0f} VND")
+        notes.append(f"Exceeds budget of ${budget_cap_vnd / 25000:,.2f}")
     if fulfillment < min_fulfillment_rate:
-        notes.append(f"Fulfillment dưới {min_fulfillment_rate:.0%}")
+        notes.append(f"Fulfillment below {min_fulfillment_rate:.0%}")
     if eta_increase > max_eta_increase_minutes:
-        notes.append(f"ETA tăng quá {max_eta_increase_minutes:.1f} phút")
+        notes.append(f"ETA increase exceeds {max_eta_increase_minutes:.1f} min")
     if eligible == 0:
-        notes.append("Chưa có cohort đủ điều kiện")
+        notes.append("No eligible cohort")
     if not notes:
-        notes.append("Đạt cost, fulfillment và ETA guardrails")
+        notes.append("Meets cost, fulfillment and ETA guardrails")
 
     now = datetime.now(UTC)
     return SafePauseProposal(
@@ -79,6 +79,6 @@ def simulate_safepause(
         exposure_minutes_avoided=eligible * pause_minutes,
         projected_fulfillment_rate=fulfillment,
         projected_eta_increase_minutes=eta_increase,
-        within_guardrails=len(notes) == 1 and notes[0].startswith("Đạt"),
+        within_guardrails=len(notes) == 1 and notes[0].startswith("Meets"),
         guardrail_notes=tuple(notes),
     )

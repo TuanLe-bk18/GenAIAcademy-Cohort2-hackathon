@@ -40,10 +40,10 @@ def rank_hotspots(zones: list[ZoneSnapshot], limit: int = 3) -> ToolResult:
     }
     lines = [
         f"{index}. {zone.name}: priority {operational_priority(zone)}/100, "
-        f"Heat Index {zone.heat_index_c:.1f}°C, {zone.exposed_2h} tài xế đã hoạt động ≥2 giờ."
+        f"Heat Index {zone.heat_index_c:.1f}°C, {zone.exposed_2h} drivers active ≥2 hours."
         for index, zone in enumerate(ranked, start=1)
     ]
-    return ToolResult("rank_hotspots", facts, "Ưu tiên can thiệp:\n\n" + "\n\n".join(lines))
+    return ToolResult("rank_hotspots", facts, "Intervention priority:\n\n" + "\n\n".join(lines))
 
 
 def get_ops_snapshot(zones: list[ZoneSnapshot]) -> ToolResult:
@@ -52,8 +52,8 @@ def get_ops_snapshot(zones: list[ZoneSnapshot]) -> ToolResult:
     danger_zones = sum(heat_tier(zone.heat_index_c) in {"DANGER", "EXTREME_DANGER"} for zone in zones)
     facts = {"active_drivers": active, "exposed_2h": exposed, "danger_zones": danger_zones}
     answer = (
-        f"Snapshot hiện có {active:,} tài xế hoạt động, {exposed:,} người đã hoạt động ≥2 giờ "
-        f"và {danger_zones} khu vực ở mức Nguy hiểm trở lên."
+        f"Snapshot currently has {active:,} active drivers, {exposed:,} who have been active ≥2 hours "
+        f"and {danger_zones} zones at Danger level or above."
     )
     return ToolResult("get_ops_snapshot", facts, answer)
 
@@ -71,10 +71,10 @@ def explain_zone(zone: ZoneSnapshot) -> ToolResult:
         "forecast_requests_30m": zone.forecast_requests_30m,
     }
     answer = (
-        f"{zone.name} có Heat Index {zone.heat_index_c:.1f}°C ({TIER_LABELS[tier]}), "
-        f"priority {operational_priority(zone)}/100. Trong {zone.active_drivers} tài xế hoạt động, "
-        f"{zone.exposed_2h} người đã chạy ≥2 giờ và {zone.exposed_4h} người ≥4 giờ. "
-        f"Nhu cầu 30 phút tới được mô phỏng ở mức {zone.forecast_requests_30m} yêu cầu."
+        f"{zone.name} has Heat Index {zone.heat_index_c:.1f}°C ({TIER_LABELS[tier]}), "
+        f"priority {operational_priority(zone)}/100. Out of {zone.active_drivers} active drivers, "
+        f"{zone.exposed_2h} have driven ≥2 hours and {zone.exposed_4h} ≥4 hours. "
+        f"Demand for the next 30 mins is simulated at {zone.forecast_requests_30m} requests."
     )
     return ToolResult("explain_zone", facts, answer)
 
@@ -83,10 +83,10 @@ def simulate_zone_action(zone: ZoneSnapshot) -> ToolResult:
     proposal = simulate_safepause(zone)
     facts = proposal.to_dict()
     answer = (
-        f"SafePause tại {zone.name} áp dụng cho {proposal.eligible_drivers} tài xế theo "
-        f"{proposal.waves} wave, tránh {proposal.exposure_minutes_avoided:,} phút phơi nhiễm. "
-        f"Ước tính tái phân bổ {proposal.reassigned_trips} chuyến, bỏ lỡ {proposal.missed_trips} chuyến, "
-        f"net platform cost {proposal.net_platform_cost_vnd:,.0f} VND và fulfillment "
+        f"SafePause at {zone.name} applies to {proposal.eligible_drivers} drivers across "
+        f"{proposal.waves} wave(s), avoiding {proposal.exposure_minutes_avoided:,} minutes of exposure. "
+        f"Estimated to reassign {proposal.reassigned_trips} trips, miss {proposal.missed_trips} trips, "
+        f"with a net platform cost of ${proposal.net_platform_cost_vnd / 25000:,.2f} and fulfillment "
         f"{proposal.projected_fulfillment_rate:.1%}. {proposal.guardrail_notes[0]}."
     )
     return ToolResult("simulate_safepause", facts, answer)
@@ -312,7 +312,7 @@ class HeatSafeCopilot:
             ]
             plain_question = _plain(question)
             if any(token in plain_question for token in ("xoa", "delete", "drop", "truncate", "sua bang")):
-                return "Tôi không thể xóa hoặc sửa dữ liệu. Copilot chỉ có các công cụ phân tích read-only.", "safety_guard"
+                return "I cannot delete or modify data. Copilot only provides read-only analytical tools.", "safety_guard"
             if any(token in plain_question for token in ("nen can thiep", "o dau", "khu vuc nao")):
                 allowed = ["recommend_intervention"]
             elif any(token in plain_question for token in ("chi phi", "safepause", "phuong an nghi")):
@@ -362,14 +362,14 @@ class HeatSafeCopilot:
             final_response = client.models.generate_content(
                 model=self.settings.gemini_model,
                 contents=(
-                    f"Câu hỏi người dùng: {question}\n"
-                    f"Kết quả đã xác minh từ HeatSafe tools: {json.dumps(outputs, ensure_ascii=False)}"
+                    f"User question: {question}\n"
+                    f"Verified results from HeatSafe tools: {json.dumps(outputs, ensure_ascii=False)}"
                 ),
                 config=types.GenerateContentConfig(
                     system_instruction=(
-                        "Bạn là HeatSafe Ops Decision Copilot. Chỉ dùng tool results được cung cấp; không phát minh số, "
-                        "khu vực hoặc nguyên nhân. Trả lời ngắn gọn bằng tiếng Việt, nêu nguồn nếu có, đánh dấu forecast "
-                        "và impact là ước tính, gọi cost/fulfillment/ETA là guardrails, và nói rõ action chỉ được ghi mô phỏng."
+                        "You are the HeatSafe Ops Decision Copilot. Use only provided tool results; do not invent numbers, "
+                        "zones, or causes. Reply concisely in English, cite sources if any, mark forecasts "
+                        "and impacts as estimates, refer to cost/fulfillment/ETA as guardrails, and clarify that actions are simulated."
                     ),
                     temperature=0.1,
                     max_output_tokens=550,
@@ -388,6 +388,6 @@ class HeatSafeCopilot:
             )
             return (
                 fallback.deterministic_answer
-                + f"\n\n_AI tool orchestration unavailable; đã dùng báo cáo deterministic ({type(exc).__name__})._",
+                + f"\n\n_AI tool orchestration unavailable; used deterministic report ({type(exc).__name__})._",
                 fallback.tool_name,
             )
