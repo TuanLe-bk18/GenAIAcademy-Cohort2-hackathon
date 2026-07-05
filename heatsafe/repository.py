@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .config import Settings
 from .models import ZoneSnapshot
@@ -11,7 +13,10 @@ from .models import ZoneSnapshot
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SNAPSHOT = ROOT / "data" / "demo_snapshot.json"
 FORECAST_CONTEXT_DAYS = 21
-FORECAST_CONTEXT_POINTS = 2_016
+FORECAST_CONTEXT_POINTS = 2_048
+MINIMUM_QUERY_BYTES_BILLED = 10 * 1024 * 1024
+MAX_FORECAST_MINUTES = 24 * 60
+HANOI_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 @dataclass(frozen=True)
@@ -125,28 +130,87 @@ class SnapshotRepository:
             zones.append(_parse_zone(enriched, source="Hackathon demo snapshot"))
         return SnapshotResult(zones, "snapshot", raw["scenario_name"])
 
+    @staticmethod
+    def _intraday_demand_factor(forecast_at: datetime, zone_seed: int) -> float:
+        """Return a smooth, zone-specific Hanoi ride-demand profile."""
+        local = forecast_at.astimezone(HANOI_TZ)
+        hour = local.hour + local.minute / 60
+        weekend = local.weekday() >= 5
+        phase = math.radians(zone_seed % 360)
+
+        def peak(center: float, width: float, amplitude: float) -> float:
+            return amplitude * math.exp(-0.5 * ((hour - center) / width) ** 2)
+
+        # Typical urban demand: commuter peaks on weekdays, a lunch lift, and
+        # the strongest peak in the evening. Weekends start later and stay busy
+        # later at night.
+        morning_center = (9.0 if weekend else 8.0) + ((zone_seed % 7) - 3) * 0.08
+        evening_center = (19.0 if weekend else 18.25) + ((zone_seed % 5) - 2) * 0.1
+        factor = 0.30
+        factor += peak(morning_center, 1.35, 0.44 if weekend else 0.66)
+        factor += peak(12.25, 1.65, 0.38)
+        factor += peak(evening_center, 1.75, 0.88 if weekend else 0.78)
+        factor += peak(22.0, 1.45, 0.22 if weekend else 0.12)
+
+        # Two low-amplitude waves add local variation without producing the
+        # jagged, independently-random points of the previous demo heuristic.
+        variation = (
+            1.0
+            + 0.045 * math.sin(2 * math.pi * hour / 1.75 + phase)
+            + 0.025 * math.sin(2 * math.pi * hour / 0.65 + phase / 2)
+        )
+        return max(0.2, factor * variation)
+
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
         zone = next(zone for zone in self.load().zones if zone.zone_id == zone_id)
-        horizon_minutes = max(15, min(240, horizon_minutes))
+        horizon_minutes = max(15, min(MAX_FORECAST_MINUTES, horizon_minutes))
         intervals = max(1, round(horizon_minutes / 15))
         per_interval = zone.forecast_requests_30m / 2
-        start = datetime.now(UTC).replace(second=0, microsecond=0)
-        points = tuple(
-            ForecastPoint(
-                forecast_at=start + timedelta(minutes=15 * (index + 1)),
-                predicted_requests=round(per_interval),
-                lower_bound=round(per_interval * 0.9),
-                upper_bound=round(per_interval * 1.1),
-            )
-            for index in range(intervals)
+        observed_at = zone.operations_observed_at.astimezone(UTC)
+        start = observed_at.replace(
+            minute=(observed_at.minute // 15) * 15,
+            second=0,
+            microsecond=0,
         )
+        zone_seed = sum((index + 1) * ord(char) for index, char in enumerate(zone_id))
+        forecast_times = [
+            start + timedelta(minutes=15 * (index + 1)) for index in range(intervals)
+        ]
+        factors = [self._intraday_demand_factor(at, zone_seed) for at in forecast_times]
+        anchor_count = min(2, intervals)
+        anchor_factor = sum(factors[:anchor_count]) / anchor_count
+        values = [max(0, round(per_interval * factor / anchor_factor)) for factor in factors]
+
+        # Preserve the snapshot's 30-minute forecast exactly; this is the value
+        # consumed by SafePause, while later points provide display context.
+        if intervals >= 2:
+            first_value = round(
+                zone.forecast_requests_30m * factors[0] / (factors[0] + factors[1])
+            )
+            values[0] = max(0, min(zone.forecast_requests_30m, first_value))
+            values[1] = zone.forecast_requests_30m - values[0]
+
+        points: list[ForecastPoint] = []
+        for index in range(intervals):
+            val = values[index]
+            hours_ahead = (index + 1) / 4
+            uncertainty = 0.12 + min(0.14, hours_ahead / 24 * 0.14)
+            points.append(
+                ForecastPoint(
+                    forecast_at=forecast_times[index],
+                    predicted_requests=val,
+                    lower_bound=max(0, round(val * (1 - uncertainty))),
+                    upper_bound=round(val * (1 + uncertainty)),
+                )
+            )
+
         return DemandForecast(
             zone_id=zone_id,
             horizon_minutes=horizon_minutes,
             predicted_requests=sum(point.predicted_requests for point in points),
-            source="Demo snapshot heuristic",
+            source="Demo snapshot · calibrated intraday heuristic",
             status="HEURISTIC",
-            points=points,
+            points=tuple(points),
         )
 
     def forecast_demand_many(
@@ -204,7 +268,7 @@ class BigQueryRepository:
         """
         config = self._job_config(
             [bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario)],
-            10_000_000,
+            MINIMUM_QUERY_BYTES_BILLED,
         )
         rows = [dict(row) for row in self._client().query(query, job_config=config).result()]
         if not rows:
@@ -234,7 +298,8 @@ class BigQueryRepository:
             freshness_warning=freshness_warning,
         )
 
-    def _forecast_query(self, many: bool) -> str:
+    def _forecast_query(self, many: bool, horizon_intervals: int = 4) -> str:
+        horizon_intervals = max(1, min(96, int(horizon_intervals)))
         zone_filter = "zone_id IN UNNEST(@zone_ids)" if many else "zone_id = @zone_id"
         id_cols = ", id_cols => ['zone_id']" if many else ""
         return f"""
@@ -247,7 +312,7 @@ class BigQueryRepository:
               data_col => 'requests',
               timestamp_col => 'interval_start'
               {id_cols},
-              horizon => @horizon_intervals,
+              horizon => {horizon_intervals},
               confidence_level => 0.9,
               context_window => {FORECAST_CONTEXT_POINTS}
             )
@@ -291,17 +356,20 @@ class BigQueryRepository:
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
         from google.cloud import bigquery
 
-        horizon_minutes = max(15, min(240, horizon_minutes))
+        horizon_minutes = max(15, min(MAX_FORECAST_MINUTES, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
         config = self._job_config(
             [
                 bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
                 bigquery.ScalarQueryParameter("zone_id", "STRING", zone_id),
-                bigquery.ScalarQueryParameter("horizon_intervals", "INT64", horizon_intervals),
             ],
             100_000_000,
         )
-        rows = list(self._client().query(self._forecast_query(False), job_config=config).result())
+        rows = list(
+            self._client()
+            .query(self._forecast_query(False, horizon_intervals), job_config=config)
+            .result()
+        )
         return self._build_forecast(zone_id, horizon_minutes, rows)
 
     def forecast_demand_many(
@@ -311,17 +379,20 @@ class BigQueryRepository:
 
         if not zone_ids:
             return {}
-        horizon_minutes = max(15, min(240, horizon_minutes))
+        horizon_minutes = max(15, min(MAX_FORECAST_MINUTES, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
         config = self._job_config(
             [
                 bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
                 bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
-                bigquery.ScalarQueryParameter("horizon_intervals", "INT64", horizon_intervals),
             ],
             100_000_000,
         )
-        rows = list(self._client().query(self._forecast_query(True), job_config=config).result())
+        rows = list(
+            self._client()
+            .query(self._forecast_query(True, horizon_intervals), job_config=config)
+            .result()
+        )
         grouped = {zone_id: [] for zone_id in zone_ids}
         for row in rows:
             grouped.setdefault(row.zone_id, []).append(row)

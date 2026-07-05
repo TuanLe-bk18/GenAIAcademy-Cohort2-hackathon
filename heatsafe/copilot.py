@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
-from dataclasses import replace
 
 from .config import Settings
 from .models import ZoneSnapshot
 from .repository import HybridRepository
 from .risk import TIER_LABELS, heat_tier, operational_priority
-from .safepause import simulate_safepause
+from .safepause import recommend_safepause
 from .telemetry import log_event
 
 
@@ -79,15 +78,29 @@ def explain_zone(zone: ZoneSnapshot) -> ToolResult:
     return ToolResult("explain_zone", facts, answer)
 
 
-def simulate_zone_action(zone: ZoneSnapshot) -> ToolResult:
-    proposal = simulate_safepause(zone)
+def simulate_zone_action(
+    zone: ZoneSnapshot, repository: HybridRepository | None = None
+) -> ToolResult:
+    repository = repository or HybridRepository("snapshot")
+    repository.load()
+    forecast = repository.forecast_demand(zone.zone_id, 240)
+    proposal, _ = recommend_safepause(
+        zone,
+        demand_by_interval=tuple(
+            point.predicted_requests for point in forecast.points
+        ),
+        upper_demand_by_interval=tuple(point.upper_bound for point in forecast.points),
+    )
     facts = proposal.to_dict()
+    facts["forecast_source"] = forecast.source
     answer = (
-        f"SafePause at {zone.name} applies to {proposal.eligible_drivers} drivers across "
+        f"SafePause at {zone.name} selects {proposal.selected_drivers} of "
+        f"{proposal.eligible_drivers} eligible drivers across "
         f"{proposal.waves} wave(s), avoiding {proposal.exposure_minutes_avoided:,} minutes of exposure. "
         f"Estimated to reassign {proposal.reassigned_trips} trips, miss {proposal.missed_trips} trips, "
-        f"with a net platform cost of ${proposal.net_platform_cost_vnd / 25000:,.2f} and fulfillment "
-        f"{proposal.projected_fulfillment_rate:.1%}. {proposal.guardrail_notes[0]}."
+        f"with a net platform cost of ${proposal.net_platform_cost_vnd / 25000:,.2f}, P90 fulfillment "
+        f"{proposal.p90_fulfillment_rate:.1%}, and P90 ETA +{proposal.p90_eta_increase_minutes:.1f} min. "
+        f"{proposal.guardrail_notes[0]}."
     )
     return ToolResult("simulate_safepause", facts, answer)
 
@@ -110,9 +123,20 @@ class HeatSafeCopilot:
     def _route(self, question: str) -> ToolResult:
         plain_question = _plain(question)
         zone = self._find_zone(question)
-        if any(word in plain_question for word in ("chi phi", "safe pause", "safepause", "can thiep", "nghi")):
+        if any(
+            word in plain_question
+            for word in (
+                "chi phi",
+                "cost",
+                "safe pause",
+                "safepause",
+                "pause",
+                "can thiep",
+                "nghi",
+            )
+        ):
             target = zone or max(self.zones, key=operational_priority)
-            return simulate_zone_action(target)
+            return simulate_zone_action(target, self.repository)
         if zone:
             return explain_zone(zone)
         if any(word in plain_question for word in ("khu vuc", "hotspot", "rui ro", "uu tien", "cao nhat")):
@@ -120,6 +144,16 @@ class HeatSafeCopilot:
         return get_ops_snapshot(self.zones)
 
     def answer(self, question: str) -> tuple[str, str]:
+        plain_question = _plain(question)
+        if any(
+            token in plain_question
+            for token in ("xoa", "delete", "drop", "truncate", "sua bang")
+        ):
+            return (
+                "I cannot delete or modify data. Copilot only provides read-only analytical tools.",
+                "safety_guard",
+            )
+
         fallback = self._route(question)
         if not self.settings.enable_ai:
             return fallback.deterministic_answer, fallback.tool_name
@@ -164,29 +198,21 @@ class HeatSafeCopilot:
             tool_calls.append("compare_safepause_options")
             budget_cap_vnd = budget_cap_vnd if budget_cap_vnd >= 100_000 else 1_000_000
             zone = resolve_zone(zone_name)
-            forecast = self.repository.forecast_demand(zone.zone_id, 30)
-            forecast_zone = replace(zone, forecast_requests_30m=forecast.predicted_requests)
-            proposals = [
-                simulate_safepause(
-                    forecast_zone,
-                    pause_minutes=pause_minutes,
-                    waves=waves,
-                    budget_cap_vnd=max(0, budget_cap_vnd),
-                )
-                for pause_minutes, waves in ((15, 2), (20, 3), (30, 4))
-            ]
-            ranked = sorted(
-                proposals,
-                key=lambda item: (
-                    not item.within_guardrails,
-                    item.net_platform_cost_vnd,
-                    -item.exposure_minutes_avoided,
+            forecast = self.repository.forecast_demand(zone.zone_id, 240)
+            recommended, ranked = recommend_safepause(
+                zone,
+                demand_by_interval=tuple(
+                    point.predicted_requests for point in forecast.points
                 ),
+                upper_demand_by_interval=tuple(
+                    point.upper_bound for point in forecast.points
+                ),
+                budget_cap_vnd=max(0, budget_cap_vnd),
             )
             return {
                 "forecast": forecast.to_dict(),
-                "options": [proposal.to_dict() for proposal in ranked],
-                "recommended_proposal_id": ranked[0].proposal_id,
+                "options": [proposal.to_dict() for proposal in ranked[:5]],
+                "recommended_proposal_id": recommended.proposal_id,
                 "all_impacts_are_estimates": True,
             }
 
@@ -204,15 +230,18 @@ class HeatSafeCopilot:
                 reverse=True,
             )[:3]
             forecasts = self.repository.forecast_demand_many(
-                [zone.zone_id for zone in top_zones], horizon_minutes
+                [zone.zone_id for zone in top_zones], max(240, horizon_minutes)
             )
             for zone in top_zones:
                 forecast = forecasts[zone.zone_id]
-                demand_30m = max(1, round(forecast.predicted_requests * 30 / horizon_minutes))
-                proposal = simulate_safepause(
-                    replace(zone, forecast_requests_30m=demand_30m),
-                    pause_minutes=20,
-                    waves=3,
+                proposal, _ = recommend_safepause(
+                    zone,
+                    demand_by_interval=tuple(
+                        point.predicted_requests for point in forecast.points
+                    ),
+                    upper_demand_by_interval=tuple(
+                        point.upper_bound for point in forecast.points
+                    ),
                     budget_cap_vnd=max(0, budget_cap_vnd),
                 )
                 candidates.append(
@@ -310,12 +339,12 @@ class HeatSafeCopilot:
                     },
                 ),
             ]
-            plain_question = _plain(question)
-            if any(token in plain_question for token in ("xoa", "delete", "drop", "truncate", "sua bang")):
-                return "I cannot delete or modify data. Copilot only provides read-only analytical tools.", "safety_guard"
             if any(token in plain_question for token in ("nen can thiep", "o dau", "khu vuc nao")):
                 allowed = ["recommend_intervention"]
-            elif any(token in plain_question for token in ("chi phi", "safepause", "phuong an nghi")):
+            elif any(
+                token in plain_question
+                for token in ("chi phi", "cost", "safepause", "safe pause", "pause", "phuong an nghi")
+            ):
                 allowed = ["compare_safepause_options"]
             elif any(token in plain_question for token in ("du bao", "forecast", "nhu cau")):
                 allowed = ["forecast_zone_demand"]

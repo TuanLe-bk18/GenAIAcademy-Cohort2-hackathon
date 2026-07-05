@@ -14,10 +14,11 @@ from heatsafe.ingestion import calculate_heat_index
 from heatsafe.repository import (
     BigQueryRepository,
     ForecastUnavailable,
+    MINIMUM_QUERY_BYTES_BILLED,
     SnapshotRepository,
 )
-from heatsafe.risk import heat_tier, operational_priority
-from heatsafe.safepause import simulate_safepause
+from heatsafe.risk import eligible_driver_cohorts, heat_tier, operational_priority
+from heatsafe.safepause import recommend_safepause, simulate_safepause
 
 
 class RiskTests(unittest.TestCase):
@@ -58,17 +59,44 @@ class RiskTests(unittest.TestCase):
             sum(point.predicted_requests for point in forecast.points),
         )
 
+    def test_snapshot_intraday_forecast_has_dense_realistic_variation(self):
+        repository = SnapshotRepository()
+        zone = repository.load().zones[0]
+        forecast = repository.forecast_demand(zone.zone_id, 24 * 60)
+        values = [point.predicted_requests for point in forecast.points]
+
+        self.assertEqual(len(forecast.points), 96)
+        self.assertEqual(sum(values[:2]), zone.forecast_requests_30m)
+        self.assertGreater(max(values), min(values) * 1.8)
+        self.assertTrue(
+            all(
+                point.lower_bound <= point.predicted_requests <= point.upper_bound
+                for point in forecast.points
+            )
+        )
+
+    def test_snapshot_intraday_forecast_is_stable_for_the_replay(self):
+        repository = SnapshotRepository()
+        first = repository.forecast_demand("hoan-kiem", 24 * 60)
+        second = repository.forecast_demand("hoan-kiem", 24 * 60)
+        self.assertEqual(first, second)
+
     def test_timesfm_query_is_scenario_and_time_bounded(self):
         repository = BigQueryRepository(scenario="live")
         query = repository._forecast_query(False)
         self.assertIn("scenario_id = @scenario_id", query)
         self.assertIn("INTERVAL 21 DAY", query)
-        self.assertIn("context_window => 2016", query)
+        self.assertIn("context_window => 2048", query)
+        self.assertIn("horizon => 4", query)
+        self.assertNotIn("@horizon_intervals", query)
 
     def test_timesfm_status_is_not_silently_accepted(self):
         row = SimpleNamespace(ai_forecast_status="insufficient history")
         with self.assertRaises(ForecastUnavailable):
             BigQueryRepository._build_forecast("hoan-kiem", 30, [row])
+
+    def test_bigquery_budget_meets_minimum_billable_unit(self):
+        self.assertEqual(MINIMUM_QUERY_BYTES_BILLED, 10_485_760)
 
 
 class SafePauseTests(unittest.TestCase):
@@ -77,7 +105,7 @@ class SafePauseTests(unittest.TestCase):
 
     def test_proposal_is_budget_and_sla_aware(self):
         proposal = simulate_safepause(self.zone)
-        self.assertEqual(proposal.exposure_minutes_avoided, proposal.eligible_drivers * 20)
+        self.assertEqual(proposal.exposure_minutes_avoided, proposal.selected_drivers * 20)
         self.assertGreaterEqual(proposal.reassigned_trips, 0)
         self.assertGreaterEqual(proposal.net_platform_cost_vnd, 0)
         self.assertLessEqual(proposal.partner_sponsorship_vnd, proposal.earnings_guard_cost_vnd)
@@ -88,17 +116,62 @@ class SafePauseTests(unittest.TestCase):
         self.assertFalse(proposal.within_guardrails)
 
     def test_audit_is_idempotent_by_proposal(self):
-        proposal = simulate_safepause(self.zone)
+        proposal = simulate_safepause(self.zone, cohort_coverage=0.5)
         with tempfile.TemporaryDirectory() as tmp:
             audit = InterventionAuditStore(Path(tmp) / "audit.db")
             first = audit.approve(proposal)
             second = audit.approve(proposal)
             self.assertEqual(len(audit.list_recent()), 1)
-            self.assertEqual(audit.protected_driver_count(), proposal.eligible_drivers)
+            self.assertLess(proposal.selected_drivers, proposal.eligible_drivers)
+            self.assertEqual(audit.protected_driver_count(), proposal.selected_drivers)
             self.assertEqual(first.intervention_id, second.intervention_id)
             self.assertEqual(first.intervention_id, intervention_id_for(proposal.proposal_id))
             self.assertEqual(first.status, "SIMULATED")
             self.assertEqual(first.dispatch_status, "NOT_APPLICABLE")
+
+    def test_cohort_separates_four_hour_drivers_from_two_to_four_hours(self):
+        high, medium = eligible_driver_cohorts(self.zone)
+        self.assertEqual(high, self.zone.exposed_4h)
+        self.assertEqual(medium, self.zone.exposed_2h - self.zone.exposed_4h)
+
+    def test_waves_change_p90_operational_impact(self):
+        demand = (150,) * 12
+        upper = (155,) * 12
+        two_waves = simulate_safepause(
+            self.zone,
+            pause_minutes=30,
+            waves=2,
+            demand_by_interval=demand,
+            upper_demand_by_interval=upper,
+        )
+        five_waves = simulate_safepause(
+            self.zone,
+            pause_minutes=30,
+            waves=5,
+            demand_by_interval=demand,
+            upper_demand_by_interval=upper,
+        )
+        self.assertGreater(
+            two_waves.p90_eta_increase_minutes,
+            five_waves.p90_eta_increase_minutes,
+        )
+
+    def test_optimizer_prioritizes_high_risk_and_robust_guardrails(self):
+        forecast = SnapshotRepository().forecast_demand(self.zone.zone_id, 240)
+        recommended, candidates = recommend_safepause(
+            self.zone,
+            demand_by_interval=tuple(point.predicted_requests for point in forecast.points),
+            upper_demand_by_interval=tuple(point.upper_bound for point in forecast.points),
+        )
+        self.assertTrue(candidates)
+        self.assertGreaterEqual(recommended.selected_drivers, recommended.high_priority_drivers)
+        self.assertTrue(recommended.within_guardrails)
+        self.assertGreaterEqual(recommended.p90_fulfillment_rate, 0.95)
+
+    def test_same_snapshot_and_controls_produce_idempotent_proposal_id(self):
+        first = simulate_safepause(self.zone, cohort_coverage=0.75)
+        second = simulate_safepause(self.zone, cohort_coverage=0.75)
+        self.assertEqual(first.proposal_id, second.proposal_id)
 
 
 class BigQuerySnapshotTests(unittest.TestCase):
@@ -211,15 +284,32 @@ class BigQueryIoTests(unittest.TestCase):
 
 class CopilotTests(unittest.TestCase):
     def test_copilot_safety(self):
-        zones = [generate_zone_snapshot("TEST")]
+        zones = SnapshotRepository().load().zones
         answer, tool = HeatSafeCopilot(zones).answer("Please delete the drivers table")
         self.assertEqual(tool, "safety_guard")
         self.assertIn("delete", answer)
 
     def test_copilot_routing(self):
-        zones = [generate_zone_snapshot("Hoàn Kiếm")]
-        _, tool = HeatSafeCopilot(zones).answer("What is the cost of pausing in Hoàn Kiếm?")
-        self.assertEqual(tool, "compare_safepause_options")
+        zones = SnapshotRepository().load().zones
+        copilot = HeatSafeCopilot(zones)
+        copilot.settings = replace(copilot.settings, enable_ai=False)
+        answer, tool = copilot.answer("What is the cost of pausing in Hoàn Kiếm?")
+        self.assertEqual(tool, "simulate_safepause")
+        forecast = copilot.repository.forecast_demand("hoan-kiem", 240)
+        expected, _ = recommend_safepause(
+            zones[0],
+            demand_by_interval=tuple(
+                point.predicted_requests for point in forecast.points
+            ),
+            upper_demand_by_interval=tuple(
+                point.upper_bound for point in forecast.points
+            ),
+        )
+        self.assertIn(
+            f"selects {expected.selected_drivers} of {expected.eligible_drivers}",
+            answer,
+        )
+        self.assertIn(f"P90 fulfillment {expected.p90_fulfillment_rate:.1%}", answer)
 
 
 if __name__ == "__main__":

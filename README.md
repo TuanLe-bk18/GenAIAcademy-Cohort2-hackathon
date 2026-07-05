@@ -26,6 +26,23 @@ The services have concrete responsibilities:
 - **Decision audit** records simulated interventions only. The demo never sends an operational command to drivers.
 - **Cloud Run** hosts Streamlit and a separate weather-ingestion job; structured stdout events flow to Cloud Logging.
 
+## Decision engine
+
+SafePause is a deterministic digital-twin simulation; Gemini never invents or
+approves an action. For every zone the engine:
+
+1. separates the eligible pool into drivers active 4+ hours and 2–4 hours;
+2. enumerates pause duration, cohort coverage, and staggered-wave candidates;
+3. simulates supply, demand, backlog, fulfillment, and ETA every five minutes;
+4. validates each candidate against median and upper-bound demand;
+5. ranks feasible actions safety-first, then by P90 SLA impact and platform cost.
+
+The selected proposal retains the full wave timeline, eligible-versus-selected
+counts, P50/P90 outcomes, reason codes, and a deterministic proposal ID. BigQuery
+stores this structured audit payload; TimesFM `AI.FORECAST` supplies the demand
+distribution used by the simulator. Gemini receives only verified forecast and
+proposal objects through allowlisted tools and acts as the explanation layer.
+
 ## GCP resources
 
 `infra/provision_gcp.py` creates or migrates resources without changing data:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pydeck as pdk
@@ -17,8 +18,12 @@ from heatsafe.risk import (
     operational_priority,
     priority_label,
 )
-from heatsafe.safepause import simulate_safepause
+from heatsafe.safepause import recommend_safepause, simulate_safepause
 from heatsafe.telemetry import log_event
+
+DEMAND_CHART_HORIZON_MINUTES = 24 * 60
+HANOI_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+COPILOT_STATE_VERSION = 2
 
 st.set_page_config(page_title="HeatSafe Ops", page_icon="☀️", layout="wide")
 
@@ -241,10 +246,17 @@ with detail_col:
     )
     selected = next(zone for zone in zones if zone.name == zone_name)
     try:
-        demand_forecast = load_demand_forecast(selected.zone_id, 30, scenario)
+        demand_forecast = load_demand_forecast(
+            selected.zone_id, DEMAND_CHART_HORIZON_MINUTES, scenario
+        )
         forecast_available = True
+        requests_30m = (
+            sum(point.predicted_requests for point in demand_forecast.points[:2])
+            if demand_forecast.points
+            else selected.forecast_requests_30m
+        )
         selected_with_forecast = replace(
-            selected, forecast_requests_30m=demand_forecast.predicted_requests
+            selected, forecast_requests_30m=requests_30m
         )
     except Exception as exc:
         demand_forecast = None
@@ -293,7 +305,7 @@ if demand_forecast and demand_forecast.points:
     forecast_points = pd.DataFrame(
         [
             {
-                "Time": point.forecast_at,
+                "Time": point.forecast_at.astimezone(HANOI_TZ),
                 "Median": point.predicted_requests,
                 "Lower (pointwise)": point.lower_bound,
                 "Upper (pointwise)": point.upper_bound,
@@ -301,29 +313,94 @@ if demand_forecast and demand_forecast.points:
             for point in demand_forecast.points
         ]
     ).set_index("Time")
-    st.line_chart(forecast_points)
-    st.caption("90% bound applies to each 15-minute interval; it is not a confidence interval for the full 30 minutes.")
+    st.line_chart(forecast_points, height=360)
+    st.caption(
+        "Next 24 hours · 15-minute intervals · Hanoi time. "
+        "The 90% bound applies to each interval, not to the full-day total."
+    )
 
-control_cols = st.columns(4)
-pause_minutes = control_cols[0].number_input("Pause duration (min)", min_value=5, max_value=60, value=20, step=5)
-waves = control_cols[1].number_input("Staggered waves", min_value=1, max_value=10, value=3, step=1)
-budget_cap = control_cols[2].number_input("Platform cost cap ($)", min_value=0.0, value=40.0, step=4.0)
-sponsor_per_driver = control_cols[3].number_input("Partner contribution / driver ($)", min_value=0, value=8, step=1)
+constraint_cols = st.columns(2)
+budget_cap = constraint_cols[0].number_input(
+    "Platform cost cap ($)", min_value=0.0, value=40.0, step=4.0
+)
+sponsor_per_driver = constraint_cols[1].number_input(
+    "Partner contribution / selected driver ($)",
+    min_value=0.0,
+    value=0.32,
+    step=0.04,
+)
+
+demand_values = tuple(
+    point.predicted_requests for point in demand_forecast.points
+) if demand_forecast else ()
+upper_demand_values = tuple(
+    point.upper_bound for point in demand_forecast.points
+) if demand_forecast else ()
+if demand_values:
+    recommended, ranked_candidates = recommend_safepause(
+        selected_with_forecast,
+        demand_by_interval=demand_values,
+        upper_demand_by_interval=upper_demand_values,
+        budget_cap_vnd=int(budget_cap * 25_000),
+        sponsor_per_driver_vnd=int(sponsor_per_driver * 25_000),
+    )
+else:
+    recommended = simulate_safepause(selected_with_forecast)
+    ranked_candidates = (recommended,)
+
+st.info(
+    f"Recommended: select {recommended.selected_drivers}/{recommended.eligible_drivers} drivers · "
+    f"{recommended.pause_minutes} min · {recommended.waves} waves · "
+    f"P90 fulfillment {recommended.p90_fulfillment_rate:.1%} · "
+    f"P90 ETA +{recommended.p90_eta_increase_minutes:.1f} min"
+)
+st.caption(recommended.decision_reason)
+
+action_cols = st.columns(3)
+pause_minutes = action_cols[0].number_input(
+    "Pause duration (min)",
+    min_value=5,
+    max_value=60,
+    value=recommended.pause_minutes,
+    step=5,
+    key=f"pause_minutes_{selected.zone_id}",
+)
+waves = action_cols[1].number_input(
+    "Staggered waves",
+    min_value=1,
+    max_value=10,
+    value=recommended.waves,
+    step=1,
+    key=f"waves_{selected.zone_id}",
+)
+coverage_percent = action_cols[2].select_slider(
+    "Cohort coverage",
+    options=[50, 75, 100],
+    value=min([50, 75, 100], key=lambda value: abs(value - recommended.cohort_coverage * 100)),
+    format_func=lambda value: f"{value}%",
+    key=f"coverage_{selected.zone_id}",
+)
 
 proposal_key = (
     selected.zone_id,
     selected.snapshot_id,
-    demand_forecast.predicted_requests if demand_forecast else None,
+    selected_with_forecast.forecast_requests_30m if demand_forecast else None,
     pause_minutes,
     waves,
+    coverage_percent,
     budget_cap,
     sponsor_per_driver,
+    demand_values,
+    upper_demand_values,
 )
 if st.session_state.get("proposal_key") != proposal_key:
     st.session_state.proposal = simulate_safepause(
         selected_with_forecast,
         pause_minutes=pause_minutes,
         waves=waves,
+        cohort_coverage=coverage_percent / 100,
+        demand_by_interval=demand_values or None,
+        upper_demand_by_interval=upper_demand_values or None,
         budget_cap_vnd=int(budget_cap * 25000),
         sponsor_per_driver_vnd=int(sponsor_per_driver * 25000),
     )
@@ -373,11 +450,12 @@ cost_bars_html = (
 metrics_html = (
     f'<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.8rem; margin-bottom: 1.2rem; width: 100%;">'
     f'<div class="panel" style="padding: 0.8rem; text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 80px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 10px;">'
-    f'<div style="font-size: 0.7rem; color: #8e9bb0; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.2rem;">Eligible</div>'
-    f'<div style="font-size: 1.6rem; font-weight: 700; color: #fff;">{proposal.eligible_drivers}</div>'
+    f'<div style="font-size: 0.7rem; color: #8e9bb0; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.2rem;">Selected cohort</div>'
+    f'<div style="font-size: 1.6rem; font-weight: 700; color: #fff;">{proposal.selected_drivers}/{proposal.eligible_drivers}</div>'
+    f'<div style="font-size: 0.68rem; color: #8e9bb0; margin-top: 0.15rem;">{proposal.high_priority_drivers} high · {proposal.medium_priority_drivers} medium</div>'
     f'</div>'
     f'<div class="panel" style="padding: 0.8rem; text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 80px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 10px;">'
-    f'<div style="font-size: 0.7rem; color: #8e9bb0; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.2rem;">Avoided</div>'
+    f'<div style="font-size: 0.7rem; color: #8e9bb0; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.2rem;">Planned recovery</div>'
     f'<div style="font-size: 1.6rem; font-weight: 700; color: #36cfc9;">{proposal.exposure_minutes_avoided:,}m</div>'
     f'</div>'
     f'<div class="panel" style="padding: 0.8rem; text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 80px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 10px;">'
@@ -393,13 +471,54 @@ metrics_html = (
     f'<div style="font-size: 1.6rem; font-weight: 700; color: #fff;">{format_currency(proposal.net_platform_cost_vnd)}</div>'
     f'</div>'
     f'<div class="panel" style="padding: 0.8rem; text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 80px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 10px;">'
-    f'<div style="font-size: 0.7rem; color: #8e9bb0; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.2rem;">Fulfillment</div>'
-    f'<div style="font-size: 1.6rem; font-weight: 700; color: #52c41a;">{proposal.projected_fulfillment_rate:.1%}</div>'
+    f'<div style="font-size: 0.7rem; color: #8e9bb0; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.2rem;">P90 fulfillment</div>'
+    f'<div style="font-size: 1.6rem; font-weight: 700; color: #52c41a;">{proposal.p90_fulfillment_rate:.1%}</div>'
     f'</div>'
     f'</div>'
 )
 
 st.markdown(metrics_html, unsafe_allow_html=True)
+
+timeline_col, alternatives_col = st.columns([1, 1.4], gap="large")
+with timeline_col:
+    st.markdown("**Wave timeline**")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Wave": wave.wave,
+                    "Start": f"+{wave.start_minute}m",
+                    "End": f"+{wave.end_minute}m",
+                    "Drivers": wave.selected_drivers,
+                    "4h+": wave.high_priority_drivers,
+                    "2–4h": wave.medium_priority_drivers,
+                }
+                for wave in proposal.wave_plan
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+with alternatives_col:
+    st.markdown("**Top robust alternatives**")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Drivers": candidate.selected_drivers,
+                    "Pause": f"{candidate.pause_minutes}m",
+                    "Waves": candidate.waves,
+                    "P90 fulfill": f"{candidate.p90_fulfillment_rate:.1%}",
+                    "P90 ETA": f"+{candidate.p90_eta_increase_minutes:.1f}m",
+                    "Cost": format_currency(candidate.net_platform_cost_vnd),
+                    "Feasible": candidate.within_guardrails,
+                }
+                for candidate in ranked_candidates[:5]
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
 
 cost_col, approval_col = st.columns([1.2, 1], gap="large")
 with cost_col:
@@ -425,7 +544,7 @@ with approval_col:
         f'<span style="font-weight: 600; font-size: 0.95rem; color: {status_text_color};">{proposal.guardrail_notes[0]}</span>'
         f'</div>'
         f'<div style="font-size: 0.85rem; color: #aebbd0; display: flex; flex-direction: column; gap: 0.4rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.6rem;">'
-        f'<div><span style="color: #8e9bb0;">ETA Impact:</span> <b>+{proposal.projected_eta_increase_minutes:.1f} min</b></div>'
+        f'<div><span style="color: #8e9bb0;">P50 / P90 ETA:</span> <b>+{proposal.projected_eta_increase_minutes:.1f} / +{proposal.p90_eta_increase_minutes:.1f} min</b></div>'
         f'<div><span style="color: #8e9bb0;">Logistics:</span> <b>{proposal.waves}</b> staggered waves · Max <b>{proposal.planned_paused_driver_slots}</b> drivers/wave</div>'
         f'</div>'
         f'</div>'
@@ -473,7 +592,7 @@ with approval_col:
             and forecast_available
             and result.data_fresh
             and proposal.within_guardrails
-            and proposal.eligible_drivers > 0
+            and proposal.selected_drivers > 0
         ),
         use_container_width=True
     ):
@@ -497,7 +616,8 @@ copilot_col, audit_col = st.columns([1.2, 1], gap="large")
 with copilot_col:
     st.subheader("HeatSafe Copilot")
     st.caption("Only calls approved analytics tools; does not generate or execute SQL.")
-    if "messages" not in st.session_state:
+    if st.session_state.get("copilot_state_version") != COPILOT_STATE_VERSION:
+        st.session_state.copilot_state_version = COPILOT_STATE_VERSION
         st.session_state.messages = [
             {"role": "assistant", "content": "Ask me about priority zones, causes, or SafePause costs."}
         ]

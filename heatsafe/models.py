@@ -47,6 +47,16 @@ class ZoneSnapshot:
 
 
 @dataclass(frozen=True)
+class PauseWave:
+    wave: int
+    start_minute: int
+    end_minute: int
+    selected_drivers: int
+    high_priority_drivers: int
+    medium_priority_drivers: int
+
+
+@dataclass(frozen=True)
 class SafePauseProposal:
     proposal_id: str
     zone_id: str
@@ -54,6 +64,10 @@ class SafePauseProposal:
     created_at: datetime
     source_snapshot_at: datetime
     eligible_drivers: int
+    high_priority_drivers: int
+    medium_priority_drivers: int
+    selected_drivers: int
+    cohort_coverage: float
     pause_minutes: int
     waves: int
     planned_paused_driver_slots: int
@@ -65,16 +79,23 @@ class SafePauseProposal:
     net_platform_cost_vnd: int
     partner_hydration_value_vnd: int
     exposure_minutes_avoided: int
+    risk_weighted_minutes_avoided: int
+    simulation_horizon_minutes: int
     projected_fulfillment_rate: float
     projected_eta_increase_minutes: float
+    p90_fulfillment_rate: float
+    p90_eta_increase_minutes: float
     within_guardrails: bool
     guardrail_notes: tuple[str, ...]
+    decision_reason: str
+    wave_plan: tuple[PauseWave, ...]
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["created_at"] = self.created_at.isoformat()
         value["source_snapshot_at"] = self.source_snapshot_at.isoformat()
         value["guardrail_notes"] = list(self.guardrail_notes)
+        value["wave_plan"] = [asdict(wave) for wave in self.wave_plan]
         return value
 
 

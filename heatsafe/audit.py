@@ -12,6 +12,7 @@ from .models import InterventionEvent, SafePauseProposal
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "interventions.db"
 DEMO_ACTOR = "Public demo session"
 DEMO_ACTOR_TYPE = "UNAUTHENTICATED_DEMO"
+MINIMUM_QUERY_BYTES_BILLED = 10 * 1024 * 1024
 
 
 def intervention_id_for(proposal_id: str) -> str:
@@ -43,6 +44,7 @@ class InterventionAuditStore:
                     dispatch_status TEXT NOT NULL DEFAULT 'NOT_APPLICABLE',
                     zone_id TEXT NOT NULL,
                     eligible_drivers INTEGER NOT NULL,
+                    selected_drivers INTEGER NOT NULL,
                     exposure_minutes_avoided INTEGER NOT NULL,
                     net_platform_cost_vnd INTEGER NOT NULL,
                     proposal_json TEXT NOT NULL
@@ -61,6 +63,15 @@ class InterventionAuditStore:
                 db.execute(
                     "ALTER TABLE interventions ADD COLUMN dispatch_status TEXT NOT NULL "
                     "DEFAULT 'NOT_APPLICABLE'"
+                )
+            if "selected_drivers" not in columns:
+                db.execute(
+                    "ALTER TABLE interventions ADD COLUMN selected_drivers INTEGER "
+                    "NOT NULL DEFAULT 0"
+                )
+                db.execute(
+                    "UPDATE interventions SET selected_drivers = eligible_drivers "
+                    "WHERE selected_drivers = 0"
                 )
 
     def approve(
@@ -85,8 +96,9 @@ class InterventionAuditStore:
                 INSERT OR IGNORE INTO interventions (
                     intervention_id, proposal_id, approved_at, approved_by,
                     actor_type, status, dispatch_status, zone_id, eligible_drivers,
-                    exposure_minutes_avoided, net_platform_cost_vnd, proposal_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    selected_drivers, exposure_minutes_avoided,
+                    net_platform_cost_vnd, proposal_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.intervention_id,
@@ -98,6 +110,7 @@ class InterventionAuditStore:
                     event.dispatch_status,
                     proposal.zone_id,
                     proposal.eligible_drivers,
+                    proposal.selected_drivers,
                     proposal.exposure_minutes_avoided,
                     proposal.net_platform_cost_vnd,
                     json.dumps(proposal.to_dict(), ensure_ascii=False),
@@ -124,7 +137,7 @@ class InterventionAuditStore:
             rows = db.execute(
                 """
                 SELECT intervention_id, approved_at, approved_by, actor_type, status,
-                       dispatch_status, zone_id, eligible_drivers,
+                       dispatch_status, zone_id, eligible_drivers, selected_drivers,
                        exposure_minutes_avoided, net_platform_cost_vnd
                 FROM interventions ORDER BY approved_at DESC LIMIT ?
                 """,
@@ -135,7 +148,7 @@ class InterventionAuditStore:
     def protected_driver_count(self) -> int:
         with self._connect() as db:
             value = db.execute(
-                "SELECT COALESCE(SUM(eligible_drivers), 0) FROM interventions "
+                "SELECT COALESCE(SUM(selected_drivers), 0) FROM interventions "
                 "WHERE status IN ('SIMULATED', 'APPROVED')"
             ).fetchone()[0]
         return int(value)
@@ -157,7 +170,10 @@ class BigQueryInterventionAuditStore:
         return self._client_instance
 
     @staticmethod
-    def _config(parameters: list, maximum_bytes_billed: int = 10_000_000):
+    def _config(
+        parameters: list,
+        maximum_bytes_billed: int = MINIMUM_QUERY_BYTES_BILLED,
+    ):
         from google.cloud import bigquery
 
         return bigquery.QueryJobConfig(
@@ -183,11 +199,11 @@ class BigQueryInterventionAuditStore:
         ON target.proposal_id = source.proposal_id
           AND target.created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
         WHEN NOT MATCHED THEN INSERT (
-          proposal_id, created_at, zone_id, eligible_drivers,
+          proposal_id, created_at, zone_id, eligible_drivers, selected_drivers,
           exposure_minutes_avoided, net_platform_cost_vnd,
           projected_fulfillment_rate, within_guardrails, proposal_json
         ) VALUES (
-          @proposal_id, @created_at, @zone_id, @eligible_drivers,
+          @proposal_id, @created_at, @zone_id, @eligible_drivers, @selected_drivers,
           @exposure_minutes_avoided, @net_platform_cost_vnd,
           @projected_fulfillment_rate, @within_guardrails,
           PARSE_JSON(@proposal_json)
@@ -198,11 +214,11 @@ class BigQueryInterventionAuditStore:
           AND target.approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
         WHEN NOT MATCHED THEN INSERT (
           intervention_id, proposal_id, approved_at, approved_by, actor_type,
-          status, dispatch_status, zone_id, eligible_drivers,
+          status, dispatch_status, zone_id, eligible_drivers, selected_drivers,
           exposure_minutes_avoided, net_platform_cost_vnd
         ) VALUES (
           @intervention_id, @proposal_id, @approved_at, @approved_by, @actor_type,
-          'SIMULATED', 'NOT_APPLICABLE', @zone_id, @eligible_drivers,
+          'SIMULATED', 'NOT_APPLICABLE', @zone_id, @eligible_drivers, @selected_drivers,
           @exposure_minutes_avoided, @net_platform_cost_vnd
         );
         COMMIT TRANSACTION;
@@ -216,6 +232,7 @@ class BigQueryInterventionAuditStore:
             bigquery.ScalarQueryParameter("actor_type", "STRING", actor_type),
             bigquery.ScalarQueryParameter("zone_id", "STRING", proposal.zone_id),
             bigquery.ScalarQueryParameter("eligible_drivers", "INT64", proposal.eligible_drivers),
+            bigquery.ScalarQueryParameter("selected_drivers", "INT64", proposal.selected_drivers),
             bigquery.ScalarQueryParameter(
                 "exposure_minutes_avoided", "INT64", proposal.exposure_minutes_avoided
             ),
@@ -252,7 +269,7 @@ class BigQueryInterventionAuditStore:
         limit = max(1, min(limit, 100))
         query = f"""
             SELECT intervention_id, approved_at, approved_by, actor_type, status,
-                   dispatch_status, zone_id, eligible_drivers,
+                   dispatch_status, zone_id, eligible_drivers, selected_drivers,
                    exposure_minutes_avoided, net_platform_cost_vnd
             FROM `{self.dataset}.intervention_events`
             WHERE approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
@@ -265,7 +282,7 @@ class BigQueryInterventionAuditStore:
 
     def protected_driver_count(self) -> int:
         query = f"""
-            SELECT COALESCE(SUM(eligible_drivers), 0) protected
+            SELECT COALESCE(SUM(COALESCE(selected_drivers, eligible_drivers)), 0) protected
             FROM `{self.dataset}.intervention_events`
             WHERE approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
               AND status IN ('SIMULATED', 'APPROVED')

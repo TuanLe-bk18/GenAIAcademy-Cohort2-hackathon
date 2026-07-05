@@ -59,6 +59,7 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
         "intervention_proposals": [
             _f("proposal_id", "STRING"), _f("created_at", "TIMESTAMP"),
             _f("zone_id", "STRING"), _f("eligible_drivers", "INT64"),
+            _f("selected_drivers", "INT64", "NULLABLE"),
             _f("exposure_minutes_avoided", "INT64"),
             _f("net_platform_cost_vnd", "INT64"),
             _f("projected_fulfillment_rate", "FLOAT64"),
@@ -70,6 +71,7 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("actor_type", "STRING", "NULLABLE"), _f("status", "STRING"),
             _f("dispatch_status", "STRING"), _f("zone_id", "STRING"),
             _f("eligible_drivers", "INT64"),
+            _f("selected_drivers", "INT64", "NULLABLE"),
             _f("exposure_minutes_avoided", "INT64"),
             _f("net_platform_cost_vnd", "INT64"),
         ],

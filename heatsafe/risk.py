@@ -43,7 +43,10 @@ def heat_tier(heat_index_c: float) -> str:
 def operational_priority(zone: ZoneSnapshot) -> int:
     """Prioritize operations using environmental severity and exposure duration."""
     tier_points = HEAT_TIERS.index(heat_tier(zone.heat_index_c)) * 20
-    duration_points = 20 if zone.exposed_4h > 0 else 10 if zone.exposed_2h > 0 else 0
+    active = max(zone.active_drivers, 1)
+    exposed_2h_share = max(0.0, min(1.0, zone.exposed_2h / active))
+    exposed_4h_share = max(0.0, min(exposed_2h_share, zone.exposed_4h / active))
+    duration_points = min(20, round(40 * exposed_2h_share + 80 * exposed_4h_share))
     return min(100, tier_points + duration_points)
 
 
@@ -57,10 +60,17 @@ def priority_label(score: int) -> str:
     return "Monitor"
 
 
-def eligible_driver_count(zone: ZoneSnapshot) -> int:
+def eligible_driver_cohorts(zone: ZoneSnapshot) -> tuple[int, int]:
+    """Return high (4h+) and medium (2-4h) policy cohorts."""
     tier = heat_tier(zone.heat_index_c)
     if tier in {"DANGER", "EXTREME_DANGER"}:
-        return zone.exposed_2h
+        high = min(zone.exposed_4h, zone.exposed_2h)
+        return high, max(0, zone.exposed_2h - high)
     if tier == "EXTREME_CAUTION":
-        return zone.exposed_4h
-    return 0
+        return zone.exposed_4h, 0
+    return 0, 0
+
+
+def eligible_driver_count(zone: ZoneSnapshot) -> int:
+    high, medium = eligible_driver_cohorts(zone)
+    return high + medium
