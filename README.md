@@ -1,54 +1,55 @@
-# HeatSafe Ops
+# HeatSafe AI Ops
 
-GCP-native decision-intelligence platform for protecting two-wheel ride-hailing drivers during extreme heat while keeping platform cost, fulfillment and ETA within explicit guardrails.
+GCP-native predictive intervention platform for protecting two-wheel ride-hailing drivers during extreme heat while keeping platform cost, fulfillment and ETA within explicit guardrails.
 
 HeatSafe uses Heat Index as a screening indicator. Operational priority and intervention estimates are not medical diagnoses or proven reductions in health incidents.
 
 ## Architecture
 
 ```text
-Open-Meteo -> Cloud Run Job -> Cloud Storage raw JSON -> BigQuery history
-Simulated fleet operations ---------------------------> current live snapshot
-Demand history ---------------------------------------> BigQuery AI.FORECAST
-                                                           |
-                                      One Cloud Run Streamlit demo
-                                      SafePause + Vertex AI Gemini
-                                                           |
-                                      BigQuery simulated decision audit
+Weather + driver telemetry + intervention outcomes -> BigQuery system of record
+Demand history ------------------------------------> TimesFM AI.FORECAST
+Driver state + action + outcome --------------------> BigQuery ML risk classifier
+                                                         |
+                                      action-conditioned counterfactual scores
+                                                         |
+                                      constrained optimizer -> Cloud Run UI
+                                                         |
+                                      Gemini explanation + BigQuery audit
 ```
 
 The services have concrete responsibilities:
 
 - **Cloud Storage** stores immutable provider payloads and replay scenarios. BigQuery rows retain the `raw_gcs_uri` lineage.
-- **BigQuery** stores append-only history plus a small scenario-safe `zone_snapshots_current` table used by the dashboard.
-- **BigQuery ML** uses TimesFM `AI.FORECAST` to predict zone demand without a managed training pipeline.
-- **Vertex AI Gemini** selects from allowlisted decision functions; it never writes SQL or approves actions.
+- **BigQuery** stores history, driver features, outcomes, forecasts, model evaluations, predictions and audits.
+- **BigQuery ML** uses TimesFM for demand and a boosted-tree classifier for individual 60-minute operational heat-risk escalation.
+- **Counterfactual scoring** evaluates no action and eight SafePause timing/duration actions per driver; without matching predictions the app provides no recommendation.
+- **Vertex AI Gemini** explains allowlisted model evidence; it never writes SQL or approves actions.
 - **Decision audit** records simulated interventions only. The demo never sends an operational command to drivers.
 - **Cloud Run** hosts Streamlit and a separate weather-ingestion job; structured stdout events flow to Cloud Logging.
 
 ## Decision engine
 
-SafePause is a deterministic digital-twin simulation; Gemini never invents or
-approves an action. For every zone the engine:
+SafePause combines learned risk with deterministic safety constraints. For every zone the engine:
 
-1. separates the eligible pool into drivers active 4+ hours and 2–4 hours;
-2. enumerates pause duration, cohort coverage, and staggered-wave candidates;
-3. simulates supply, demand, backlog, fulfillment, and ETA every five minutes;
-4. validates each candidate against median and upper-bound demand;
-5. ranks feasible actions safety-first, then by P90 SLA impact and platform cost.
+1. loads snapshot-matched BigQuery ML risk predictions for every driver and action;
+2. keeps drivers with baseline risk at least 35% and estimated action reduction of at least five percentage points;
+3. enumerates pause duration, coverage and staggered-wave candidates;
+4. simulates incremental supply, backlog, fulfillment and ETA against TimesFM median and upper demand;
+5. returns a recommendation only when cost and incremental SLA guardrails all pass.
 
-The selected proposal retains the full wave timeline, eligible-versus-selected
-counts, P50/P90 outcomes, reason codes, and a deterministic proposal ID. BigQuery
-stores this structured audit payload; TimesFM `AI.FORECAST` supplies the demand
-distribution used by the simulator. Gemini receives only verified forecast and
-proposal objects through allowlisted tools and acts as the explanation layer.
+The proposal retains before/after risk, feature attributions, model version,
+prediction run, wave timeline, stress outcomes, costs and a deterministic proposal ID.
+`MODEL_UNAVAILABLE` and `NO_FEASIBLE` states never contain a recommendation.
 
 ## GCP resources
 
 `infra/provision_gcp.py` creates or migrates resources without changing data:
 
 - Bucket: `${GOOGLE_CLOUD_PROJECT}-heatsafe-raw`
-- BigQuery: `weather_observations`, `zone_operations`, `demand_history`, `coolstop_partners`, `intervention_proposals`, `intervention_events`
+- BigQuery sources: `weather_observations`, `zone_operations`, `demand_history`, `driver_state_history`, `driver_intervention_outcomes`
+- BigQuery AI outputs: `driver_current_features`, `driver_risk_predictions`, `zone_demand_forecasts`, `model_evaluations`
+- BigQuery audit: `intervention_proposals`, `intervention_events`
 - Current snapshot: `zone_snapshots_current`
 - Views: `zone_snapshots_live`, `zone_snapshots_heatwave`
 
@@ -59,7 +60,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 export GOOGLE_CLOUD_PROJECT=cohort2track2
 python infra/provision_gcp.py --seed-demo
-python generate_data.py
+python infra/ml_pipeline.py --all --scenario heatwave
 ```
 
 `generate_data.py` obtains real Open-Meteo weather and combines it with clearly labelled simulated fleet operations in one coherent live `snapshot_id`. For the prototype, the deployed Cloud Run Job is run manually when the live snapshot needs refreshing; no recurring scheduler is required.
@@ -75,13 +76,13 @@ HEATSAFE_ENABLE_AI=1 \
 streamlit run app.py
 ```
 
-The sidebar can switch between the GCS heatwave replay and current Open-Meteo weather. For a fully offline fallback:
+The sidebar can switch between the GCS heatwave replay and current Open-Meteo weather. Offline mode is monitoring-only because AI recommendations fail closed:
 
 ```bash
 HEATSAFE_MODE=snapshot HEATSAFE_ENABLE_AI=0 streamlit run app.py
 ```
 
-## Gemini decision tools
+## Gemini evidence tools
 
 - `get_operational_snapshot`
 - `rank_heat_hotspots`
@@ -94,7 +95,7 @@ Tool selection uses Gemini function calling with an explicit allowlist. Destruct
 
 ## Deploy
 
-The deployment script enables required APIs, provisions schema, deploys one public Streamlit demo and creates its scheduled ingestion job:
+The deployment script provisions schema, deploys the public Streamlit demo and creates manually invoked ingestion, model-training and scoring jobs. It creates no recurring Scheduler.
 
 ```bash
 chmod +x scripts/deploy_gcp.sh

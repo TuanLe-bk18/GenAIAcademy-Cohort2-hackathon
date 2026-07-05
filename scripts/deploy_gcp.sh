@@ -30,7 +30,9 @@ export GOOGLE_CLOUD_REGION="${REGION}"
 export HEATSAFE_DATASET="${DATASET}"
 export HEATSAFE_RAW_BUCKET="${RAW_BUCKET}"
 
-if [[ "${SEED_FLAG}" == "--seed-demo" ]]; then
+if [[ "${SEED_FLAG}" == "--seed-demo" ]] || \
+  ! bq --project_id="${PROJECT_ID}" --location="${REGION}" show --model \
+    "${PROJECT_ID}:${DATASET}.heat_risk_escalation_model" >/dev/null 2>&1; then
   python3 infra/provision_gcp.py --seed-demo
 else
   python3 infra/provision_gcp.py
@@ -46,11 +48,35 @@ gcloud run deploy heatsafe-ops --source . --project "${PROJECT_ID}" --region "${
   --allow-unauthenticated --service-account "${SERVICE_ACCOUNT}" --max-instances 2 \
   --labels "app=heatsafe,env=demo,managed_by=scripts" --set-env-vars "${RUNTIME_ENV}"
 
-gcloud run jobs deploy heatsafe-live-ingest --source . --project "${PROJECT_ID}" \
+APP_IMAGE="$(gcloud run services describe heatsafe-ops --project "${PROJECT_ID}" \
+  --region "${REGION}" --format='value(spec.template.spec.containers[0].image)')"
+
+gcloud run jobs deploy heatsafe-live-ingest --image "${APP_IMAGE}" --project "${PROJECT_ID}" \
   --region "${REGION}" --service-account "${SERVICE_ACCOUNT}" --max-retries 2 \
   --task-timeout 10m --labels "app=heatsafe,env=demo,managed_by=scripts" \
   --command python --args generate_data.py --set-env-vars "${RUNTIME_ENV}"
 
+gcloud run jobs deploy heatsafe-train-models --image "${APP_IMAGE}" --project "${PROJECT_ID}" \
+  --region "${REGION}" --service-account "${SERVICE_ACCOUNT}" --max-retries 1 \
+  --task-timeout 30m --labels "app=heatsafe,env=demo,managed_by=scripts" \
+  --command python --args=infra/ml_pipeline.py,--all,--scenario,heatwave \
+  --set-env-vars "${RUNTIME_ENV}"
+
+gcloud run jobs deploy heatsafe-score-snapshot --image "${APP_IMAGE}" --project "${PROJECT_ID}" \
+  --region "${REGION}" --service-account "${SERVICE_ACCOUNT}" --max-retries 1 \
+  --task-timeout 15m --labels "app=heatsafe,env=demo,managed_by=scripts" \
+  --command python --args=infra/ml_pipeline.py,--score,--scenario,heatwave \
+  --set-env-vars "${RUNTIME_ENV}"
+
+if [[ "${SEED_FLAG}" == "--seed-demo" ]]; then
+  gcloud run jobs execute heatsafe-train-models --project "${PROJECT_ID}" \
+    --region "${REGION}" --wait
+else
+  gcloud run jobs execute heatsafe-score-snapshot --project "${PROJECT_ID}" \
+    --region "${REGION}" --wait
+fi
+
 echo "HeatSafe deployed as one public demo app."
 echo "Use './scripts/deploy_gcp.sh --seed-demo' only to refresh demo data explicitly."
 echo "Run the heatsafe-live-ingest Cloud Run Job manually when live weather needs refreshing."
+echo "Run heatsafe-train-models after changing training data; run heatsafe-score-snapshot after refreshing a snapshot."

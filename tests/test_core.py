@@ -8,9 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from heatsafe.audit import InterventionAuditStore, intervention_id_for
+from heatsafe.ai_decision import recommend_ai_intervention
 from heatsafe.bigquery_io import merge_rows
 from heatsafe.copilot import HeatSafeCopilot
 from heatsafe.ingestion import calculate_heat_index
+from heatsafe.models import DriverActionPrediction
 from heatsafe.repository import (
     BigQueryRepository,
     ForecastUnavailable,
@@ -174,6 +176,117 @@ class SafePauseTests(unittest.TestCase):
         self.assertEqual(first.proposal_id, second.proposal_id)
 
 
+class AIDecisionTests(unittest.TestCase):
+    def setUp(self):
+        self.zone = SnapshotRepository().load().zones[0]
+
+    def predictions(self, run_id: str = "run-1", snapshot_id: str | None = None):
+        rows = []
+        for index in range(80):
+            baseline = 0.18 + (index % 20) * 0.035
+            exposure = 60 + (index % 20) * 4
+            for duration in (15, 30):
+                for delay in (0, 15, 30, 45):
+                    reduction = (0.08 if duration == 15 else 0.16) * (1 - delay / 120)
+                    rows.append(
+                        DriverActionPrediction(
+                            driver_id_hash=f"driver-{index}",
+                            zone_id=self.zone.zone_id,
+                            snapshot_id=snapshot_id or self.zone.snapshot_id,
+                            prediction_run_id=run_id,
+                            model_version="heat-risk-test-v1",
+                            exposure_minutes=exposure,
+                            baseline_risk=baseline,
+                            action_risk=max(0.01, baseline - reduction),
+                            pause_start_delay_minutes=delay,
+                            pause_duration_minutes=duration,
+                            top_factors=("heat_index_c", "workload_intensity"),
+                        )
+                    )
+        return tuple(rows)
+
+    def test_ai_is_required_for_a_recommendation(self):
+        result = recommend_ai_intervention(
+            self.zone,
+            (),
+            demand_by_interval=(100,) * 8,
+            upper_demand_by_interval=(110,) * 8,
+        )
+        self.assertEqual(result.status, "MODEL_UNAVAILABLE")
+        self.assertIsNone(result.recommended)
+
+    def test_prediction_must_match_active_snapshot(self):
+        result = recommend_ai_intervention(
+            self.zone,
+            self.predictions(snapshot_id="stale-snapshot"),
+            demand_by_interval=(100,) * 8,
+            upper_demand_by_interval=(110,) * 8,
+        )
+        self.assertEqual(result.status, "MODEL_UNAVAILABLE")
+        self.assertIsNone(result.recommended)
+
+    def test_feasible_ai_plan_reconciles_cash_and_provenance(self):
+        result = recommend_ai_intervention(
+            self.zone,
+            self.predictions(),
+            demand_by_interval=(100,) * 8,
+            upper_demand_by_interval=(110,) * 8,
+            budget_cap_vnd=3_000_000,
+            sponsor_per_driver_vnd=8_000,
+        )
+        self.assertEqual(result.status, "FEASIBLE")
+        proposal = result.recommended
+        self.assertIsNotNone(proposal)
+        self.assertEqual(proposal.prediction_run_id, "run-1")
+        self.assertGreater(proposal.expected_risk_events_prevented, 0)
+        self.assertEqual(
+            proposal.net_platform_cost_vnd,
+            max(
+                0,
+                proposal.earnings_guard_cost_vnd
+                + proposal.lost_contribution_vnd
+                - proposal.partner_sponsorship_vnd,
+            ),
+        )
+
+    def test_no_feasible_candidate_is_never_called_recommended(self):
+        result = recommend_ai_intervention(
+            self.zone,
+            self.predictions(),
+            demand_by_interval=(100,) * 8,
+            upper_demand_by_interval=(110,) * 8,
+            budget_cap_vnd=0,
+            sponsor_per_driver_vnd=0,
+        )
+        self.assertEqual(result.status, "NO_FEASIBLE")
+        self.assertIsNone(result.recommended)
+        self.assertTrue(result.alternatives)
+
+    def test_ai_selection_is_not_an_exposure_threshold(self):
+        predictions = list(self.predictions())
+        # Driver 0 and 40 have the same exposure. Their model risks differ,
+        # therefore a rule cannot reproduce the AI ordering from exposure alone.
+        driver_zero = next(item for item in predictions if item.driver_id_hash == "driver-0")
+        driver_forty = next(item for item in predictions if item.driver_id_hash == "driver-40")
+        self.assertEqual(driver_zero.exposure_minutes, driver_forty.exposure_minutes)
+        adjusted = tuple(
+            replace(item, baseline_risk=0.8, action_risk=max(0.01, item.action_risk - 0.3))
+            if item.driver_id_hash == "driver-40"
+            else item
+            for item in predictions
+        )
+        result = recommend_ai_intervention(
+            self.zone,
+            adjusted,
+            demand_by_interval=(100,) * 8,
+            upper_demand_by_interval=(110,) * 8,
+            budget_cap_vnd=800_000,
+        )
+        self.assertEqual(result.status, "FEASIBLE")
+        selected_ids = {item.driver_id_hash for item in result.recommended.driver_decisions}
+        self.assertIn("driver-40", selected_ids)
+
+
 class BigQuerySnapshotTests(unittest.TestCase):
     @staticmethod
     def _row(scenario: str, observed_at: datetime, snapshot_id: str = "snapshot-1") -> dict:
@@ -294,22 +407,8 @@ class CopilotTests(unittest.TestCase):
         copilot = HeatSafeCopilot(zones)
         copilot.settings = replace(copilot.settings, enable_ai=False)
         answer, tool = copilot.answer("What is the cost of pausing in Hoàn Kiếm?")
-        self.assertEqual(tool, "simulate_safepause")
-        forecast = copilot.repository.forecast_demand("hoan-kiem", 240)
-        expected, _ = recommend_safepause(
-            zones[0],
-            demand_by_interval=tuple(
-                point.predicted_requests for point in forecast.points
-            ),
-            upper_demand_by_interval=tuple(
-                point.upper_bound for point in forecast.points
-            ),
-        )
-        self.assertIn(
-            f"selects {expected.selected_drivers} of {expected.eligible_drivers}",
-            answer,
-        )
-        self.assertIn(f"P90 fulfillment {expected.p90_fulfillment_rate:.1%}", answer)
+        self.assertEqual(tool, "ai_decision_unavailable")
+        self.assertIn("monitoring-only", answer)
 
 
 if __name__ == "__main__":

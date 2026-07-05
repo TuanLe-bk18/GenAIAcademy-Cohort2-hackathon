@@ -57,6 +57,40 @@ class PauseWave:
 
 
 @dataclass(frozen=True)
+class DriverActionPrediction:
+    driver_id_hash: str
+    zone_id: str
+    snapshot_id: str
+    prediction_run_id: str
+    model_version: str
+    exposure_minutes: int
+    baseline_risk: float
+    action_risk: float
+    pause_start_delay_minutes: int
+    pause_duration_minutes: int
+    top_factors: tuple[str, ...] = ()
+
+    @property
+    def risk_reduction(self) -> float:
+        return max(0.0, self.baseline_risk - self.action_risk)
+
+
+@dataclass(frozen=True)
+class DriverDecision:
+    driver_id_hash: str
+    exposure_minutes: int
+    baseline_risk: float
+    action_risk: float
+    pause_start_delay_minutes: int
+    pause_duration_minutes: int
+    top_factors: tuple[str, ...] = ()
+
+    @property
+    def risk_reduction(self) -> float:
+        return max(0.0, self.baseline_risk - self.action_risk)
+
+
+@dataclass(frozen=True)
 class SafePauseProposal:
     proposal_id: str
     zone_id: str
@@ -89,6 +123,14 @@ class SafePauseProposal:
     guardrail_notes: tuple[str, ...]
     decision_reason: str
     wave_plan: tuple[PauseWave, ...]
+    prediction_run_id: str | None = None
+    model_version: str | None = None
+    baseline_expected_risk_events: float = 0.0
+    action_expected_risk_events: float = 0.0
+    expected_risk_events_prevented: float = 0.0
+    baseline_fulfillment_rate: float = 1.0
+    baseline_stress_fulfillment_rate: float = 1.0
+    driver_decisions: tuple[DriverDecision, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
@@ -96,7 +138,20 @@ class SafePauseProposal:
         value["source_snapshot_at"] = self.source_snapshot_at.isoformat()
         value["guardrail_notes"] = list(self.guardrail_notes)
         value["wave_plan"] = [asdict(wave) for wave in self.wave_plan]
+        value["driver_decisions"] = [asdict(item) for item in self.driver_decisions]
         return value
+
+
+@dataclass(frozen=True)
+class RecommendationResult:
+    status: str
+    prediction_run_id: str | None
+    model_version: str | None
+    eligible_drivers: int
+    baseline_expected_risk_events: float
+    recommended: SafePauseProposal | None
+    alternatives: tuple[SafePauseProposal, ...] = ()
+    message: str = ""
 
 
 @dataclass(frozen=True)

@@ -3,11 +3,11 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 
+from .ai_decision import recommend_ai_intervention
 from .config import Settings
 from .models import ZoneSnapshot
 from .repository import HybridRepository
 from .risk import TIER_LABELS, heat_tier, operational_priority
-from .safepause import recommend_safepause
 from .telemetry import log_event
 
 
@@ -84,23 +84,42 @@ def simulate_zone_action(
     repository = repository or HybridRepository("snapshot")
     repository.load()
     forecast = repository.forecast_demand(zone.zone_id, 240)
-    proposal, _ = recommend_safepause(
-        zone,
+    try:
+        predictions = repository.load_driver_predictions(zone.zone_id, zone.snapshot_id)
+    except Exception as exc:
+        return ToolResult(
+            "ai_decision_unavailable",
+            {"status": "MODEL_UNAVAILABLE", "reason": str(exc)},
+            "AI decision unavailable; HeatSafe remains in monitoring-only mode.",
+        )
+    result = recommend_ai_intervention(
+        zone, predictions,
         demand_by_interval=tuple(
             point.predicted_requests for point in forecast.points
         ),
         upper_demand_by_interval=tuple(point.upper_bound for point in forecast.points),
     )
+    if result.recommended is None:
+        return ToolResult(
+            "recommend_ai_intervention",
+            {
+                "status": result.status,
+                "message": result.message,
+                "prediction_run_id": result.prediction_run_id,
+            },
+            result.message,
+        )
+    proposal = result.recommended
     facts = proposal.to_dict()
     facts["forecast_source"] = forecast.source
     answer = (
-        f"SafePause at {zone.name} selects {proposal.selected_drivers} of "
-        f"{proposal.eligible_drivers} eligible drivers across "
-        f"{proposal.waves} wave(s), avoiding {proposal.exposure_minutes_avoided:,} minutes of exposure. "
-        f"Estimated to reassign {proposal.reassigned_trips} trips, miss {proposal.missed_trips} trips, "
-        f"with a net platform cost of ${proposal.net_platform_cost_vnd / 25000:,.2f}, P90 fulfillment "
-        f"{proposal.p90_fulfillment_rate:.1%}, and P90 ETA +{proposal.p90_eta_increase_minutes:.1f} min. "
-        f"{proposal.guardrail_notes[0]}."
+        f"BigQuery ML recommends {proposal.selected_drivers} of {proposal.eligible_drivers} "
+        f"AI-eligible drivers in {proposal.waves} wave(s), with an estimated "
+        f"{proposal.expected_risk_events_prevented:.2f} operational heat-risk escalations prevented. "
+        f"Upper-demand fulfillment is {proposal.p90_fulfillment_rate:.1%} versus baseline "
+        f"{proposal.baseline_stress_fulfillment_rate:.1%}; ETA impact is "
+        f"+{proposal.p90_eta_increase_minutes:.1f} min and net platform cost is "
+        f"${proposal.net_platform_cost_vnd / 25000:,.2f}. {proposal.guardrail_notes[0]}."
     )
     return ToolResult("simulate_safepause", facts, answer)
 
@@ -199,8 +218,9 @@ class HeatSafeCopilot:
             budget_cap_vnd = budget_cap_vnd if budget_cap_vnd >= 100_000 else 1_000_000
             zone = resolve_zone(zone_name)
             forecast = self.repository.forecast_demand(zone.zone_id, 240)
-            recommended, ranked = recommend_safepause(
-                zone,
+            predictions = self.repository.load_driver_predictions(zone.zone_id, zone.snapshot_id)
+            result = recommend_ai_intervention(
+                zone, predictions,
                 demand_by_interval=tuple(
                     point.predicted_requests for point in forecast.points
                 ),
@@ -211,8 +231,11 @@ class HeatSafeCopilot:
             )
             return {
                 "forecast": forecast.to_dict(),
-                "options": [proposal.to_dict() for proposal in ranked[:5]],
-                "recommended_proposal_id": recommended.proposal_id,
+                "status": result.status,
+                "options": [proposal.to_dict() for proposal in result.alternatives],
+                "recommended_proposal_id": (
+                    result.recommended.proposal_id if result.recommended else None
+                ),
                 "all_impacts_are_estimates": True,
             }
 
@@ -234,8 +257,11 @@ class HeatSafeCopilot:
             )
             for zone in top_zones:
                 forecast = forecasts[zone.zone_id]
-                proposal, _ = recommend_safepause(
-                    zone,
+                predictions = self.repository.load_driver_predictions(
+                    zone.zone_id, zone.snapshot_id
+                )
+                result = recommend_ai_intervention(
+                    zone, predictions,
                     demand_by_interval=tuple(
                         point.predicted_requests for point in forecast.points
                     ),
@@ -250,11 +276,12 @@ class HeatSafeCopilot:
                         "zone_id": zone.zone_id,
                         "priority": operational_priority(zone),
                         "forecast": forecast.to_dict(),
-                        "proposal": proposal.to_dict(),
+                        "status": result.status,
+                        "proposal": result.recommended.to_dict() if result.recommended else None,
                     }
                 )
-            feasible = [item for item in candidates if item["proposal"]["within_guardrails"]]
-            recommended = (feasible or candidates)[0]
+            feasible = [item for item in candidates if item["proposal"]]
+            recommended = feasible[0] if feasible else None
             return {
                 "recommended": recommended,
                 "alternatives": candidates,
@@ -396,9 +423,10 @@ class HeatSafeCopilot:
                 ),
                 config=types.GenerateContentConfig(
                     system_instruction=(
-                        "You are the HeatSafe Ops Decision Copilot. Use only provided tool results; do not invent numbers, "
+                        "You are the HeatSafe AI Ops Copilot. Use only provided BigQuery ML tool results; do not invent numbers, "
                         "zones, or causes. Reply concisely in English, cite sources if any, mark forecasts "
-                        "and impacts as estimates, refer to cost/fulfillment/ETA as guardrails, and clarify that actions are simulated."
+                        "and counterfactual impacts as estimates, never turn MODEL_UNAVAILABLE or NO_FEASIBLE into a recommendation, "
+                        "refer to cost/fulfillment/ETA as guardrails, and clarify that actions are simulated."
                     ),
                     temperature=0.1,
                     max_output_tokens=550,
