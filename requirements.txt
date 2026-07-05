@@ -4,4 +4,5 @@ google-genai==2.10.0
 pandas==3.0.3
 pydeck==0.9.3
 requests==2.34.2
+plotly==6.8.0
 streamlit==1.58.0
