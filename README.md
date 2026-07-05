@@ -62,7 +62,7 @@ python infra/provision_gcp.py --seed-demo
 python generate_data.py
 ```
 
-`generate_data.py` obtains real Open-Meteo weather and combines it with clearly labelled simulated fleet operations in one coherent live `snapshot_id`. The deployment script schedules this job every 15 minutes.
+`generate_data.py` obtains real Open-Meteo weather and combines it with clearly labelled simulated fleet operations in one coherent live `snapshot_id`. For the prototype, the deployed Cloud Run Job is run manually when the live snapshot needs refreshing; no recurring scheduler is required.
 
 ## Run
 

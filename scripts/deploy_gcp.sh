@@ -11,7 +11,7 @@ SEED_FLAG="${1:-}"
 
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com aiplatform.googleapis.com bigquery.googleapis.com \
-  storage.googleapis.com cloudscheduler.googleapis.com iam.googleapis.com \
+  storage.googleapis.com iam.googleapis.com \
   --project "${PROJECT_ID}"
 
 if ! gcloud iam service-accounts describe "${SERVICE_ACCOUNT}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
@@ -51,17 +51,6 @@ gcloud run jobs deploy heatsafe-live-ingest --source . --project "${PROJECT_ID}"
   --task-timeout 10m --labels "app=heatsafe,env=demo,managed_by=scripts" \
   --command python --args generate_data.py --set-env-vars "${RUNTIME_ENV}"
 
-SCHEDULER_URI="https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/heatsafe-live-ingest:run"
-if gcloud scheduler jobs describe heatsafe-live-ingest-15m \
-  --project "${PROJECT_ID}" --location "${REGION}" >/dev/null 2>&1; then
-  SCHEDULER_ACTION="update"
-else
-  SCHEDULER_ACTION="create"
-fi
-gcloud scheduler jobs "${SCHEDULER_ACTION}" http heatsafe-live-ingest-15m \
-  --project "${PROJECT_ID}" --location "${REGION}" --schedule "*/15 * * * *" \
-  --time-zone "Asia/Ho_Chi_Minh" --uri "${SCHEDULER_URI}" --http-method POST \
-  --oauth-service-account-email "${SERVICE_ACCOUNT}" --quiet
-
 echo "HeatSafe deployed as one public demo app."
 echo "Use './scripts/deploy_gcp.sh --seed-demo' only to refresh demo data explicitly."
+echo "Run the heatsafe-live-ingest Cloud Run Job manually when live weather needs refreshing."
