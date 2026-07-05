@@ -84,6 +84,9 @@ class DriverDecision:
     pause_start_delay_minutes: int
     pause_duration_minutes: int
     top_factors: tuple[str, ...] = ()
+    priority_tier: str = "MODEL_ELIGIBLE"
+    risk_of_waiting: float = 0.0
+    assignment_reason: str = ""
 
     @property
     def risk_reduction(self) -> float:
@@ -131,6 +134,9 @@ class SafePauseProposal:
     baseline_fulfillment_rate: float = 1.0
     baseline_stress_fulfillment_rate: float = 1.0
     driver_decisions: tuple[DriverDecision, ...] = ()
+    mandatory_eligible_drivers: int = 0
+    mandatory_selected_drivers: int = 0
+    max_mandatory_delay_minutes: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)

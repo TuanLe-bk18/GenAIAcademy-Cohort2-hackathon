@@ -250,17 +250,23 @@ else:
         st.error(recommendation.message)
 
 if proposal:
-    metrics = st.columns(6)
-    metrics[0].metric("Selected by AI", f"{proposal.selected_drivers}/{proposal.eligible_drivers}")
-    metrics[1].metric("Expected events prevented", f"{proposal.expected_risk_events_prevented:.2f}")
-    metrics[2].metric("Protected rest", f"{proposal.exposure_minutes_avoided:,} min")
-    metrics[3].metric(
+    metrics = st.columns(7)
+    metrics[0].metric(
+        "Selected by policy", f"{proposal.selected_drivers}/{proposal.eligible_drivers}"
+    )
+    metrics[1].metric(
+        "Mandatory 4h+ covered",
+        f"{proposal.mandatory_selected_drivers}/{proposal.mandatory_eligible_drivers}",
+    )
+    metrics[2].metric("Expected events prevented", f"{proposal.expected_risk_events_prevented:.2f}")
+    metrics[3].metric("Protected rest", f"{proposal.exposure_minutes_avoided:,} min")
+    metrics[4].metric(
         "Stress fulfillment",
         f"{proposal.p90_fulfillment_rate:.1%}",
         delta=f"{(proposal.p90_fulfillment_rate - proposal.baseline_stress_fulfillment_rate) * 100:+.1f} pp",
     )
-    metrics[4].metric("Stress ETA", f"+{proposal.p90_eta_increase_minutes:.1f} min")
-    metrics[5].metric("Net platform cost", format_currency_vnd(proposal.net_platform_cost_vnd))
+    metrics[5].metric("Stress ETA", f"+{proposal.p90_eta_increase_minutes:.1f} min")
+    metrics[6].metric("Net platform cost", format_currency_vnd(proposal.net_platform_cost_vnd))
     st.caption(
         f"Model {proposal.model_version} · prediction run {proposal.prediction_run_id} · "
         "counterfactual effects are model estimates, not medical diagnoses or causal proof."
@@ -268,7 +274,7 @@ if proposal:
 
     compare_rows = [
         {
-            "Policy": "AI individualized",
+            "Policy": "Safety-first hybrid",
             "Selected": proposal.selected_drivers,
             "Expected prevented": proposal.expected_risk_events_prevented,
             "Rest minutes": proposal.exposure_minutes_avoided,
@@ -291,29 +297,49 @@ if proposal:
                 "Feasible": rule_reference.within_guardrails,
             }
         )
-    st.markdown("#### Why AI changes the decision")
+    st.markdown("#### Why safety-first changes the decision")
     st.dataframe(pd.DataFrame(compare_rows), hide_index=True, width="stretch")
 
     driver_col, wave_col = st.columns([1.5, 1], gap="large")
     with driver_col:
-        st.markdown("#### Highest-impact driver actions")
+        st.markdown("#### Safety-first driver actions")
         driver_rows = [
             {
                 "Driver": item.driver_id_hash[:10],
+                "Priority": (
+                    "Mandatory 4h+"
+                    if item.priority_tier == "MANDATORY_4H"
+                    else "Model eligible"
+                ),
                 "Exposure": f"{item.exposure_minutes}m",
                 "Risk before": f"{item.baseline_risk:.1%}",
                 "Risk after": f"{item.action_risk:.1%}",
+                "Pause benefit": f"{item.risk_reduction:.1%}",
+                "Wait cost": f"{item.risk_of_waiting:.1%}",
                 "Start": f"+{item.pause_start_delay_minutes}m",
                 "Pause": f"{item.pause_duration_minutes}m",
-                "Why": ", ".join(item.top_factors[:3]),
+                "Baseline risk factors": ", ".join(item.top_factors[:3]),
+                "Wave reason": item.assignment_reason,
             }
             for item in sorted(
-                proposal.driver_decisions, key=lambda item: item.risk_reduction, reverse=True
+                proposal.driver_decisions,
+                key=lambda item: (
+                    item.pause_start_delay_minutes,
+                    item.priority_tier != "MANDATORY_4H",
+                    -item.baseline_risk,
+                    -item.exposure_minutes,
+                    item.driver_id_hash,
+                ),
             )[:20]
         ]
         st.dataframe(pd.DataFrame(driver_rows), hide_index=True, width="stretch")
+        st.caption(
+            "Baseline risk factors explain the no-action prediction only; they do not "
+            "prove why a pause works. Wait cost is the model-estimated increase versus "
+            "an immediate pause."
+        )
     with wave_col:
-        st.markdown("#### AI-selected waves")
+        st.markdown("#### Safety-first waves")
         st.dataframe(
             pd.DataFrame(
                 [
@@ -322,7 +348,7 @@ if proposal:
                         "Start": f"+{wave.start_minute}m",
                         "End": f"+{wave.end_minute}m",
                         "Drivers": wave.selected_drivers,
-                        "4h+": wave.high_priority_drivers,
+                        "Mandatory 4h+": wave.high_priority_drivers,
                     }
                     for wave in proposal.wave_plan
                 ]

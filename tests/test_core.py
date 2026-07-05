@@ -8,7 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from heatsafe.audit import InterventionAuditStore, intervention_id_for
-from heatsafe.ai_decision import recommend_ai_intervention
+from heatsafe.ai_decision import (
+    _build_candidate,
+    _prediction_index,
+    recommend_ai_intervention,
+)
 from heatsafe.bigquery_io import merge_rows
 from heatsafe.copilot import HeatSafeCopilot
 from heatsafe.ingestion import calculate_heat_index
@@ -205,6 +209,34 @@ class AIDecisionTests(unittest.TestCase):
                     )
         return tuple(rows)
 
+    def two_driver_predictions(self, mandatory_reduction: float = 0.10):
+        rows = []
+        drivers = (
+            ("fa90abb159", 300, 0.90, mandatory_reduction),
+            ("2d6875b02f", 180, 0.70, 0.20),
+        )
+        for driver_id, exposure, baseline, immediate_reduction in drivers:
+            for duration in (15, 30):
+                duration_factor = duration / 30
+                for delay in (0, 15, 30, 45):
+                    reduction = immediate_reduction * duration_factor * (1 - delay / 120)
+                    rows.append(
+                        DriverActionPrediction(
+                            driver_id_hash=driver_id,
+                            zone_id=self.zone.zone_id,
+                            snapshot_id=self.zone.snapshot_id,
+                            prediction_run_id="run-safety-first",
+                            model_version="heat-risk-test-v1",
+                            exposure_minutes=exposure,
+                            baseline_risk=baseline,
+                            action_risk=baseline - reduction,
+                            pause_start_delay_minutes=delay,
+                            pause_duration_minutes=duration,
+                            top_factors=("continuous_exposure_minutes",),
+                        )
+                    )
+        return tuple(rows)
+
     def test_ai_is_required_for_a_recommendation(self):
         result = recommend_ai_intervention(
             self.zone,
@@ -285,6 +317,90 @@ class AIDecisionTests(unittest.TestCase):
         self.assertEqual(result.status, "FEASIBLE")
         selected_ids = {item.driver_id_hash for item in result.recommended.driver_decisions}
         self.assertIn("driver-40", selected_ids)
+
+    def test_mandatory_four_hour_driver_leads_wave_despite_lower_benefit(self):
+        predictions = self.two_driver_predictions()
+        baseline, actions = _prediction_index(predictions)
+        proposal = _build_candidate(
+            self.zone,
+            eligible_ids=["fa90abb159", "2d6875b02f"],
+            selected_count=2,
+            pause_minutes=30,
+            waves=2,
+            baseline_risk=baseline,
+            actions=actions,
+            demand_by_interval=(50,) * 8,
+            upper_demand_by_interval=(55,) * 8,
+            budget_cap_vnd=10_000_000,
+            sponsor_per_driver_vnd=8_000,
+            prediction_run_id="run-safety-first",
+            model_version="heat-risk-test-v1",
+            mandatory_ids={"fa90abb159"},
+        )
+        self.assertIsNotNone(proposal)
+        decisions = {item.driver_id_hash: item for item in proposal.driver_decisions}
+        self.assertEqual(decisions["fa90abb159"].pause_start_delay_minutes, 0)
+        self.assertEqual(decisions["fa90abb159"].priority_tier, "MANDATORY_4H")
+        self.assertEqual(decisions["2d6875b02f"].pause_start_delay_minutes, 15)
+        self.assertEqual(proposal.mandatory_selected_drivers, 1)
+
+    def test_mandatory_driver_bypasses_model_benefit_threshold(self):
+        predictions = self.two_driver_predictions(mandatory_reduction=0.01)
+        baseline, actions = _prediction_index(predictions)
+        proposal = _build_candidate(
+            self.zone,
+            eligible_ids=["fa90abb159", "2d6875b02f"],
+            selected_count=2,
+            pause_minutes=30,
+            waves=2,
+            baseline_risk=baseline,
+            actions=actions,
+            demand_by_interval=(50,) * 8,
+            upper_demand_by_interval=(55,) * 8,
+            budget_cap_vnd=10_000_000,
+            sponsor_per_driver_vnd=8_000,
+            prediction_run_id="run-safety-first",
+            model_version="heat-risk-test-v1",
+            mandatory_ids={"fa90abb159"},
+        )
+        self.assertIsNotNone(proposal)
+        self.assertIn(
+            "fa90abb159",
+            {item.driver_id_hash for item in proposal.driver_decisions},
+        )
+
+    def test_recommendation_covers_every_mandatory_driver(self):
+        result = recommend_ai_intervention(
+            self.zone,
+            self.two_driver_predictions(),
+            demand_by_interval=(50,) * 8,
+            upper_demand_by_interval=(55,) * 8,
+            budget_cap_vnd=10_000_000,
+        )
+        self.assertEqual(result.status, "FEASIBLE")
+        self.assertEqual(result.recommended.mandatory_eligible_drivers, 1)
+        self.assertEqual(result.recommended.mandatory_selected_drivers, 1)
+        self.assertEqual(result.recommended.max_mandatory_delay_minutes, 0)
+
+    def test_incomplete_mandatory_predictions_fail_closed(self):
+        predictions = tuple(
+            replace(item, exposure_minutes=260)
+            for item in self.predictions()
+            if not (
+                item.driver_id_hash == "driver-0"
+                and item.pause_duration_minutes == 30
+                and item.pause_start_delay_minutes == 45
+            )
+        )
+        result = recommend_ai_intervention(
+            self.zone,
+            predictions,
+            demand_by_interval=(100,) * 8,
+            upper_demand_by_interval=(110,) * 8,
+        )
+        self.assertEqual(result.status, "MODEL_UNAVAILABLE")
+        self.assertIsNone(result.recommended)
+        self.assertIn("Mandatory 4h+", result.message)
 
 
 class BigQuerySnapshotTests(unittest.TestCase):

@@ -33,14 +33,16 @@ The services have concrete responsibilities:
 SafePause combines learned risk with deterministic safety constraints. For every zone the engine:
 
 1. loads snapshot-matched BigQuery ML risk predictions for every driver and action;
-2. keeps drivers with baseline risk at least 35% and estimated action reduction of at least five percentage points;
-3. enumerates pause duration, coverage and staggered-wave candidates;
-4. simulates incremental supply, backlog, fulfillment and ETA against TimesFM median and upper demand;
-5. returns a recommendation only when cost and incremental SLA guardrails all pass.
+2. treats every driver with at least four hours of continuous exposure as mandatory, independent of estimated action benefit;
+3. fills the earliest waves with mandatory drivers ordered by baseline risk and exposure, then uses predicted waiting cost and action benefit for the remaining slots;
+4. enumerates pause duration, coverage and staggered-wave candidates, including a mandatory-only candidate;
+5. simulates incremental supply, backlog, fulfillment and ETA against TimesFM median and upper demand;
+6. returns a recommendation only when all mandatory drivers are covered and cost and incremental SLA guardrails pass; otherwise it reports the safety conflict.
 
 The proposal retains before/after risk, feature attributions, model version,
 prediction run, wave timeline, stress outcomes, costs and a deterministic proposal ID.
 `MODEL_UNAVAILABLE` and `NO_FEASIBLE` states never contain a recommendation.
+The four-hour rule is a demo policy threshold, not a medical or regulatory limit.
 
 ## GCP resources
 

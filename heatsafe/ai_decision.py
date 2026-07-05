@@ -20,6 +20,9 @@ MAX_FULFILLMENT_DEGRADATION = 0.02
 MAX_ETA_INCREASE_MINUTES = 2.0
 ACTION_DELAYS = (0, 15, 30, 45)
 ACTION_DURATIONS = (15, 30)
+MANDATORY_EXPOSURE_MINUTES = 240
+MANDATORY_PRIORITY_TIER = "MANDATORY_4H"
+MODEL_PRIORITY_TIER = "MODEL_ELIGIBLE"
 
 
 def _prediction_index(
@@ -40,6 +43,35 @@ def _wave_sizes(selected: int, waves: int) -> list[int]:
     return [base + (1 if index < remainder else 0) for index in range(waves)]
 
 
+def _wait_cost(
+    actions: dict[tuple[str, int, int], DriverActionPrediction],
+    driver_id: str,
+    delay: int,
+    duration: int,
+) -> float:
+    immediate = actions.get((driver_id, 0, duration))
+    assigned = actions.get((driver_id, delay, duration))
+    if immediate is None or assigned is None:
+        return 0.0
+    return max(0.0, assigned.action_risk - immediate.action_risk)
+
+
+def _next_wave_cost(
+    actions: dict[tuple[str, int, int], DriverActionPrediction],
+    driver_id: str,
+    delay: int,
+    next_delay: int | None,
+    duration: int,
+) -> float:
+    if next_delay is None:
+        return 0.0
+    current = actions.get((driver_id, delay, duration))
+    delayed = actions.get((driver_id, next_delay, duration))
+    if current is None or delayed is None:
+        return 0.0
+    return max(0.0, delayed.action_risk - current.action_risk)
+
+
 def _build_candidate(
     zone: ZoneSnapshot,
     *,
@@ -55,31 +87,79 @@ def _build_candidate(
     sponsor_per_driver_vnd: int,
     prediction_run_id: str,
     model_version: str,
+    mandatory_ids: set[str] | None = None,
     min_action_reduction: float = MIN_ACTION_RISK_REDUCTION,
 ) -> SafePauseProposal | None:
+    mandatory_ids = set(mandatory_ids or ())
+    if not mandatory_ids.issubset(eligible_ids):
+        return None
     selected_count = min(selected_count, len(eligible_ids))
+    if selected_count < len(mandatory_ids):
+        return None
     waves = max(1, min(waves, len(ACTION_DELAYS), selected_count))
-    remaining = set(eligible_ids)
+    exposure_by_driver = {
+        driver_id: next(
+            (
+                item.exposure_minutes
+                for key, item in actions.items()
+                if key[0] == driver_id
+            ),
+            0,
+        )
+        for driver_id in eligible_ids
+    }
+    mandatory_remaining = sorted(
+        mandatory_ids,
+        key=lambda driver_id: (
+            -baseline_risk[driver_id],
+            -exposure_by_driver[driver_id],
+            driver_id,
+        ),
+    )
+    optional_remaining = set(eligible_ids) - mandatory_ids
     decisions: list[DriverDecision] = []
     plan: list[PauseWave] = []
 
     for wave_index, size in enumerate(_wave_sizes(selected_count, waves)):
         delay = ACTION_DELAYS[wave_index]
-        ranked = sorted(
+        next_delay = ACTION_DELAYS[wave_index + 1] if wave_index + 1 < waves else None
+        selected_wave: list[tuple[DriverActionPrediction, str]] = []
+
+        while mandatory_remaining and len(selected_wave) < size:
+            driver_id = mandatory_remaining.pop(0)
+            item = actions.get((driver_id, delay, pause_minutes))
+            if item is None:
+                return None
+            selected_wave.append((item, MANDATORY_PRIORITY_TIER))
+
+        ranked_optional = sorted(
             (
                 actions[(driver_id, delay, pause_minutes)]
-                for driver_id in remaining
+                for driver_id in optional_remaining
                 if (driver_id, delay, pause_minutes) in actions
             ),
-            key=lambda item: (item.risk_reduction, item.baseline_risk),
-            reverse=True,
+            key=lambda item: (
+                -_next_wave_cost(
+                    actions,
+                    item.driver_id_hash,
+                    delay,
+                    next_delay,
+                    pause_minutes,
+                ),
+                -item.baseline_risk,
+                -item.risk_reduction,
+                -item.exposure_minutes,
+                item.driver_id_hash,
+            ),
         )
-        selected_wave = [item for item in ranked if item.risk_reduction >= min_action_reduction][
-            :size
-        ]
+        optional_slots = size - len(selected_wave)
+        selected_optional = [
+            item for item in ranked_optional if item.risk_reduction >= min_action_reduction
+        ][:optional_slots]
+        selected_wave.extend((item, MODEL_PRIORITY_TIER) for item in selected_optional)
         if len(selected_wave) != size:
             return None
-        high = sum(item.exposure_minutes >= 240 for item in selected_wave)
+        high = sum(tier == MANDATORY_PRIORITY_TIER for _, tier in selected_wave)
         plan.append(
             PauseWave(
                 wave=wave_index + 1,
@@ -90,8 +170,25 @@ def _build_candidate(
                 medium_priority_drivers=size - high,
             )
         )
-        for item in selected_wave:
-            remaining.remove(item.driver_id_hash)
+        for item, priority_tier in selected_wave:
+            optional_remaining.discard(item.driver_id_hash)
+            wait_cost = _wait_cost(
+                actions,
+                item.driver_id_hash,
+                delay,
+                pause_minutes,
+            )
+            if priority_tier == MANDATORY_PRIORITY_TIER:
+                assignment_reason = (
+                    f"Mandatory safety rule: continuous exposure is at least "
+                    f"{MANDATORY_EXPOSURE_MINUTES} minutes; assigned to the earliest "
+                    "available wave."
+                )
+            else:
+                assignment_reason = (
+                    f"Model-eligible; waiting until this wave adds {wait_cost:.1%} "
+                    "predicted risk versus an immediate pause."
+                )
             decisions.append(
                 DriverDecision(
                     driver_id_hash=item.driver_id_hash,
@@ -101,8 +198,14 @@ def _build_candidate(
                     pause_start_delay_minutes=delay,
                     pause_duration_minutes=pause_minutes,
                     top_factors=item.top_factors,
+                    priority_tier=priority_tier,
+                    risk_of_waiting=wait_cost,
+                    assignment_reason=assignment_reason,
                 )
             )
+
+    if mandatory_remaining:
+        return None
 
     horizon_minutes = max(120, plan[-1].end_minute + 30)
     baseline_p50 = _simulate_scenario(zone, demand_by_interval, (), horizon_minutes)
@@ -142,7 +245,9 @@ def _build_candidate(
     baseline_events = sum(baseline_risk.values())
     prevented = sum(item.risk_reduction for item in decisions)
     action_events = max(0.0, baseline_events - prevented)
-    high_selected = sum(item.exposure_minutes >= 240 for item in decisions)
+    high_selected = sum(
+        item.priority_tier == MANDATORY_PRIORITY_TIER for item in decisions
+    )
     medium_selected = selected_count - high_selected
     fingerprint = ":".join(
         (
@@ -189,9 +294,9 @@ def _build_candidate(
         within_guardrails=len(violations) == 1 and violations[0].startswith("Meets"),
         guardrail_notes=tuple(violations),
         decision_reason=(
-            f"BigQuery ML scored {len(baseline_risk)} active drivers; this plan selects "
-            f"{selected_count} whose action-conditioned risk falls by at least "
-            f"{MIN_ACTION_RISK_REDUCTION:.0%}."
+            f"Safety-first policy covers {high_selected}/{len(mandatory_ids)} drivers "
+            f"with at least {MANDATORY_EXPOSURE_MINUTES} minutes of continuous exposure; "
+            "remaining slots prioritize the predicted cost of waiting and baseline risk."
         ),
         wave_plan=tuple(plan),
         prediction_run_id=prediction_run_id,
@@ -202,6 +307,16 @@ def _build_candidate(
         baseline_fulfillment_rate=round(baseline_p50.fulfillment_rate, 4),
         baseline_stress_fulfillment_rate=round(baseline_stress.fulfillment_rate, 4),
         driver_decisions=tuple(decisions),
+        mandatory_eligible_drivers=len(mandatory_ids),
+        mandatory_selected_drivers=high_selected,
+        max_mandatory_delay_minutes=max(
+            (
+                item.pause_start_delay_minutes
+                for item in decisions
+                if item.priority_tier == MANDATORY_PRIORITY_TIER
+            ),
+            default=0,
+        ),
     )
 
 
@@ -239,8 +354,39 @@ def recommend_ai_intervention(
         )
 
     baseline, actions = _prediction_index(predictions)
+    exposure_by_driver: dict[str, int] = {}
+    for item in predictions:
+        exposure_by_driver[item.driver_id_hash] = item.exposure_minutes
+    mandatory_ids = {
+        driver_id
+        for driver_id, exposure in exposure_by_driver.items()
+        if exposure >= MANDATORY_EXPOSURE_MINUTES
+    }
+    missing_mandatory_actions = {
+        driver_id
+        for driver_id in mandatory_ids
+        if any(
+            (driver_id, delay, duration) not in actions
+            for duration in ACTION_DURATIONS
+            for delay in ACTION_DELAYS
+        )
+    }
+    if missing_mandatory_actions:
+        return RecommendationResult(
+            status="MODEL_UNAVAILABLE",
+            prediction_run_id=next(iter(run_ids)),
+            model_version=next(iter(model_versions)),
+            eligible_drivers=0,
+            baseline_expected_risk_events=round(sum(baseline.values()), 3),
+            recommended=None,
+            message=(
+                "Mandatory 4h+ driver action predictions are incomplete; "
+                "monitoring only."
+            ),
+        )
     eligible_ids = sorted(
-        (
+        mandatory_ids
+        | {
             driver_id
             for driver_id, risk in baseline.items()
             if risk >= MIN_BASELINE_RISK
@@ -253,9 +399,13 @@ def recommend_ai_intervention(
                 default=0.0,
             )
             >= MIN_ACTION_RISK_REDUCTION
+        },
+        key=lambda driver_id: (
+            driver_id not in mandatory_ids,
+            -baseline[driver_id],
+            -exposure_by_driver[driver_id],
+            driver_id,
         ),
-        key=baseline.get,
-        reverse=True,
     )
     baseline_events = sum(baseline.values())
     if not eligible_ids:
@@ -270,13 +420,19 @@ def recommend_ai_intervention(
         )
 
     candidates: list[SafePauseProposal] = []
+    selected_counts = {
+        max(1, math.ceil(len(eligible_ids) * coverage))
+        for coverage in (0.10, 0.15, 0.20, 0.25, 0.35, 0.50, 0.75, 1.0)
+    }
+    if mandatory_ids:
+        selected_counts.add(len(mandatory_ids))
     for pause_minutes in ACTION_DURATIONS:
         for waves in (1, 2, 3, 4):
-            for coverage in (0.10, 0.15, 0.20, 0.25, 0.35, 0.50, 0.75, 1.0):
+            for selected_count in sorted(selected_counts):
                 candidate = _build_candidate(
                     zone,
                     eligible_ids=eligible_ids,
-                    selected_count=max(1, math.ceil(len(eligible_ids) * coverage)),
+                    selected_count=selected_count,
                     pause_minutes=pause_minutes,
                     waves=waves,
                     baseline_risk=baseline,
@@ -287,6 +443,7 @@ def recommend_ai_intervention(
                     sponsor_per_driver_vnd=sponsor_per_driver_vnd,
                     prediction_run_id=next(iter(run_ids)),
                     model_version=next(iter(model_versions)),
+                    mandatory_ids=mandatory_ids,
                 )
                 if candidate is not None:
                     candidates.append(candidate)
@@ -294,6 +451,12 @@ def recommend_ai_intervention(
     feasible = sorted(
         (item for item in candidates if item.within_guardrails),
         key=lambda item: (
+            item.max_mandatory_delay_minutes,
+            sum(
+                decision.pause_start_delay_minutes
+                for decision in item.driver_decisions
+                if decision.priority_tier == MANDATORY_PRIORITY_TIER
+            ),
             -item.expected_risk_events_prevented,
             -item.selected_drivers,
             item.p90_eta_increase_minutes,
@@ -304,6 +467,12 @@ def recommend_ai_intervention(
         least_violating = sorted(
             candidates,
             key=lambda item: (
+                item.max_mandatory_delay_minutes,
+                sum(
+                    decision.pause_start_delay_minutes
+                    for decision in item.driver_decisions
+                    if decision.priority_tier == MANDATORY_PRIORITY_TIER
+                ),
                 len(item.guardrail_notes),
                 item.p90_eta_increase_minutes,
                 -item.p90_fulfillment_rate,
@@ -318,7 +487,12 @@ def recommend_ai_intervention(
             baseline_expected_risk_events=round(baseline_events, 3),
             recommended=None,
             alternatives=tuple(least_violating),
-            message="No AI-scored intervention satisfies all incremental guardrails.",
+            message=(
+                "No plan can cover every mandatory 4h+ driver within all operational "
+                "guardrails."
+                if mandatory_ids
+                else "No AI-scored intervention satisfies all incremental guardrails."
+            ),
         )
     return RecommendationResult(
         status="FEASIBLE",
@@ -328,7 +502,12 @@ def recommend_ai_intervention(
         baseline_expected_risk_events=round(baseline_events, 3),
         recommended=feasible[0],
         alternatives=tuple(feasible[:5]),
-        message="AI-scored intervention satisfies all incremental guardrails.",
+        message=(
+            f"Safety-first plan covers all {len(mandatory_ids)} mandatory 4h+ drivers "
+            "and satisfies all incremental guardrails."
+            if mandatory_ids
+            else "AI-scored intervention satisfies all incremental guardrails."
+        ),
     )
 
 
@@ -369,5 +548,15 @@ def evaluate_rule_reference(
         sponsor_per_driver_vnd=sponsor_per_driver_vnd,
         prediction_run_id=predictions[0].prediction_run_id,
         model_version=predictions[0].model_version,
+        mandatory_ids={
+            driver_id
+            for driver_id in rule_ids
+            if next(
+                item.exposure_minutes
+                for item in predictions
+                if item.driver_id_hash == driver_id
+            )
+            >= MANDATORY_EXPOSURE_MINUTES
+        },
         min_action_reduction=0.0,
     )
