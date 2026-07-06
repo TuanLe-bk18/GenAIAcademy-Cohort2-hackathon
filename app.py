@@ -17,7 +17,7 @@ from heatsafe.telemetry import log_event
 
 HANOI_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 DECISION_HORIZON_MINUTES = 240
-COPILOT_STATE_VERSION = 3
+COPILOT_STATE_VERSION = 5
 
 TIER_CSS = {
     "NORMAL": "tier-safe",
@@ -31,7 +31,7 @@ PLOTLY_LAYOUT = dict(
     template="plotly_dark",
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter, sans-serif"),
+    font=dict(family="Inter, sans-serif", size=13, color="#c9c2b8"),
 )
 
 st.set_page_config(page_title="HeatSafe AI Ops", page_icon="☀️", layout="wide")
@@ -154,82 +154,130 @@ st.markdown(
     <style>
     :root {
       --ops-bg:#181613; --ops-surface:#211f1c; --ops-surface-2:#292622;
-      --ops-border:#3a3630; --ops-text:#f5f1e8; --ops-muted:#aaa297;
+      --ops-border:#48423a; --ops-border-soft:#3b3731;
+      --ops-text:#fffaf0; --ops-muted:#c3bbb0;
       --ops-heat:#e9863a; --ops-cool:#72cbd0; --ops-ok:#67cf9b;
       --ops-warn:#e5b158; --ops-crit:#ec6b61;
+      --ops-radius-panel:12px; --ops-radius-card:9px;
     }
     .stApp { background:var(--ops-bg); color:var(--ops-text); }
     .block-container { max-width:1600px; padding:1rem 1.5rem 3rem; }
     [data-testid="stSidebar"] { display:none; }
     [data-testid="stHeader"] { background:transparent; }
+    html, body, [class*="css"] { font-size:16px; }
     h1,h2,h3,h4,p { letter-spacing:-.01em; }
+    h4 { color:var(--ops-text); font-size:1.3rem; line-height:1.35; font-weight:750; }
     .ops-brand { display:flex; align-items:center; gap:.7rem; min-height:42px; }
     .ops-mark {
       width:30px; height:30px; display:grid; place-items:center; border-radius:7px;
       color:#1b1712; font-weight:800; background:linear-gradient(145deg,#f0a34c,#dc6338);
       box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
     }
-    .ops-title { color:var(--ops-text); font-size:.93rem; font-weight:700; }
-    .ops-subtitle { color:var(--ops-muted); font-size:.7rem; margin-top:2px; }
+    .ops-title { color:var(--ops-text); font-size:1.08rem; font-weight:700; }
+    .ops-subtitle { color:var(--ops-muted); font-size:.82rem; margin-top:2px; }
     .ops-status-row { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin:.2rem 0 .65rem; }
     .ops-pill {
       display:inline-flex; align-items:center; gap:6px; padding:.25rem .55rem;
       border:1px solid var(--ops-border); border-radius:999px; color:var(--ops-muted);
-      background:var(--ops-surface); font-size:.68rem;
+      background:var(--ops-surface); font-size:.78rem; font-weight:500;
     }
     .ops-pill.ok { color:var(--ops-ok); border-color:rgba(103,207,155,.3); background:rgba(103,207,155,.08); }
     .ops-pill.warn { color:var(--ops-warn); border-color:rgba(229,177,88,.3); background:rgba(229,177,88,.08); }
-    .ops-sim-banner {
-      border:1px solid var(--ops-border); border-left:3px solid var(--ops-heat);
-      background:rgba(233,134,58,.045); color:var(--ops-muted); border-radius:7px;
-      padding:.5rem .75rem; font-size:.72rem; margin-bottom:1rem;
-    }
-    .ops-panel { border:1px solid var(--ops-border); border-radius:9px; background:var(--ops-surface); overflow:hidden; }
+    .ops-panel { border:1px solid var(--ops-border); border-radius:var(--ops-radius-panel); background:var(--ops-surface); overflow:hidden; }
     .ops-panel-head {
-      color:var(--ops-muted); font-size:.67rem; font-weight:650; text-transform:uppercase;
-      letter-spacing:.08em; padding:.65rem .8rem; border-bottom:1px solid var(--ops-border);
+      color:var(--ops-text); font-size:.95rem; font-weight:750; text-transform:uppercase;
+      letter-spacing:.055em; padding:.9rem 1rem; border-bottom:1px solid var(--ops-border);
+      border-left:3px solid var(--ops-heat);
+      background:linear-gradient(90deg,rgba(233,134,58,.11),rgba(233,134,58,.015) 55%,transparent);
     }
-    .ops-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--ops-border); }
-    .ops-kpi { background:var(--ops-surface); padding:.75rem .8rem; }
-    .ops-kpi-label { color:var(--ops-muted); font-size:.64rem; text-transform:uppercase; letter-spacing:.05em; }
-    .ops-kpi-value { color:var(--ops-text); font-size:1.22rem; font-weight:700; margin-top:.22rem; }
+    .ops-kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--ops-border-soft); }
+    .ops-kpi { background:var(--ops-surface); padding:.9rem; }
+    .ops-kpi-label { color:var(--ops-muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.045em; }
+    .ops-kpi-value { color:var(--ops-text); font-size:1.35rem; font-weight:700; margin-top:.28rem; }
     .ops-kpi-value.heat { color:var(--ops-heat); }
     .ops-kpi-value.cool { color:var(--ops-cool); }
-    .ops-zone-head { padding:1rem 1.1rem; }
-    .ops-eyebrow { color:var(--ops-muted); font-size:.65rem; text-transform:uppercase; letter-spacing:.09em; }
-    .ops-zone-name { color:var(--ops-text); font-size:1.55rem; font-weight:700; margin:.2rem 0 .7rem; }
+    .ops-zone-head { padding:1.1rem 1.2rem; }
+    .ops-eyebrow { color:var(--ops-heat); font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.075em; }
+    .ops-zone-name { color:var(--ops-text); font-size:1.7rem; font-weight:700; margin:.25rem 0 .8rem; }
     .ops-zone-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:1rem; }
-    .ops-stat-label { color:var(--ops-muted); font-size:.62rem; text-transform:uppercase; letter-spacing:.05em; }
-    .ops-stat-value { color:var(--ops-text); font-size:.88rem; font-weight:650; margin-top:.15rem; }
-    .ops-rec { border:1px solid rgba(233,134,58,.38); border-radius:9px; background:linear-gradient(145deg,rgba(233,134,58,.075),rgba(33,31,28,.95)); padding:1rem; }
-    .ops-rec-title { color:var(--ops-heat); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
-    .ops-rec-name { color:var(--ops-text); font-size:1.1rem; font-weight:700; margin:.2rem 0; }
-    .ops-copy { color:var(--ops-muted); font-size:.75rem; line-height:1.5; }
-    .ops-metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin:.8rem 0; }
-    .ops-metric { border:1px solid var(--ops-border); border-radius:7px; background:rgba(24,22,19,.42); padding:.62rem .7rem; }
-    .ops-metric-label { color:var(--ops-muted); font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; }
-    .ops-metric-value { color:var(--ops-text); font-size:1rem; font-weight:700; margin-top:.18rem; }
+    .ops-stat-label { color:var(--ops-muted); font-size:.73rem; text-transform:uppercase; letter-spacing:.045em; }
+    .ops-stat-value { color:var(--ops-text); font-size:1rem; font-weight:650; margin-top:.2rem; }
+    .ops-rec { border:1px solid rgba(233,134,58,.48); border-radius:var(--ops-radius-panel); background:linear-gradient(145deg,rgba(233,134,58,.075),rgba(33,31,28,.95)); padding:1.1rem; }
+    .ops-rec-title { color:var(--ops-heat); font-size:.88rem; font-weight:750; text-transform:uppercase; letter-spacing:.065em; }
+    .ops-rec-name { color:var(--ops-text); font-size:1.35rem; font-weight:750; margin:.28rem 0; }
+    .ops-copy { color:var(--ops-muted); font-size:.88rem; line-height:1.55; }
+    .ops-metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:.9rem 0; }
+    .ops-metric { border:1px solid var(--ops-border-soft); border-radius:var(--ops-radius-card); background:rgba(24,22,19,.42); padding:.75rem .8rem; }
+    .ops-metric-label { color:var(--ops-muted); font-size:.71rem; text-transform:uppercase; letter-spacing:.045em; }
+    .ops-metric-value { color:var(--ops-text); font-size:1.12rem; font-weight:700; margin-top:.22rem; }
     .ops-metric-value.cool { color:var(--ops-cool); } .ops-metric-value.ok { color:var(--ops-ok); }
     .ops-wave { display:flex; gap:6px; margin-top:.5rem; }
-    .ops-wave-item { flex:1; border:1px solid var(--ops-border); border-top:3px solid var(--ops-heat); border-radius:6px; padding:.55rem; background:var(--ops-surface-2); }
-    .ops-wave-title { color:var(--ops-text); font-size:.72rem; font-weight:650; }
-    .ops-wave-meta { color:var(--ops-muted); font-size:.62rem; margin-top:.15rem; }
-    .ops-guard { display:flex; align-items:center; gap:6px; color:var(--ops-ok); font-size:.7rem; margin-top:.65rem; }
-    .ops-impact-row { padding:.65rem .8rem; border-bottom:1px solid rgba(58,54,48,.65); }
-    .ops-impact-top { display:flex; justify-content:space-between; gap:1rem; color:var(--ops-muted); font-size:.7rem; }
+    .ops-wave-item { flex:1; border:1px solid var(--ops-border-soft); border-top:3px solid var(--ops-heat); border-radius:var(--ops-radius-card); padding:.7rem; background:var(--ops-surface-2); }
+    .ops-wave-title { color:var(--ops-text); font-size:.82rem; font-weight:650; }
+    .ops-wave-meta { color:var(--ops-muted); font-size:.74rem; margin-top:.2rem; }
+    .ops-guard { display:flex; align-items:center; gap:6px; color:var(--ops-ok); font-size:.8rem; line-height:1.4; margin-top:.75rem; }
+    .ops-impact-row { padding:.8rem .9rem; border-bottom:1px solid var(--ops-border-soft); }
+    .ops-impact-top { display:flex; justify-content:space-between; gap:1rem; color:var(--ops-muted); font-size:.82rem; }
     .ops-impact-top b { color:var(--ops-text); }
     .ops-track { height:5px; border-radius:999px; background:var(--ops-surface-2); margin:.4rem 0 .2rem; overflow:hidden; }
     .ops-fill { height:100%; border-radius:999px; background:var(--ops-ok); }
-    .ops-caption { color:var(--ops-muted); font-size:.62rem; }
-    .ops-provenance { color:var(--ops-muted); font-size:.65rem; line-height:1.55; }
+    .ops-caption { color:var(--ops-muted); font-size:.74rem; line-height:1.4; }
+    .ops-provenance { color:var(--ops-muted); font-size:.76rem; line-height:1.55; }
+    .ops-execution-plan {
+      border:1px solid var(--ops-border); border-radius:var(--ops-radius-panel);
+      background:var(--ops-surface); overflow:hidden; margin:.65rem 0 .8rem;
+    }
+    .ops-execution-row {
+      display:grid; grid-template-columns:28px 1fr auto; align-items:center; gap:.7rem;
+      padding:.72rem .8rem; border-bottom:1px solid var(--ops-border-soft);
+    }
+    .ops-execution-row:last-child { border-bottom:0; }
+    .ops-execution-icon {
+      width:28px; height:28px; display:grid; place-items:center; border-radius:8px;
+      color:var(--ops-cool); background:rgba(114,203,208,.09);
+      border:1px solid rgba(114,203,208,.22); font-size:.82rem; font-weight:700;
+    }
+    .ops-execution-title { color:var(--ops-text); font-size:.96rem; font-weight:700; }
+    .ops-execution-meta { color:var(--ops-muted); font-size:.8rem; line-height:1.4; margin-top:.16rem; }
+    .ops-execution-state {
+      color:var(--ops-muted); font-size:.69rem; font-weight:650; text-transform:uppercase;
+      letter-spacing:.05em; padding:.2rem .42rem; border:1px solid var(--ops-border);
+      border-radius:999px;
+    }
+    .ops-execution-state.ready { color:var(--ops-ok); border-color:rgba(103,207,155,.3); }
+    .ops-execution-result {
+      border:1px solid rgba(103,207,155,.35); border-radius:var(--ops-radius-panel);
+      background:rgba(103,207,155,.07); padding:.8rem .9rem; margin:.65rem 0;
+    }
+    .ops-execution-result strong { color:var(--ops-ok); font-size:1rem; }
+    .ops-execution-result div { color:var(--ops-muted); font-size:.82rem; line-height:1.5; margin-top:.22rem; }
     div[data-testid="stButton"] button {
       border-color:var(--ops-border); background:var(--ops-surface); color:var(--ops-text);
-      border-radius:7px; min-height:2.65rem; font-size:.72rem; text-align:left;
+      border-radius:var(--ops-radius-card); min-height:2.75rem; font-size:.82rem; text-align:left;
     }
     div[data-testid="stButton"] button:hover { border-color:rgba(233,134,58,.65); color:var(--ops-text); }
     div[data-testid="stCheckbox"] label p, div[data-testid="stCaptionContainer"] { color:var(--ops-muted); }
-    div[data-testid="stDataFrame"], div[data-testid="stChatMessage"] { border:1px solid var(--ops-border); border-radius:8px; overflow:hidden; }
-    [data-testid="stExpander"] { border-color:var(--ops-border); background:var(--ops-surface); }
+    div[data-testid="stDataFrame"], div[data-testid="stChatMessage"] { border:1px solid var(--ops-border); border-radius:var(--ops-radius-panel); overflow:hidden; }
+    [data-testid="stExpander"] { border:1px solid var(--ops-border); border-radius:var(--ops-radius-panel); background:var(--ops-surface); }
+    [data-testid="stTabs"] button { color:var(--ops-muted); font-size:.95rem; font-weight:650; }
+    [data-testid="stTabs"] button[aria-selected="true"] { color:var(--ops-text); font-weight:750; }
+    [data-testid="stMarkdownContainer"] h4 {
+      color:var(--ops-text); font-size:1.28rem; font-weight:750;
+      padding-bottom:.45rem; border-bottom:1px solid var(--ops-border);
+    }
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stCheckbox"] label p,
+    [data-testid="stCaptionContainer"],
+    [data-testid="stMarkdownContainer"] li { font-size:.84rem; line-height:1.5; }
+    [data-baseweb="input"] input { font-size:.9rem; }
+    div[data-testid="stNumberInput"] label p {
+      color:var(--ops-muted); font-size:.72rem; font-weight:650;
+      text-transform:uppercase; letter-spacing:.04em;
+    }
+    div[data-testid="stNumberInput"] [data-baseweb="input"] {
+      border-color:var(--ops-border); border-radius:var(--ops-radius-card);
+      background:var(--ops-surface-2);
+    }
     hr { border-color:var(--ops-border)!important; }
     @media (max-width:900px) {
       .ops-zone-stats { grid-template-columns:repeat(2,1fr); }
@@ -313,6 +361,13 @@ def load_city_wide_ai_plan(scenario: str, snapshot_id: str):
     return rows
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def load_model_evaluation_history(scenario: str):
+    repository = HybridRepository(scenario=scenario)
+    repository.load()
+    return repository.load_model_evaluations(limit=10)
+
+
 # ── Console Header + Data Load ─────────────────────────────────────────────────
 brand_col, scenario_col = st.columns([5, 1], vertical_alignment="center")
 with brand_col:
@@ -350,17 +405,14 @@ ordered = sorted(
     reverse=True,
 )
 valid_zone_ids = {zone.zone_id for zone in zones}
-if st.session_state.get("selected_zone_id") not in valid_zone_ids:
+zone_selection_context = f"{scenario}:{snapshot_id}"
+if (
+    st.session_state.get("zone_selection_context") != zone_selection_context
+    or st.session_state.get("selected_zone_id") not in valid_zone_ids
+):
+    st.session_state.zone_selection_context = zone_selection_context
     st.session_state.selected_zone_id = ordered[0].zone_id
 selected = next(zone for zone in zones if zone.zone_id == st.session_state.selected_zone_id)
-top_zone = ordered[0]
-active_drivers = sum(zone.active_drivers for zone in zones)
-exposed_4h = sum(zone.exposed_4h for zone in zones)
-escalation_val = f"{sum(zone_risk.values()):.1f}" if zone_risk else "—"
-action_zones = sum(
-    heat_tier(zone.heat_index_c) in {"DANGER", "EXTREME_DANGER"}
-    for zone in zones
-)
 
 status_tone = "ok" if ai_summary_ready and result.data_fresh else "warn"
 status_label = "AI ready" if ai_summary_ready else "AI unavailable · monitoring only"
@@ -373,27 +425,15 @@ st.markdown(
     '</div>',
     unsafe_allow_html=True,
 )
-st.markdown(
-    '<div class="ops-sim-banner"><b style="color:var(--ops-heat)">SIMULATION ENVIRONMENT</b>'
-    ' · Confirming a plan records a decision only. No commands are dispatched to drivers.</div>',
-    unsafe_allow_html=True,
-)
-if any(zone.is_simulated for zone in zones):
-    st.caption("Heatwave replay uses simulated driver operations and labelled synthetic outcomes.")
 if result.freshness_warning:
     st.error(result.freshness_warning)
 
-with st.popover("Decision constraints", use_container_width=False):
-    budget_cap = st.number_input(
-        "Platform cost cap ($)", min_value=0.0, value=120.0, step=10.0
-    )
-    partner_per_driver = st.number_input(
-        "Partner cash credit / selected driver ($)",
-        min_value=0.0,
-        value=0.32,
-        step=0.04,
-    )
-    st.caption("Constraints are applied to the selected zone recommendation.")
+if "decision_budget_cap" not in st.session_state:
+    st.session_state.decision_budget_cap = 120.0
+if "decision_partner_credit" not in st.session_state:
+    st.session_state.decision_partner_credit = 0.32
+budget_cap = float(st.session_state.decision_budget_cap)
+partner_per_driver = float(st.session_state.decision_partner_credit)
 
 # ── Selected-Zone AI Decision ──────────────────────────────────────────────────
 forecast = None
@@ -434,322 +474,124 @@ except Exception as exc:
         error_type=type(exc).__name__,
     )
 
-# ── Lovable-Inspired Three-Column Console ──────────────────────────────────────
-left_col, center_col, right_col = st.columns([1.05, 2.15, 1.05], gap="medium")
-
-with left_col:
-    st.markdown(
-        '<section class="ops-panel"><div class="ops-panel-head">Hanoi · current snapshot</div>'
-        '<div class="ops-kpis">'
-        f'<div class="ops-kpi"><div class="ops-kpi-label">Active drivers</div><div class="ops-kpi-value">{active_drivers:,}</div></div>'
-        f'<div class="ops-kpi"><div class="ops-kpi-label">Escalations · 60m</div><div class="ops-kpi-value heat">{escalation_val}</div></div>'
-        f'<div class="ops-kpi"><div class="ops-kpi-label">Exposed 4h+</div><div class="ops-kpi-value heat">{exposed_4h:,}</div></div>'
-        f'<div class="ops-kpi"><div class="ops-kpi-label">Zones needing action</div><div class="ops-kpi-value">{action_zones}/{len(zones)}</div></div>'
-        '</div></section>',
-        unsafe_allow_html=True,
-    )
-    st.markdown('<div class="ops-panel-head" style="margin-top:.8rem">Zones · sorted by urgency</div>', unsafe_allow_html=True)
-    for zone in ordered:
-        marker = "●" if zone.zone_id == selected.zone_id else "○"
-        expected = zone_risk.get(zone.zone_id)
-        risk_text = f" · risk {expected:.2f}" if expected is not None else ""
-        if st.button(
-            f"{marker} {zone.name} · {zone.heat_index_c:.1f}°C\n{zone.active_drivers} active · {zone.exposed_4h} at 4h+{risk_text}",
-            key=f"zone-{zone.zone_id}",
-            width="stretch",
-        ):
-            st.session_state.selected_zone_id = zone.zone_id
-            st.rerun()
-
-with center_col:
-    tier = heat_tier(selected.heat_index_c)
-    tier_label = TIER_LABELS[tier]
-    risk_display = (
-        f"{zone_risk[selected.zone_id]:.2f}"
-        if selected.zone_id in zone_risk
-        else "—"
-    )
-    st.markdown(
-        '<section class="ops-panel ops-zone-head">'
-        '<div class="ops-eyebrow">Selected decision zone</div>'
-        f'<div class="ops-zone-name">{selected.name} '
-        f'<span class="tier-badge {TIER_CSS.get(tier, "tier-safe")}">{tier_label}</span></div>'
-        '<div class="ops-zone-stats">'
-        f'<div><div class="ops-stat-label">Heat Index</div><div class="ops-stat-value">{selected.heat_index_c:.1f}°C</div></div>'
-        f'<div><div class="ops-stat-label">Expected escalations</div><div class="ops-stat-value" style="color:var(--ops-heat)">{risk_display}</div></div>'
-        f'<div><div class="ops-stat-label">Active drivers</div><div class="ops-stat-value">{selected.active_drivers:,}</div></div>'
-        f'<div><div class="ops-stat-label">Exposed 4h+</div><div class="ops-stat-value">{selected.exposed_4h:,}</div></div>'
-        f'<div><div class="ops-stat-label">CoolStop</div><div class="ops-stat-value">{selected.coolstop_name}</div></div>'
-        '</div></section>',
-        unsafe_allow_html=True,
-    )
-
-    if ai_error:
-        st.warning(
-            "Model evidence is unavailable. HeatSafe will not invent a plan; "
-            "city monitoring remains available."
-        )
-    elif proposal:
-        waves_html = "".join(
-            '<div class="ops-wave-item">'
-            f'<div class="ops-wave-title">Wave {wave.wave} · {wave.selected_drivers} drivers</div>'
-            f'<div class="ops-wave-meta">+{wave.start_minute}–{wave.end_minute} min · {wave.high_priority_drivers} mandatory</div>'
-            '</div>'
-            for wave in proposal.wave_plan
-        )
-        st.markdown(
-            '<section class="ops-rec" style="margin-top:.8rem">'
-            '<div class="ops-rec-title">HeatSafe recommends</div>'
-            f'<div class="ops-rec-name">SafePause · {proposal.waves} staggered waves</div>'
-            f'<div class="ops-copy">{proposal.decision_reason}</div>'
-            '<div class="ops-metric-grid">'
-            f'<div class="ops-metric"><div class="ops-metric-label">Drivers selected</div><div class="ops-metric-value">{proposal.selected_drivers}/{proposal.eligible_drivers}</div></div>'
-            f'<div class="ops-metric"><div class="ops-metric-label">Mandatory covered</div><div class="ops-metric-value ok">{proposal.mandatory_selected_drivers}/{proposal.mandatory_eligible_drivers}</div></div>'
-            f'<div class="ops-metric"><div class="ops-metric-label">Expected prevented</div><div class="ops-metric-value cool">{proposal.expected_risk_events_prevented:.2f}</div></div>'
-            f'<div class="ops-metric"><div class="ops-metric-label">Earnings Guard</div><div class="ops-metric-value">{format_currency_vnd(proposal.earnings_guard_cost_vnd)}</div></div>'
-            '</div>'
-            '<div class="ops-eyebrow">Staggered waves · preserves supply</div>'
-            f'<div class="ops-wave">{waves_html}</div>'
-            f'<div class="ops-guard">● {" · ".join(proposal.guardrail_notes)}</div>'
-            '</section>',
-            unsafe_allow_html=True,
-        )
-        if forecast and forecast.points:
-            with st.expander("Demand forecast and recommendation evidence"):
-                times = [
-                    point.forecast_at.astimezone(HANOI_TZ)
-                    for point in forecast.points
-                ]
-                fig = go.Figure()
-                fig.add_trace(
-                    go.Scatter(
-                        x=times,
-                        y=[point.predicted_requests for point in forecast.points],
-                        name="Median demand",
-                        line=dict(color="#72cbd0", width=2),
-                        fill="tozeroy",
-                        fillcolor="rgba(114,203,208,.06)",
-                    )
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=times,
-                        y=[point.upper_bound for point in forecast.points],
-                        name="Stress upper bound",
-                        line=dict(color="#e5b158", width=1.5, dash="dot"),
-                    )
-                )
-                fig.update_layout(
-                    **PLOTLY_LAYOUT,
-                    margin=dict(l=0, r=0, t=25, b=0),
-                    height=230,
-                    hovermode="x unified",
-                    xaxis=dict(gridcolor="rgba(255,255,255,.04)"),
-                    yaxis=dict(gridcolor="rgba(255,255,255,.04)", title="Requests"),
-                    legend=dict(orientation="h", y=1.12),
-                )
-                st.plotly_chart(fig, width="stretch")
-
-        alternatives = [
-            {
-                "Plan": "Recommended" if item.proposal_id == proposal.proposal_id else "Alternative",
-                "Drivers": item.selected_drivers,
-                "Pause": f"{item.pause_minutes}m",
-                "Waves": item.waves,
-                "Risk prevented": round(item.expected_risk_events_prevented, 2),
-                "Fulfillment": f"{item.p90_fulfillment_rate:.1%}",
-                "ETA": f"+{item.p90_eta_increase_minutes:.1f}m",
-                "Net cost": format_currency_vnd(item.net_platform_cost_vnd),
-                "Guardrails": "Within limits" if item.within_guardrails else "Conflict",
-            }
-            for item in (proposal,) + tuple(recommendation.alternatives[:4])
-        ]
-        st.markdown('<div class="ops-panel-head" style="margin-top:.8rem">Compare plans · driver benefit vs business impact</div>', unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame(alternatives), hide_index=True, width="stretch")
-    elif recommendation:
-        st.error(recommendation.message)
-        if recommendation.alternatives:
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "Drivers": item.selected_drivers,
-                            "Pause": f"{item.pause_minutes}m",
-                            "Waves": item.waves,
-                            "Guardrail conflict": " · ".join(item.guardrail_notes),
-                        }
-                        for item in recommendation.alternatives[:5]
-                    ]
-                ),
-                hide_index=True,
-                width="stretch",
-            )
-
-with right_col:
-    st.markdown('<section class="ops-panel"><div class="ops-panel-head">Business impact · stress case</div>', unsafe_allow_html=True)
-    if proposal:
-        fulfillment_drop = max(
-            0.0,
-            (proposal.baseline_stress_fulfillment_rate - proposal.p90_fulfillment_rate)
-            * 100,
-        )
-        cost_pct = min(100.0, proposal.net_platform_cost_vnd / max(budget_cap * 25_000, 1) * 100)
-        impact_rows = (
-            ("Fulfillment", f"{proposal.p90_fulfillment_rate:.1%}", min(100, fulfillment_drop * 12), "minimum 95%"),
-            ("ETA impact", f"+{proposal.p90_eta_increase_minutes:.1f}m", min(100, proposal.p90_eta_increase_minutes / 2 * 100), "maximum +2.0m"),
-            ("Net platform cost", format_currency_vnd(proposal.net_platform_cost_vnd), cost_pct, f"limit ${budget_cap:,.0f}"),
-        )
-        for label, value, width, caption in impact_rows:
-            st.markdown(
-                '<div class="ops-impact-row">'
-                f'<div class="ops-impact-top"><span>{label}</span><b>{value}</b></div>'
-                f'<div class="ops-track"><div class="ops-fill" style="width:{width:.0f}%"></div></div>'
-                f'<div class="ops-caption">{caption}</div></div>',
-                unsafe_allow_html=True,
-            )
-        st.markdown(
-            '<div class="ops-impact-row" style="background:rgba(114,203,208,.045)">'
-            '<div class="ops-eyebrow" style="color:var(--ops-cool)">Driver benefit</div>'
-            f'<div class="ops-stat-value" style="font-size:1rem;color:var(--ops-cool)">{proposal.selected_drivers} drivers protected</div>'
-            f'<div class="ops-caption">{proposal.exposure_minutes_avoided:,} recovery minutes · all mandatory 4h+ covered</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown('<div class="ops-impact-row ops-copy">Impact projections require valid model evidence.</div>', unsafe_allow_html=True)
-    st.markdown('</section>', unsafe_allow_html=True)
-
-    st.markdown('<div class="ops-panel-head" style="margin-top:.8rem">Confirm decision</div>', unsafe_allow_html=True)
-    if proposal:
-        st.markdown(
-            f'<div class="ops-copy" style="padding:.65rem 0">{selected.name} · {proposal.selected_drivers} drivers · '
-            f'{proposal.waves} waves · {proposal.pause_minutes}m recovery</div>',
-            unsafe_allow_html=True,
-        )
-        confirm = st.checkbox(
-            "I understand this records a simulation only",
-            key=f"confirm-{proposal.proposal_id}",
-        )
-        if st.button(
-            "Record SafePause simulation",
-            disabled=not (
-                confirm and proposal.within_guardrails and result.data_fresh
-            ),
-            width="stretch",
-            type="primary",
-        ):
-            event = audit.approve(proposal)
-            st.success(
-                f"Simulation {event.intervention_id[:8]} recorded. No command sent to drivers."
-            )
-            st.cache_data.clear()
-    else:
-        st.button("Record SafePause simulation", disabled=True, width="stretch")
-    st.caption("Human confirmation is required. This public demo never dispatches operational commands.")
-
-    st.markdown('<div class="ops-panel-head" style="margin-top:.8rem">Model provenance</div>', unsafe_allow_html=True)
-    if proposal:
-        st.markdown(
-            '<div class="ops-provenance">'
-            f'Risk model <b>{proposal.model_version}</b><br>'
-            f'Prediction run {proposal.prediction_run_id}<br>'
-            'Demand forecast · BigQuery ML TimesFM<br>'
-            'Gemini explains allowlisted evidence only.<br><br>'
-            'Heat Index is a screening indicator. Counterfactual effects are model estimates, not medical diagnoses or causal proof.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.caption("Model provenance appears when a valid decision is available.")
-
-    recent = audit.list_recent()
-    st.markdown('<div class="ops-panel-head" style="margin-top:.8rem">Recent simulations</div>', unsafe_allow_html=True)
-    if recent:
-        st.dataframe(pd.DataFrame(recent[:3]), hide_index=True, width="stretch")
-    else:
-        st.caption("No simulated intervention recorded.")
-
 # ── Progressive-Disclosure Evidence ────────────────────────────────────────────
 st.divider()
-city_tab, drivers_tab, copilot_tab = st.tabs(
-    ["City intelligence", "Driver evidence", "Copilot & audit"]
+city_tab, drivers_tab, copilot_tab, model_tab = st.tabs(
+    ["CITY INTELLIGENCE", "DRIVER EVIDENCE", "COPILOT & AUDIT", "MODEL PERFORMANCE"]
 )
 
 with city_tab:
+    selection_context = f"{scenario}:{snapshot_id}"
     map_rows = []
     max_risk = max(zone_risk.values(), default=1.0)
     for zone in zones:
         expected = zone_risk.get(zone.zone_id)
         intensity = (expected or 0.0) / max_risk
-        map_rows.append(
-            {
-                "name": zone.name,
-                "lat": zone.latitude,
-                "lon": zone.longitude,
-                "expected_events": round(expected, 2) if expected is not None else None,
-                "heat_index": zone.heat_index_c,
-                "active": zone.active_drivers,
-                "color": [
-                    round(255 * max(.35, intensity)),
-                    round(150 * (1 - intensity)),
-                    75,
-                    210,
-                ],
-            }
-        )
-    map_col, plan_col = st.columns([1.2, 1], gap="large")
+        map_rows.append({
+            "zone_id": zone.zone_id, "name": zone.name,
+            "lat": zone.latitude, "lon": zone.longitude,
+            "expected_events": round(expected, 2) if expected is not None else None,
+            "heat_index": zone.heat_index_c, "active": zone.active_drivers,
+            "color": [round(255 * max(.35, intensity)), round(150 * (1 - intensity)), 75, 210]
+        })
+    map_col, scatter_col, bar_col = st.columns([1, 1, 1], gap="medium")
     with map_col:
-        st.pydeck_chart(
+        map_event = st.pydeck_chart(
             pdk.Deck(
                 layers=[
                     pdk.Layer(
-                        "ScatterplotLayer",
-                        pd.DataFrame(map_rows),
+                        "ScatterplotLayer", pd.DataFrame(map_rows), id="city-zones",
                         get_position=["lon", "lat"],
-                        get_fill_color="color",
-                        get_radius="800 + active * 2",
-                        pickable=True,
-                        stroked=True,
-                        get_line_color=[255, 255, 255, 80],
+                        get_fill_color="color", get_radius="800 + active * 2", pickable=True,
+                        stroked=True, get_line_color=[255, 255, 255, 80]
                     )
                 ],
-                initial_view_state=pdk.ViewState(
-                    latitude=21.025, longitude=105.81, zoom=10.1, pitch=35
-                ),
+                initial_view_state=pdk.ViewState(latitude=21.025, longitude=105.81, zoom=10.1, pitch=35),
                 map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-                tooltip={
-                    "html": "<b>{name}</b><br/>Expected escalations: {expected_events}<br/>Heat Index: {heat_index}°C<br/>Active: {active}",
-                    "style": {"backgroundColor": "#211f1c", "color": "white"},
-                },
+                tooltip={"html": "<b>{name}</b><br/>Expected escalations: {expected_events}<br/>Heat Index: {heat_index}°C<br/>Active: {active}", "style": {"backgroundColor": "#211f1c", "color": "white"}},
             ),
-            height=420,
+            height=360,
+            key=f"city-zone-map:{selection_context}:{selected.zone_id}",
+            on_select="rerun",
+            selection_mode="single-object",
         )
-        st.caption("Priority is based on summed driver-level model probability, not temperature alone.")
-    with plan_col:
-        city_plan = load_city_wide_ai_plan(scenario, snapshot_id)
-        if city_plan:
-            df_city = pd.DataFrame(city_plan)
+        selected_objects = map_event.selection.objects.get("city-zones", [])
+        clicked_zone_id = selected_objects[0].get("zone_id") if selected_objects else None
+        if clicked_zone_id in valid_zone_ids and clicked_zone_id != selected.zone_id:
+            st.session_state.selected_zone_id = clicked_zone_id
+            st.rerun()
+        st.caption(
+            f"Selected: {selected.name}. Priority uses summed driver-level model probability."
+        )
+
+    highlighted_zone = selected.name
+
+    city_plan = load_city_wide_ai_plan(scenario, snapshot_id)
+    if city_plan:
+        df_city = pd.DataFrame(city_plan)
+        df_city = df_city.sort_values("Selected Drivers", ascending=False)
+        with scatter_col:
             fig = px.scatter(
-                df_city,
-                x="Fulfillment Drop",
-                y="ETA Impact",
-                size="Prevented Risks",
-                color="Heat Index",
-                hover_name="Zone",
-                color_continuous_scale=px.colors.sequential.YlOrRd,
-                title="City-wide intervention tradeoffs",
+                df_city, x="Fulfillment Drop", y="ETA Impact", size="Prevented Risks", color="Heat Index",
+                hover_name="Zone", color_continuous_scale=px.colors.sequential.YlOrRd, title="City-wide intervention tradeoffs",
+                labels={"Fulfillment Drop": "Fulfillment Drop (%)", "ETA Impact": "ETA Impact (mins)", "Prevented Risks": "Expected Escalations Prevented", "Heat Index": "Heat Index (°C)"}
             )
+            if highlighted_zone in set(df_city["Zone"]):
+                scatter_opacity = [
+                    1.0 if zone == highlighted_zone else 0.22
+                    for zone in df_city["Zone"]
+                ]
+                fig.update_traces(marker_opacity=scatter_opacity)
+                focused = df_city.loc[df_city["Zone"] == highlighted_zone].iloc[0]
+                fig.add_trace(
+                    go.Scatter(
+                        x=[focused["Fulfillment Drop"]],
+                        y=[focused["ETA Impact"]],
+                        mode="markers",
+                        marker=dict(
+                            size=28,
+                            color="rgba(0,0,0,0)",
+                            line=dict(color="#f5f1e8", width=3),
+                        ),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    )
+                )
             fig.update_layout(
-                **PLOTLY_LAYOUT,
-                margin=dict(l=0, r=0, t=45, b=0),
-                height=360,
+                **PLOTLY_LAYOUT, margin=dict(l=0, r=0, t=75, b=0), height=360,
                 xaxis=dict(gridcolor="rgba(255,255,255,.06)"),
                 yaxis=dict(gridcolor="rgba(255,255,255,.06)"),
+                title_x=0.5, title_xanchor="center",
+                coloraxis_colorbar=dict(title_side="right")
             )
+            fig.add_vline(x=2.0, line_dash="dash", line_color="red", opacity=0.5)
+            fig.add_hline(y=2.0, line_dash="dash", line_color="red", opacity=0.5)
             st.plotly_chart(fig, width="stretch")
-            with st.expander("City plan data"):
-                st.dataframe(df_city, hide_index=True, width="stretch")
-        else:
+
+        with bar_col:
+            import plotly.graph_objects as go
+            fig_plan = go.Figure()
+            df_city["Model-prioritized Drivers"] = df_city["Selected Drivers"] - df_city["Mandatory Drivers"]
+            bar_opacity = [
+                1.0 if not highlighted_zone or zone == highlighted_zone else 0.22
+                for zone in df_city["Zone"]
+            ]
+            fig_plan.add_trace(go.Bar(name="Mandatory Drivers", x=df_city["Zone"], y=df_city["Mandatory Drivers"], marker=dict(opacity=bar_opacity), hovertemplate="Mandatory: %{y}<br>Total Selected: %{customdata}", customdata=df_city["Selected Drivers"]))
+            fig_plan.add_trace(go.Bar(name="Model-prioritized Drivers", x=df_city["Zone"], y=df_city["Model-prioritized Drivers"], marker=dict(opacity=bar_opacity), hovertemplate="Model-prioritized: %{y}<br>Total Selected: %{customdata}", customdata=df_city["Selected Drivers"]))
+
+            fig_plan.update_layout(
+                barmode='stack',
+                title="SafePause Coverage & Estimated Risk Reduction",
+                title_x=0.5,
+                title_xanchor="center",
+                **PLOTLY_LAYOUT, margin=dict(l=0, r=0, t=75, b=0), height=360,
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1)
+            )
+            fig_plan.update_xaxes(title_text="Zone", gridcolor="rgba(255,255,255,.06)")
+            fig_plan.update_yaxes(title_text="Selected Drivers", gridcolor="rgba(255,255,255,.06)")
+            st.plotly_chart(fig_plan, width="stretch")
+    else:
+        with scatter_col:
             st.info("City-wide AI predictions are currently unavailable.")
 
 with drivers_tab:
@@ -812,17 +654,38 @@ with copilot_tab:
     with copilot_col:
         st.markdown("#### HeatSafe Copilot")
         st.caption("Gemini explains verified BigQuery ML outputs; it cannot approve decisions.")
-        if st.session_state.get("copilot_state_version") != COPILOT_STATE_VERSION:
-            st.session_state.copilot_state_version = COPILOT_STATE_VERSION
-            st.session_state.messages = [
-                {"role": "assistant", "content": "Ask why a zone or driver cohort was selected."}
-            ]
+        copilot_context = f"{COPILOT_STATE_VERSION}:{scenario}:{selected.zone_id}"
+        if st.session_state.get("copilot_context") != copilot_context:
+            st.session_state.copilot_context = copilot_context
+            st.session_state.messages = []
+        suggested_questions = (
+            f"Why is {selected.name} prioritized now?",
+            f"Forecast demand in {selected.name} for the next 60 minutes",
+            f"Compare SafePause options in {selected.name} with a budget of 2 million VND",
+            "Which area should we intervene in over the next 90 minutes with a budget of 3 million VND?",
+        )
+        st.markdown(
+            '<div class="ops-eyebrow" style="margin:.35rem 0 .45rem">Suggested questions</div>',
+            unsafe_allow_html=True,
+        )
+        suggested_question = None
+        suggestion_columns = st.columns(2, gap="small")
+        for index, prompt in enumerate(suggested_questions):
+            with suggestion_columns[index % 2]:
+                if st.button(
+                    prompt,
+                    key=f"copilot-suggestion-{copilot_context}-{index}",
+                    width="stretch",
+                ):
+                    suggested_question = prompt
         for message in st.session_state.messages[-6:]:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 if message.get("tool"):
                     st.caption(f"Verified tool trace: {message['tool']}")
-        if question := st.chat_input("Why intervene in this zone now?"):
+        typed_question = st.chat_input("Ask HeatSafe Copilot...")
+        question = suggested_question or typed_question
+        if question:
             st.session_state.messages.append({"role": "user", "content": question})
             repository = HybridRepository(scenario=scenario)
             repository.load()
@@ -832,12 +695,311 @@ with copilot_tab:
             )
             st.rerun()
     with audit_col:
-        st.markdown("#### Simulation audit log")
-        audit_rows = audit.list_recent()
+        st.markdown(f"#### {selected.name} simulation audit")
+        audit_rows = [
+            row for row in audit.list_recent()
+            if row.get("zone_id") == selected.zone_id
+        ]
         if audit_rows:
             st.dataframe(pd.DataFrame(audit_rows), hide_index=True, width="stretch")
         else:
             st.info("No simulated intervention recorded.")
+
+with model_tab:
+    try:
+        evaluations = load_model_evaluation_history(scenario)
+    except Exception as exc:
+        evaluations = []
+        log_event(
+            "model_evaluations_unavailable",
+            severity="WARNING",
+            error_type=type(exc).__name__,
+        )
+
+    if evaluations:
+        active_version = proposal.model_version if proposal else evaluations[0]["model_version"]
+        active_evaluation = next(
+            (
+                item
+                for item in evaluations
+                if item["model_version"] == active_version
+            ),
+            evaluations[0],
+        )
+        active_version = active_evaluation["model_version"]
+        metric_specs = (
+            ("ROC AUC", "roc_auc"),
+            ("F1", "f1_score"),
+            ("Precision", "precision"),
+            ("Recall", "recall"),
+            ("Log loss", "log_loss"),
+        )
+        metric_columns = st.columns(len(metric_specs))
+        for column, (label, field) in zip(metric_columns, metric_specs):
+            value = active_evaluation.get(field)
+            column.metric(label, "—" if value is None else f"{float(value):.3f}")
+
+        score_rows = [
+            {"Metric": label, "Score": float(active_evaluation[field])}
+            for label, field in metric_specs[:-1]
+            if active_evaluation.get(field) is not None
+        ]
+        history = pd.DataFrame(evaluations)
+        history["evaluated_at"] = pd.to_datetime(history["evaluated_at"])
+
+        history_table = history.rename(
+            columns={
+                "model_version": "Model version",
+                "evaluated_at": "Evaluated at",
+                "roc_auc": "ROC AUC",
+                "f1_score": "F1",
+                "precision": "Precision",
+                "recall": "Recall",
+                "accuracy": "Accuracy",
+                "log_loss": "Log loss",
+            }
+        )
+        styled_table = history_table[
+            [
+                "Model version", "Evaluated at", "ROC AUC", "F1",
+                "Precision", "Recall", "Accuracy", "Log loss",
+            ]
+        ].style.set_properties(**{'font-weight': 'bold', 'color': '#72cbd0'}, subset=['Model version'])
+
+        st.dataframe(
+            styled_table,
+            hide_index=True,
+            use_container_width=True,
+        )
+        prediction_run = proposal.prediction_run_id if proposal else "not available"
+        st.caption(
+            f"Active risk model: {active_version} · Prediction run: {prediction_run} · "
+            f"BigQuery ML boosted-tree · Evaluation data: "
+            f"{'simulated' if active_evaluation.get('is_simulated') else 'production'}"
+        )
+    else:
+        st.info("Model evaluation metrics are available in cloud mode after BigQuery ML training.")
+
+
+# ── Selected-Zone Decision Workspace ───────────────────────────────────────────
+center_col, right_col = st.columns([2.2, 1], gap="medium")
+
+with center_col:
+    tier = heat_tier(selected.heat_index_c)
+    tier_label = TIER_LABELS[tier]
+    risk_display = (
+        f"{zone_risk[selected.zone_id]:.2f}"
+        if selected.zone_id in zone_risk
+        else "—"
+    )
+    st.markdown(
+        '<section class="ops-panel ops-zone-head">'
+        '<div class="ops-eyebrow">Selected decision zone</div>'
+        f'<div class="ops-zone-name">{selected.name} '
+        f'<span class="tier-badge {TIER_CSS.get(tier, "tier-safe")}">{tier_label}</span></div>'
+        '<div class="ops-zone-stats">'
+        f'<div><div class="ops-stat-label">Heat Index</div><div class="ops-stat-value">{selected.heat_index_c:.1f}°C</div></div>'
+        f'<div><div class="ops-stat-label">Expected escalations</div><div class="ops-stat-value" style="color:var(--ops-heat)">{risk_display}</div></div>'
+        f'<div><div class="ops-stat-label">Active drivers</div><div class="ops-stat-value">{selected.active_drivers:,}</div></div>'
+        f'<div><div class="ops-stat-label">Exposed 4h+</div><div class="ops-stat-value">{selected.exposed_4h:,}</div></div>'
+        f'<div><div class="ops-stat-label">CoolStop</div><div class="ops-stat-value">{selected.coolstop_name}</div></div>'
+        '</div></section>',
+        unsafe_allow_html=True,
+    )
+
+    if ai_error:
+        st.warning(
+            "Model evidence is unavailable. HeatSafe will not invent a plan; "
+            "city monitoring remains available."
+        )
+    elif proposal:
+        waves_html = "".join(
+            '<div class="ops-wave-item">'
+            f'<div class="ops-wave-title">Wave {wave.wave} · {wave.selected_drivers} drivers</div>'
+            f'<div class="ops-wave-meta">+{wave.start_minute}–{wave.end_minute} min · {wave.high_priority_drivers} mandatory</div>'
+            '</div>'
+            for wave in proposal.wave_plan
+        )
+        st.markdown(
+            '<section class="ops-rec" style="margin-top:.8rem">'
+            '<div class="ops-rec-title">HeatSafe recommends</div>'
+            f'<div class="ops-rec-name">SafePause · {proposal.waves} staggered waves</div>'
+            f'<div class="ops-copy">{proposal.decision_reason}</div>'
+            '<div class="ops-metric-grid">'
+            f'<div class="ops-metric"><div class="ops-metric-label">Drivers selected</div><div class="ops-metric-value">{proposal.selected_drivers}/{proposal.eligible_drivers}</div></div>'
+            f'<div class="ops-metric"><div class="ops-metric-label">Mandatory covered</div><div class="ops-metric-value ok">{proposal.mandatory_selected_drivers}/{proposal.mandatory_eligible_drivers}</div></div>'
+            f'<div class="ops-metric"><div class="ops-metric-label">Expected prevented</div><div class="ops-metric-value cool">{proposal.expected_risk_events_prevented:.2f}</div></div>'
+            f'<div class="ops-metric"><div class="ops-metric-label">Earnings Guard</div><div class="ops-metric-value">{format_currency_vnd(proposal.earnings_guard_cost_vnd)}</div></div>'
+            '</div>'
+            '<div class="ops-eyebrow">Staggered waves · preserves supply</div>'
+            f'<div class="ops-wave">{waves_html}</div>'
+            f'<div class="ops-guard">● {" · ".join(proposal.guardrail_notes)}</div>'
+            '</section>',
+            unsafe_allow_html=True,
+        )
+        if forecast and forecast.points:
+            st.markdown('<div class="ops-eyebrow" style="margin-top: 1rem; margin-bottom: 0.5rem;">Demand forecast and recommendation evidence</div>', unsafe_allow_html=True)
+            times = [
+                point.forecast_at.astimezone(HANOI_TZ)
+                for point in forecast.points
+            ]
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=[point.predicted_requests for point in forecast.points],
+                    name="Median demand",
+                    line=dict(color="#72cbd0", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(114,203,208,.06)",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=[point.upper_bound for point in forecast.points],
+                    name="Stress upper bound",
+                    line=dict(color="#e5b158", width=1.5, dash="dot"),
+                )
+            )
+            fig.update_layout(
+                **PLOTLY_LAYOUT,
+                margin=dict(l=0, r=0, t=25, b=0),
+                height=230,
+                hovermode="x unified",
+                xaxis=dict(gridcolor="rgba(255,255,255,.04)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,.04)", title="Requests"),
+                legend=dict(orientation="h", y=1.12),
+            )
+            st.plotly_chart(fig, width="stretch")
+
+    elif recommendation:
+        st.error(recommendation.message)
+        if recommendation.alternatives:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Drivers": item.selected_drivers,
+                            "Pause": f"{item.pause_minutes}m",
+                            "Waves": item.waves,
+                            "Guardrail conflict": " · ".join(item.guardrail_notes),
+                        }
+                        for item in recommendation.alternatives[:5]
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+
+with right_col:
+    st.markdown('<section class="ops-panel"><div class="ops-panel-head">Business impact · stress case</div>', unsafe_allow_html=True)
+    cost_control_col, partner_control_col = st.columns(2, gap="small")
+    with cost_control_col:
+        st.number_input(
+            "Cost cap ($)",
+            min_value=0.0,
+            step=10.0,
+            key="decision_budget_cap",
+        )
+    with partner_control_col:
+        st.number_input(
+            "Partner / driver ($)",
+            min_value=0.0,
+            step=0.04,
+            key="decision_partner_credit",
+        )
+    if proposal:
+        fulfillment_drop = max(
+            0.0,
+            (proposal.baseline_stress_fulfillment_rate - proposal.p90_fulfillment_rate)
+            * 100,
+        )
+        cost_pct = min(100.0, proposal.net_platform_cost_vnd / max(budget_cap * 25_000, 1) * 100)
+        impact_rows = (
+            ("Fulfillment", f"{proposal.p90_fulfillment_rate:.1%}", min(100, fulfillment_drop * 12), "minimum 95%"),
+            ("ETA impact", f"+{proposal.p90_eta_increase_minutes:.1f}m", min(100, proposal.p90_eta_increase_minutes / 2 * 100), "maximum +2.0m"),
+            ("Net platform cost", format_currency_vnd(proposal.net_platform_cost_vnd), cost_pct, f"limit ${budget_cap:,.0f}"),
+        )
+        for label, value, width, caption in impact_rows:
+            st.markdown(
+                '<div class="ops-impact-row">'
+                f'<div class="ops-impact-top"><span>{label}</span><b>{value}</b></div>'
+                f'<div class="ops-track"><div class="ops-fill" style="width:{width:.0f}%"></div></div>'
+                f'<div class="ops-caption">{caption}</div></div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            '<div class="ops-impact-row" style="background:rgba(114,203,208,.045)">'
+            '<div class="ops-eyebrow" style="color:var(--ops-cool)">Driver benefit</div>'
+            f'<div class="ops-stat-value" style="font-size:1rem;color:var(--ops-cool)">{proposal.selected_drivers} drivers protected</div>'
+            f'<div class="ops-caption">{proposal.exposure_minutes_avoided:,} recovery minutes · all mandatory 4h+ covered</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown('<div class="ops-impact-row ops-copy">Impact projections require valid model evidence.</div>', unsafe_allow_html=True)
+    st.markdown('</section>', unsafe_allow_html=True)
+
+    st.markdown('<div class="ops-panel-head" style="margin-top:.8rem">Execute SafePause</div>', unsafe_allow_html=True)
+    if proposal:
+        st.markdown(
+            f'<div class="ops-copy" style="padding:.65rem 0">{selected.name} · {proposal.selected_drivers} drivers · '
+            f'{proposal.waves} waves · {proposal.pause_minutes}m recovery</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="ops-execution-plan">'
+            '<div class="ops-execution-row">'
+            '<div class="ops-execution-icon">H</div>'
+            '<div><div class="ops-execution-title">Activate hydration support</div>'
+            f'<div class="ops-execution-meta">{proposal.selected_drivers} drivers · {format_currency_vnd(proposal.partner_hydration_value_vnd)} partner value</div></div>'
+            '<div class="ops-execution-state ready">Ready</div></div>'
+            '<div class="ops-execution-row">'
+            '<div class="ops-execution-icon">N</div>'
+            '<div><div class="ops-execution-title">Notify selected drivers</div>'
+            f'<div class="ops-execution-meta">Safety guidance and assigned recovery window · {proposal.selected_drivers} recipients</div></div>'
+            '<div class="ops-execution-state ready">Ready</div></div>'
+            '<div class="ops-execution-row">'
+            '<div class="ops-execution-icon">W</div>'
+            '<div><div class="ops-execution-title">Schedule staggered pause waves</div>'
+            f'<div class="ops-execution-meta">{proposal.waves} waves · first wave starts now · supply guardrails active</div></div>'
+            '<div class="ops-execution-state ready">Ready</div></div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        confirm = st.checkbox(
+            "I confirm this rollout plan and understand this is a demo environment",
+            key=f"confirm-{proposal.proposal_id}",
+        )
+        if st.button(
+            "Activate SafePause",
+            disabled=not (
+                confirm and proposal.within_guardrails and result.data_fresh
+            ),
+            width="stretch",
+            type="primary",
+        ):
+            event = audit.approve(proposal)
+            st.session_state["simulated_execution"] = {
+                "proposal_id": proposal.proposal_id,
+                "intervention_id": event.intervention_id,
+            }
+            st.cache_data.clear()
+        execution = st.session_state.get("simulated_execution")
+        if execution and execution.get("proposal_id") == proposal.proposal_id:
+            st.markdown(
+                '<div class="ops-execution-result">'
+                '<strong>SafePause activated · simulation</strong>'
+                f'<div>Hydration support activated for {proposal.selected_drivers} drivers<br>'
+                f'Driver notifications queued · {proposal.selected_drivers} recipients<br>'
+                f'{proposal.waves} recovery waves scheduled · Audit {execution["intervention_id"][:8]}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        st.button("Activate SafePause", disabled=True, width="stretch")
+    st.caption("Demo execution only — the workflow is recorded for audit, but no driver notification, hydration order or operational command is sent.")
 
 refresh_col, policy_col = st.columns([1, 5], vertical_alignment="center")
 with refresh_col:

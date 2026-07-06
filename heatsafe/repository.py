@@ -523,6 +523,27 @@ class BigQueryRepository:
             raise AIModelUnavailable(f"No zone AI summary for snapshot {snapshot_id}")
         return {str(row.zone_id): float(row.expected_events) for row in rows}
 
+    def load_model_evaluations(self, limit: int = 10) -> list[dict]:
+        from google.cloud import bigquery
+
+        limit = max(1, min(limit, 50))
+        query = f"""
+            SELECT model_version, evaluated_at, model_name,
+                   precision, recall, accuracy, f1_score, log_loss, roc_auc,
+                   is_simulated
+            FROM `{self.dataset}.model_evaluations`
+            ORDER BY evaluated_at DESC
+            LIMIT @limit
+        """
+        config = self._job_config(
+            [bigquery.ScalarQueryParameter("limit", "INT64", limit)],
+            MINIMUM_QUERY_BYTES_BILLED,
+        )
+        return [
+            dict(row)
+            for row in self._client().query(query, job_config=config).result()
+        ]
+
 
 class HybridRepository:
     def __init__(self, mode: str | None = None, scenario: str | None = None):
@@ -596,3 +617,10 @@ class HybridRepository:
                 "Zone AI summary requires materialized BigQuery ML predictions"
             )
         return self._active.load_zone_risk_summary(snapshot_id)
+
+    def load_model_evaluations(self, limit: int = 10) -> list[dict]:
+        if not isinstance(self._active, BigQueryRepository):
+            raise AIModelUnavailable(
+                "Model evaluation metrics require the BigQuery ML repository"
+            )
+        return self._active.load_model_evaluations(limit)

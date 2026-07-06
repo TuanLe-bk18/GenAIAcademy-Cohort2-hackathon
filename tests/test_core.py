@@ -141,8 +141,8 @@ class SafePauseTests(unittest.TestCase):
         self.assertEqual(medium, self.zone.exposed_2h - self.zone.exposed_4h)
 
     def test_waves_change_p90_operational_impact(self):
-        demand = (150,) * 12
-        upper = (155,) * 12
+        demand = (round(self.zone.active_drivers * 0.475),) * 12
+        upper = (round(self.zone.active_drivers * 0.49),) * 12
         two_waves = simulate_safepause(
             self.zone,
             pause_minutes=30,
@@ -525,6 +525,37 @@ class CopilotTests(unittest.TestCase):
         answer, tool = copilot.answer("What is the cost of pausing in Hoàn Kiếm?")
         self.assertEqual(tool, "ai_decision_unavailable")
         self.assertIn("monitoring-only", answer)
+
+    def test_copilot_routes_english_forecast_with_unaccented_zone(self):
+        zones = SnapshotRepository().load().zones
+        copilot = HeatSafeCopilot(zones)
+        copilot.settings = replace(copilot.settings, enable_ai=False)
+        answer, tool = copilot.answer(
+            "Forecast of demand in Dong Da over the next 60 minutes"
+        )
+        self.assertEqual(tool, "forecast_zone_demand")
+        self.assertIn("Đống Đa", answer)
+        self.assertIn("60 minutes", answer)
+
+    def test_copilot_routes_english_comparison_with_budget(self):
+        zones = SnapshotRepository().load().zones
+        copilot = HeatSafeCopilot(zones)
+        copilot.settings = replace(copilot.settings, enable_ai=False)
+        answer, tool = copilot.answer(
+            "Comparing accommodation options in Hai Ba Trung with a budget of 2 million VND."
+        )
+        self.assertEqual(tool, "ai_decision_unavailable")
+        self.assertIn("monitoring-only", answer)
+
+    def test_copilot_routes_english_intervention_recommendation(self):
+        zones = SnapshotRepository().load().zones
+        copilot = HeatSafeCopilot(zones)
+        copilot.settings = replace(copilot.settings, enable_ai=False)
+        answer, tool = copilot.answer(
+            "Which area should be intervened in within the next 90 minutes with a budget of 3 million VND?"
+        )
+        self.assertEqual(tool, "recommend_intervention")
+        self.assertNotIn("Snapshot currently", answer)
 
 
 if __name__ == "__main__":

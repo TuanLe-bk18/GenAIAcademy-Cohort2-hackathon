@@ -277,7 +277,7 @@ def ensure_bigquery(settings: Settings) -> bigquery.Client:
 def seed_demo(settings: Settings, bucket: storage.Bucket, client: bigquery.Client) -> None:
     snapshot_path = ROOT / "data" / "demo_snapshot.json"
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    replay_blob = bucket.blob("demo-replay/heatwave-hanoi.json")
+    replay_blob = bucket.blob("demo-replay/heatwave-hanoi-hoan-kiem-peak-v2.json")
     if not replay_blob.exists():
         replay_blob.upload_from_filename(str(snapshot_path), if_generation_match=0)
     raw_uri = f"gs://{bucket.name}/{replay_blob.name}"

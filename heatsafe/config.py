@@ -15,7 +15,7 @@ class Settings:
     mode: str = "auto"
     scenario: str = "heatwave"
     live_freshness_minutes: int = 30
-    enable_ai: bool = False
+    enable_ai: bool = True
     gemini_model: str = "gemini-3.1-flash-lite"
 
     @classmethod
@@ -35,7 +35,7 @@ class Settings:
             live_freshness_minutes=int(
                 os.getenv("HEATSAFE_LIVE_FRESHNESS_MINUTES", "30")
             ),
-            enable_ai=os.getenv("HEATSAFE_ENABLE_AI", "0") == "1",
+            enable_ai=os.getenv("HEATSAFE_ENABLE_AI", "1") == "1",
             gemini_model=os.getenv("HEATSAFE_GEMINI_MODEL", "gemini-3.1-flash-lite"),
         )
 

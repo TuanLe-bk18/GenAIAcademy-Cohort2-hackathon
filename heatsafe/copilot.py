@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -20,7 +21,38 @@ class ToolResult:
 
 def _plain(text: str) -> str:
     normalized = unicodedata.normalize("NFD", text.lower())
-    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    without_marks = "".join(
+        char for char in normalized if unicodedata.category(char) != "Mn"
+    )
+    return without_marks.replace("đ", "d")
+
+
+def _question_horizon_minutes(question: str, default: int = 60) -> int:
+    plain = _plain(question)
+    minute_match = re.search(r"\b(\d{1,3})\s*(?:minutes?|mins?|phut)\b", plain)
+    if minute_match:
+        return max(15, min(240, int(minute_match.group(1))))
+    hour_match = re.search(r"\b(\d{1,2})\s*(?:hours?|hrs?|gio)\b", plain)
+    if hour_match:
+        return max(15, min(240, int(hour_match.group(1)) * 60))
+    return default
+
+
+def _question_budget_vnd(question: str, default: int = 1_000_000) -> int:
+    plain = _plain(question)
+    million_match = re.search(
+        r"\b(\d+(?:[.,]\d+)?)\s*(?:million|trieu)\b", plain
+    )
+    if million_match:
+        amount = float(million_match.group(1).replace(",", "."))
+        return max(100_000, round(amount * 1_000_000))
+    amount_match = re.search(
+        r"\b(\d{1,3}(?:[.,]\d{3})+|\d{6,})\s*(?:vnd|dong)?\b", plain
+    )
+    if amount_match:
+        amount = int(re.sub(r"[.,]", "", amount_match.group(1)))
+        return max(100_000, amount)
+    return default
 
 
 def rank_hotspots(zones: list[ZoneSnapshot], limit: int = 3) -> ToolResult:
@@ -79,7 +111,9 @@ def explain_zone(zone: ZoneSnapshot) -> ToolResult:
 
 
 def simulate_zone_action(
-    zone: ZoneSnapshot, repository: HybridRepository | None = None
+    zone: ZoneSnapshot,
+    repository: HybridRepository | None = None,
+    budget_cap_vnd: int = 1_000_000,
 ) -> ToolResult:
     repository = repository or HybridRepository("snapshot")
     repository.load()
@@ -98,6 +132,7 @@ def simulate_zone_action(
             point.predicted_requests for point in forecast.points
         ),
         upper_demand_by_interval=tuple(point.upper_bound for point in forecast.points),
+        budget_cap_vnd=max(100_000, budget_cap_vnd),
     )
     if result.recommended is None:
         return ToolResult(
@@ -112,8 +147,10 @@ def simulate_zone_action(
     proposal = result.recommended
     facts = proposal.to_dict()
     facts["forecast_source"] = forecast.source
+    facts["alternatives"] = [item.to_dict() for item in result.alternatives]
     answer = (
-        f"BigQuery ML recommends {proposal.selected_drivers} of {proposal.eligible_drivers} "
+        f"Compared {len(result.alternatives)} feasible SafePause option(s). BigQuery ML recommends "
+        f"{proposal.selected_drivers} of {proposal.eligible_drivers} "
         f"AI-eligible drivers in {proposal.waves} wave(s), with an estimated "
         f"{proposal.expected_risk_events_prevented:.2f} operational heat-risk escalations prevented. "
         f"Upper-demand fulfillment is {proposal.p90_fulfillment_rate:.1%} versus baseline "
@@ -122,6 +159,81 @@ def simulate_zone_action(
         f"${proposal.net_platform_cost_vnd / 25000:,.2f}. {proposal.guardrail_notes[0]}."
     )
     return ToolResult("simulate_safepause", facts, answer)
+
+
+def forecast_zone_demand(
+    zone: ZoneSnapshot,
+    repository: HybridRepository,
+    horizon_minutes: int,
+) -> ToolResult:
+    repository.load()
+    horizon_minutes = max(15, min(240, horizon_minutes))
+    forecast = repository.forecast_demand(zone.zone_id, horizon_minutes)
+    facts = forecast.to_dict()
+    answer = (
+        f"Demand forecast for {zone.name} over the next {horizon_minutes} minutes is "
+        f"{forecast.predicted_requests:,} requests. Source: {forecast.source}. "
+        "This forecast is an estimate."
+    )
+    return ToolResult("forecast_zone_demand", facts, answer)
+
+
+def recommend_intervention(
+    zones: list[ZoneSnapshot],
+    repository: HybridRepository,
+    horizon_minutes: int,
+    budget_cap_vnd: int,
+) -> ToolResult:
+    repository.load()
+    candidates: list[dict] = []
+    ranked = sorted(
+        zones,
+        key=lambda zone: (operational_priority(zone), zone.heat_index_c),
+        reverse=True,
+    )[:3]
+    for zone in ranked:
+        result = simulate_zone_action(zone, repository, budget_cap_vnd)
+        candidates.append(
+            {
+                "zone": zone.name,
+                "priority": operational_priority(zone),
+                "status": result.facts.get("status", result.tool_name),
+                "proposal": (
+                    result.facts if result.tool_name == "simulate_safepause" else None
+                ),
+            }
+        )
+    feasible = [item for item in candidates if item["proposal"]]
+    if not feasible:
+        return ToolResult(
+            "recommend_intervention",
+            {
+                "status": "NO_FEASIBLE",
+                "horizon_minutes": horizon_minutes,
+                "budget_cap_vnd": budget_cap_vnd,
+                "candidates": candidates,
+            },
+            "No zone has a verified feasible SafePause plan for the requested horizon and budget; HeatSafe remains in monitoring-only mode.",
+        )
+    selected = feasible[0]
+    proposal = selected["proposal"]
+    answer = (
+        f"Intervene first in {selected['zone']}: {proposal['selected_drivers']} drivers "
+        f"across {proposal['waves']} wave(s), estimated net platform cost "
+        f"${proposal['net_platform_cost_vnd'] / 25_000:,.2f}, stress-case fulfillment "
+        f"{proposal['p90_fulfillment_rate']:.1%}, and ETA impact "
+        f"+{proposal['p90_eta_increase_minutes']:.1f} min. This action is simulated."
+    )
+    return ToolResult(
+        "recommend_intervention",
+        {
+            "recommended": selected,
+            "alternatives": candidates,
+            "horizon_minutes": horizon_minutes,
+            "budget_cap_vnd": budget_cap_vnd,
+        },
+        answer,
+    )
 
 
 class HeatSafeCopilot:
@@ -142,11 +254,48 @@ class HeatSafeCopilot:
     def _route(self, question: str) -> ToolResult:
         plain_question = _plain(question)
         zone = self._find_zone(question)
+        horizon_minutes = _question_horizon_minutes(question)
+        budget_cap_vnd = _question_budget_vnd(question)
+        intervention_intent = any(
+            phrase in plain_question
+            for phrase in (
+                "where should",
+                "which area",
+                "where to intervene",
+                "should be intervened",
+                "nen can thiep",
+                "can thiep o dau",
+                "khu vuc nao",
+            )
+        )
+        if intervention_intent:
+            return recommend_intervention(
+                self.zones,
+                self.repository,
+                horizon_minutes,
+                budget_cap_vnd,
+            )
+        if any(
+            word in plain_question
+            for word in ("forecast", "demand", "du bao", "nhu cau")
+        ):
+            if zone is None:
+                return ToolResult(
+                    "forecast_zone_demand",
+                    {"status": "ZONE_REQUIRED"},
+                    "Please specify one HeatSafe zone for the demand forecast.",
+                )
+            return forecast_zone_demand(zone, self.repository, horizon_minutes)
         if any(
             word in plain_question
             for word in (
                 "chi phi",
                 "cost",
+                "budget",
+                "ngan sach",
+                "compare",
+                "option",
+                "accommodation",
                 "safe pause",
                 "safepause",
                 "pause",
@@ -155,7 +304,7 @@ class HeatSafeCopilot:
             )
         ):
             target = zone or max(self.zones, key=operational_priority)
-            return simulate_zone_action(target, self.repository)
+            return simulate_zone_action(target, self.repository, budget_cap_vnd)
         if zone:
             return explain_zone(zone)
         if any(word in plain_question for word in ("khu vuc", "hotspot", "rui ro", "uu tien", "cao nhat")):
@@ -366,14 +515,40 @@ class HeatSafeCopilot:
                     },
                 ),
             ]
-            if any(token in plain_question for token in ("nen can thiep", "o dau", "khu vuc nao")):
+            if any(
+                token in plain_question
+                for token in (
+                    "nen can thiep",
+                    "o dau",
+                    "khu vuc nao",
+                    "where should",
+                    "which area",
+                    "where to intervene",
+                    "should be intervened",
+                )
+            ):
                 allowed = ["recommend_intervention"]
             elif any(
                 token in plain_question
-                for token in ("chi phi", "cost", "safepause", "safe pause", "pause", "phuong an nghi")
+                for token in (
+                    "chi phi",
+                    "cost",
+                    "budget",
+                    "ngan sach",
+                    "compare",
+                    "option",
+                    "accommodation",
+                    "safepause",
+                    "safe pause",
+                    "pause",
+                    "phuong an nghi",
+                )
             ):
                 allowed = ["compare_safepause_options"]
-            elif any(token in plain_question for token in ("du bao", "forecast", "nhu cau")):
+            elif any(
+                token in plain_question
+                for token in ("du bao", "forecast", "nhu cau", "demand")
+            ):
                 allowed = ["forecast_zone_demand"]
             elif self._find_zone(question):
                 allowed = ["explain_zone_risk"]
@@ -388,6 +563,8 @@ class HeatSafeCopilot:
                 config=types.GenerateContentConfig(
                     system_instruction=(
                         "Select the one allowed HeatSafe function and extract its arguments from the user question. "
+                        "In HeatSafe, 'accommodation options', 'rest options', and 'phuong an nghi' mean "
+                        "SafePause duration-and-wave options, never lodging or hotels. "
                         f"Valid zones: {', '.join(zone.name for zone in self.zones)}. Never invent a zone."
                     ),
                     temperature=0,
@@ -424,6 +601,8 @@ class HeatSafeCopilot:
                 config=types.GenerateContentConfig(
                     system_instruction=(
                         "You are the HeatSafe AI Ops Copilot. Use only provided BigQuery ML tool results; do not invent numbers, "
+                        "Interpret 'accommodation options', 'rest options', and 'phuong an nghi' as SafePause "
+                        "duration-and-wave options, never lodging or hotels. "
                         "zones, or causes. Reply concisely in English, cite sources if any, mark forecasts "
                         "and counterfactual impacts as estimates, never turn MODEL_UNAVAILABLE or NO_FEASIBLE into a recommendation, "
                         "refer to cost/fulfillment/ETA as guardrails, and clarify that actions are simulated."
