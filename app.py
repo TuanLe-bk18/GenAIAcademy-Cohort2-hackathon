@@ -596,33 +596,7 @@ with city_tab:
 
 with drivers_tab:
     if proposal:
-        compare_rows = [
-            {
-                "Policy": "Safety-first hybrid",
-                "Selected": proposal.selected_drivers,
-                "Expected prevented": proposal.expected_risk_events_prevented,
-                "Recovery minutes": proposal.exposure_minutes_avoided,
-                "Stress fulfillment": f"{proposal.p90_fulfillment_rate:.1%}",
-                "ETA": f"+{proposal.p90_eta_increase_minutes:.1f}m",
-                "Net cost": format_currency_vnd(proposal.net_platform_cost_vnd),
-                "Feasible": proposal.within_guardrails,
-            }
-        ]
-        if rule_reference:
-            compare_rows.append(
-                {
-                    "Policy": "Rule: pause everyone ≥2h",
-                    "Selected": rule_reference.selected_drivers,
-                    "Expected prevented": rule_reference.expected_risk_events_prevented,
-                    "Recovery minutes": rule_reference.exposure_minutes_avoided,
-                    "Stress fulfillment": f"{rule_reference.p90_fulfillment_rate:.1%}",
-                    "ETA": f"+{rule_reference.p90_eta_increase_minutes:.1f}m",
-                    "Net cost": format_currency_vnd(rule_reference.net_platform_cost_vnd),
-                    "Feasible": rule_reference.within_guardrails,
-                }
-            )
-        st.markdown("#### Why safety-first changes the decision")
-        st.dataframe(pd.DataFrame(compare_rows), hide_index=True, width="stretch")
+        st.markdown("#### Selected Driver list for SafePause")
         driver_rows = [
             {
                 "Driver": item.driver_id_hash[:10],
@@ -642,7 +616,7 @@ with drivers_tab:
                     item.priority_tier != "MANDATORY_4H",
                     -item.baseline_risk,
                 ),
-            )[:20]
+            )
         ]
         st.dataframe(pd.DataFrame(driver_rows), hide_index=True, width="stretch")
         st.caption("Factors explain the no-action prediction; they do not prove why a pause works.")
@@ -661,8 +635,8 @@ with copilot_tab:
         suggested_questions = (
             f"Why is {selected.name} prioritized now?",
             f"Forecast demand in {selected.name} for the next 60 minutes",
-            f"Compare SafePause options in {selected.name} with a budget of 2 million VND",
-            "Which area should we intervene in over the next 90 minutes with a budget of 3 million VND?",
+            f"Compare SafePause options in {selected.name} with a budget of $100",
+            "Which area should we intervene in over the next 90 minutes with a budget of $150?",
         )
         st.markdown(
             '<div class="ops-eyebrow" style="margin:.35rem 0 .45rem">Suggested questions</div>',
@@ -917,7 +891,7 @@ with right_col:
         )
         cost_pct = min(100.0, proposal.net_platform_cost_vnd / max(budget_cap * 25_000, 1) * 100)
         impact_rows = (
-            ("Fulfillment", f"{proposal.p90_fulfillment_rate:.1%}", min(100, fulfillment_drop * 12), "minimum 95%"),
+            ("Fulfillment drop", f"{fulfillment_drop:.1f}%", min(100, fulfillment_drop / 2.0 * 100), "maximum 2.0%"),
             ("ETA impact", f"+{proposal.p90_eta_increase_minutes:.1f}m", min(100, proposal.p90_eta_increase_minutes / 2 * 100), "maximum +2.0m"),
             ("Net platform cost", format_currency_vnd(proposal.net_platform_cost_vnd), cost_pct, f"limit ${budget_cap:,.0f}"),
         )
