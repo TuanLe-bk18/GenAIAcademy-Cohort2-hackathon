@@ -269,6 +269,7 @@ class AIDecisionTests(unittest.TestCase):
         self.assertEqual(result.status, "FEASIBLE")
         proposal = result.recommended
         self.assertIsNotNone(proposal)
+        assert proposal is not None
         self.assertEqual(proposal.prediction_run_id, "run-1")
         self.assertGreater(proposal.expected_risk_events_prevented, 0)
         self.assertEqual(
@@ -315,6 +316,7 @@ class AIDecisionTests(unittest.TestCase):
             budget_cap_vnd=800_000,
         )
         self.assertEqual(result.status, "FEASIBLE")
+        assert result.recommended is not None
         selected_ids = {item.driver_id_hash for item in result.recommended.driver_decisions}
         self.assertIn("driver-40", selected_ids)
 
@@ -338,6 +340,7 @@ class AIDecisionTests(unittest.TestCase):
             mandatory_ids={"fa90abb159"},
         )
         self.assertIsNotNone(proposal)
+        assert proposal is not None
         decisions = {item.driver_id_hash: item for item in proposal.driver_decisions}
         self.assertEqual(decisions["fa90abb159"].pause_start_delay_minutes, 0)
         self.assertEqual(decisions["fa90abb159"].priority_tier, "MANDATORY_4H")
@@ -364,6 +367,7 @@ class AIDecisionTests(unittest.TestCase):
             mandatory_ids={"fa90abb159"},
         )
         self.assertIsNotNone(proposal)
+        assert proposal is not None
         self.assertIn(
             "fa90abb159",
             {item.driver_id_hash for item in proposal.driver_decisions},
@@ -378,6 +382,7 @@ class AIDecisionTests(unittest.TestCase):
             budget_cap_vnd=10_000_000,
         )
         self.assertEqual(result.status, "FEASIBLE")
+        assert result.recommended is not None
         self.assertEqual(result.recommended.mandatory_eligible_drivers, 1)
         self.assertEqual(result.recommended.mandatory_selected_drivers, 1)
         self.assertEqual(result.recommended.max_mandatory_delay_minutes, 0)
@@ -441,6 +446,7 @@ class BigQuerySnapshotTests(unittest.TestCase):
         )
         result = repository.load()
         self.assertFalse(result.data_fresh)
+        assert result.freshness_warning is not None
         self.assertIn("older than", result.freshness_warning)
 
     def test_heatwave_replay_does_not_expire(self):
@@ -504,6 +510,9 @@ class BigQueryIoTests(unittest.TestCase):
             target_predicate="target.updated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)",
         )
         self.assertNotEqual(client.loaded_table, target)
+        assert client.loaded_table is not None
+        assert client.query_text is not None
+        assert client.query_config is not None
         self.assertIn("__staging_", client.loaded_table)
         self.assertIn(f"MERGE `{target}`", client.query_text)
         self.assertIn("target.updated_at >=", client.query_text)

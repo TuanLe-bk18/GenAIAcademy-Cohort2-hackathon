@@ -529,7 +529,7 @@ def evaluate_rule_reference(
             for item in predictions
             if item.exposure_minutes >= 120
         },
-        key=baseline.get,
+        key=lambda driver_id: baseline[driver_id],
         reverse=True,
     )
     if not rule_ids:

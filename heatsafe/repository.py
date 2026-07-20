@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from typing import Any
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -250,9 +251,9 @@ class BigQueryRepository:
         if self.scenario not in {"live", "heatwave"}:
             raise ValueError("HEATSAFE_SCENARIO must be live or heatwave")
         self.table = f"{self.dataset}.{self.settings.current_snapshot_table}"
-        self._client_instance = None
+        self._client_instance: Any | None = None
 
-    def _client(self):
+    def _client(self) -> Any:
         if self._client_instance is None:
             from google.cloud import bigquery
 

@@ -14,7 +14,7 @@ from google.cloud import bigquery
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from heatsafe.config import Settings
+from heatsafe.config import Settings  # noqa: E402
 
 
 def _query(client: bigquery.Client, sql: str, *, parameters: list | None = None) -> None:

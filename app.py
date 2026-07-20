@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -11,7 +12,7 @@ import streamlit as st
 from heatsafe.ai_decision import evaluate_rule_reference, recommend_ai_intervention
 from heatsafe.audit import HybridInterventionAuditStore
 from heatsafe.copilot import HeatSafeCopilot
-from heatsafe.repository import AIModelUnavailable, HybridRepository
+from heatsafe.repository import HybridRepository
 from heatsafe.risk import TIER_LABELS, heat_tier, operational_priority
 from heatsafe.telemetry import log_event
 
@@ -27,7 +28,7 @@ TIER_CSS = {
     "EXTREME_DANGER": "tier-extreme",
 }
 
-PLOTLY_LAYOUT = dict(
+PLOTLY_LAYOUT: dict[str, Any] = dict(
     template="plotly_dark",
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
@@ -508,14 +509,14 @@ with city_tab:
                 ],
                 initial_view_state=pdk.ViewState(latitude=21.025, longitude=105.81, zoom=10.1, pitch=35),
                 map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-                tooltip={"html": "<b>{name}</b><br/>Expected escalations: {expected_events}<br/>Heat Index: {heat_index}°C<br/>Active: {active}", "style": {"backgroundColor": "#211f1c", "color": "white"}},
+                tooltip=cast(Any, {"html": "<b>{name}</b><br/>Expected escalations: {expected_events}<br/>Heat Index: {heat_index}°C<br/>Active: {active}", "style": {"backgroundColor": "#211f1c", "color": "white"}}),
             ),
             height=360,
             key=f"city-zone-map:{selection_context}:{selected.zone_id}",
             on_select="rerun",
             selection_mode="single-object",
         )
-        selected_objects = map_event.selection.objects.get("city-zones", [])
+        selected_objects = map_event.get("selection", {}).get("objects", {}).get("city-zones", [])
         clicked_zone_id = selected_objects[0].get("zone_id") if selected_objects else None
         if clicked_zone_id in valid_zone_ids and clicked_zone_id != selected.zone_id:
             st.session_state.selected_zone_id = clicked_zone_id
