@@ -4,6 +4,7 @@ import math
 import uuid
 from datetime import UTC, datetime
 
+from .currency import USD_TO_VND
 from .models import (
     DriverActionPrediction,
     DriverDecision,
@@ -231,7 +232,9 @@ def _build_candidate(
 
     violations: list[str] = []
     if net_cost > budget_cap_vnd:
-        violations.append(f"Platform cost exceeds ${budget_cap_vnd / 25_000:,.2f}")
+        violations.append(
+                    f"Platform cost exceeds ${budget_cap_vnd / USD_TO_VND:,.2f}"
+                )
     if (
         baseline_stress.fulfillment_rate - action_stress.fulfillment_rate
         > MAX_FULFILLMENT_DEGRADATION

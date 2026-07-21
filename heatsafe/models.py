@@ -6,6 +6,36 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class DecisionConstraints:
+    """Normalized controls shared by selected-zone and city-wide decisions."""
+
+    horizon_minutes: int = 240
+    budget_cap_vnd: int = 5_000_000
+    sponsor_per_driver_vnd: int = 8_000
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "horizon_minutes",
+            max(15, min(240, int(self.horizon_minutes))),
+        )
+        object.__setattr__(self, "budget_cap_vnd", max(0, int(self.budget_cap_vnd)))
+        object.__setattr__(
+            self,
+            "sponsor_per_driver_vnd",
+            max(0, int(self.sponsor_per_driver_vnd)),
+        )
+
+    def normalized(self) -> DecisionConstraints:
+        """Return a constructor-normalized copy for explicit boundary handling."""
+        return DecisionConstraints(
+            horizon_minutes=self.horizon_minutes,
+            budget_cap_vnd=self.budget_cap_vnd,
+            sponsor_per_driver_vnd=self.sponsor_per_driver_vnd,
+        )
+
+
+@dataclass(frozen=True)
 class ZoneSnapshot:
     zone_id: str
     name: str

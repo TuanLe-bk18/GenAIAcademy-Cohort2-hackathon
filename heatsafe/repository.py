@@ -233,6 +233,15 @@ class SnapshotRepository:
             "Driver-level BigQuery ML predictions are unavailable in snapshot mode"
         )
 
+    def load_driver_predictions_many(
+        self, zone_ids: list[str], snapshot_id: str
+    ) -> dict[str, tuple[DriverActionPrediction, ...]]:
+        if not zone_ids:
+            return {}
+        raise AIModelUnavailable(
+            "Driver-level BigQuery ML predictions are unavailable in snapshot mode"
+        )
+
 
 class BigQueryRepository:
     """Read scenario-safe current snapshots and bounded TimesFM forecasts."""
@@ -408,22 +417,30 @@ class BigQueryRepository:
         horizon_minutes = max(15, min(MAX_FORECAST_MINUTES, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
         query = f"""
-            SELECT
-              zone_id,
-              forecast_at forecast_timestamp,
-              predicted_requests forecast_value,
-              lower_bound prediction_interval_lower_bound,
-              upper_bound prediction_interval_upper_bound,
-              status ai_forecast_status
-            FROM `{self.dataset}.zone_demand_forecasts`
-            WHERE scenario_id = @scenario_id AND zone_id IN UNNEST(@zone_ids)
-              AND snapshot_id = (
-                SELECT ANY_VALUE(snapshot_id) FROM `{self.table}`
-                WHERE scenario_id = @scenario_id
-              )
-            QUALIFY prediction_run_id = MAX(prediction_run_id) OVER (PARTITION BY zone_id)
-              AND ROW_NUMBER() OVER (PARTITION BY zone_id ORDER BY forecast_at) <= @horizon_intervals
-            ORDER BY zone_id, forecast_at
+            WITH latest_runs AS (
+              SELECT
+                zone_id,
+                prediction_run_id,
+                forecast_at forecast_timestamp,
+                predicted_requests forecast_value,
+                lower_bound prediction_interval_lower_bound,
+                upper_bound prediction_interval_upper_bound,
+                status ai_forecast_status
+              FROM `{self.dataset}.zone_demand_forecasts`
+              WHERE scenario_id = @scenario_id AND zone_id IN UNNEST(@zone_ids)
+                AND snapshot_id = (
+                  SELECT ANY_VALUE(snapshot_id) FROM `{self.table}`
+                  WHERE scenario_id = @scenario_id
+                )
+              QUALIFY prediction_run_id = MAX(prediction_run_id)
+                OVER (PARTITION BY zone_id)
+            )
+            SELECT * EXCEPT(prediction_run_id)
+            FROM latest_runs
+            QUALIFY ROW_NUMBER() OVER (
+              PARTITION BY zone_id ORDER BY forecast_timestamp
+            ) <= @horizon_intervals
+            ORDER BY zone_id, forecast_timestamp
         """
         config = self._job_config(
             [
@@ -436,17 +453,54 @@ class BigQueryRepository:
         rows = list(self._client().query(query, job_config=config).result())
         grouped = {zone_id: [] for zone_id in zone_ids}
         for row in rows:
-            grouped.setdefault(row.zone_id, []).append(row)
-        return {
-            zone_id: self._build_forecast(zone_id, horizon_minutes, grouped[zone_id])
-            for zone_id in zone_ids
-        }
+            grouped.setdefault(str(row.zone_id), []).append(row)
+        forecasts: dict[str, DemandForecast] = {}
+        for zone_id in zone_ids:
+            try:
+                forecasts[zone_id] = self._build_forecast(
+                    zone_id, horizon_minutes, grouped[zone_id]
+                )
+            except ForecastUnavailable:
+                # The city service reports this zone explicitly while retaining
+                # valid forecasts returned for other zones in the same batch.
+                continue
+        return forecasts
+
+    @staticmethod
+    def _factor_names(raw: Any) -> tuple[str, ...]:
+        if raw is None:
+            return ()
+        value = json.loads(raw) if isinstance(raw, str) else raw
+        return tuple(
+            str(item.get("feature"))
+            for item in value
+            if isinstance(item, dict) and item.get("feature")
+        )
+
+    @classmethod
+    def _build_driver_predictions(
+        cls, rows: list[Any]
+    ) -> tuple[DriverActionPrediction, ...]:
+        return tuple(
+            DriverActionPrediction(
+                driver_id_hash=str(row.driver_id_hash),
+                zone_id=str(row.zone_id),
+                snapshot_id=str(row.snapshot_id),
+                prediction_run_id=str(row.prediction_run_id),
+                model_version=str(row.model_version),
+                exposure_minutes=int(row.continuous_exposure_minutes),
+                baseline_risk=float(row.baseline_risk_probability),
+                action_risk=float(row.risk_probability),
+                pause_start_delay_minutes=int(row.pause_start_delay_minutes),
+                pause_duration_minutes=int(row.pause_duration_minutes),
+                top_factors=cls._factor_names(row.top_factors_json),
+            )
+            for row in rows
+        )
 
     def load_driver_predictions(
         self, zone_id: str, snapshot_id: str
     ) -> tuple[DriverActionPrediction, ...]:
-        import json
-
         from google.cloud import bigquery
 
         query = f"""
@@ -472,33 +526,42 @@ class BigQueryRepository:
             raise AIModelUnavailable(
                 f"No AI predictions for snapshot {snapshot_id} in zone {zone_id}"
             )
+        return self._build_driver_predictions(rows)
 
-        def factor_names(raw) -> tuple[str, ...]:
-            if raw is None:
-                return ()
-            value = json.loads(raw) if isinstance(raw, str) else raw
-            return tuple(
-                str(item.get("feature"))
-                for item in value
-                if isinstance(item, dict) and item.get("feature")
-            )
+    def load_driver_predictions_many(
+        self, zone_ids: list[str], snapshot_id: str
+    ) -> dict[str, tuple[DriverActionPrediction, ...]]:
+        from google.cloud import bigquery
 
-        return tuple(
-            DriverActionPrediction(
-                driver_id_hash=str(row.driver_id_hash),
-                zone_id=str(row.zone_id),
-                snapshot_id=str(row.snapshot_id),
-                prediction_run_id=str(row.prediction_run_id),
-                model_version=str(row.model_version),
-                exposure_minutes=int(row.continuous_exposure_minutes),
-                baseline_risk=float(row.baseline_risk_probability),
-                action_risk=float(row.risk_probability),
-                pause_start_delay_minutes=int(row.pause_start_delay_minutes),
-                pause_duration_minutes=int(row.pause_duration_minutes),
-                top_factors=factor_names(row.top_factors_json),
-            )
-            for row in rows
+        if not zone_ids:
+            return {}
+        query = f"""
+            SELECT *
+            FROM `{self.dataset}.driver_risk_predictions`
+            WHERE scenario_id = @scenario_id
+              AND zone_id IN UNNEST(@zone_ids)
+              AND snapshot_id = @snapshot_id
+              AND action_type = 'SAFEPAUSE'
+            QUALIFY prediction_run_id = MAX(prediction_run_id) OVER (PARTITION BY zone_id)
+            ORDER BY zone_id, driver_id_hash, pause_duration_minutes,
+                     pause_start_delay_minutes
+        """
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
+                bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
+                bigquery.ScalarQueryParameter("snapshot_id", "STRING", snapshot_id),
+            ],
+            100_000_000,
         )
+        rows = list(self._client().query(query, job_config=config).result())
+        grouped: dict[str, list[Any]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.zone_id), []).append(row)
+        return {
+            zone_id: self._build_driver_predictions(zone_rows)
+            for zone_id, zone_rows in grouped.items()
+        }
 
     def load_zone_risk_summary(self, snapshot_id: str) -> dict[str, float]:
         from google.cloud import bigquery
@@ -611,6 +674,17 @@ class HybridRepository:
                 "AI recommendations require materialized BigQuery ML predictions"
             )
         return self._active.load_driver_predictions(zone_id, snapshot_id)
+
+    def load_driver_predictions_many(
+        self, zone_ids: list[str], snapshot_id: str
+    ) -> dict[str, tuple[DriverActionPrediction, ...]]:
+        if not zone_ids:
+            return {}
+        if not isinstance(self._active, BigQueryRepository):
+            raise AIModelUnavailable(
+                "AI recommendations require materialized BigQuery ML predictions"
+            )
+        return self._active.load_driver_predictions_many(zone_ids, snapshot_id)
 
     def load_zone_risk_summary(self, snapshot_id: str) -> dict[str, float]:
         if not isinstance(self._active, BigQueryRepository):

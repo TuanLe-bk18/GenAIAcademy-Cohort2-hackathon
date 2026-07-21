@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .currency import USD_TO_VND
 from .models import PauseWave, SafePauseProposal, ZoneSnapshot
 from .risk import eligible_driver_cohorts
 
@@ -167,7 +168,7 @@ def simulate_safepause(
 
     notes: list[str] = []
     if net_cost > budget_cap_vnd:
-        notes.append(f"Exceeds budget of ${budget_cap_vnd / 25000:,.2f}")
+        notes.append(f"Exceeds budget of ${budget_cap_vnd / USD_TO_VND:,.2f}")
     if p90.fulfillment_rate < min_fulfillment_rate:
         notes.append(f"P90 fulfillment below {min_fulfillment_rate:.0%}")
     if p90.eta_increase_minutes > max_eta_increase_minutes:
