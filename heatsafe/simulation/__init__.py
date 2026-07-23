@@ -1,9 +1,87 @@
-"""Contracts and checked fixtures for the deterministic HeatSafe replay."""
+"""Pure deterministic contracts and engine for the HeatSafe replay."""
 
+from .engine import (
+    advance_minute,
+    advance_tick,
+    hourly_summary,
+    initialize_state,
+    load_zone_priors,
+    run_full_day,
+    weather_at,
+)
+from .models import (
+    AcclimatizationClass,
+    DriverState,
+    DriverStatus,
+    InterventionState,
+    InterventionStatus,
+    OrderEvent,
+    OrderEventType,
+    OrderState,
+    OrderStatus,
+    PauseControl,
+    ScoringProjection,
+    SimulationState,
+    TickResult,
+    WeatherState,
+    ZonePrior,
+    ZoneProjection,
+)
+from .randomness import (
+    DeterministicRandom,
+    canonical_checksum,
+    canonical_json,
+    stable_int,
+)
 from .scenario import (
     ScenarioFixture,
     ScenarioValidationError,
     load_scenario,
 )
+from .transitions import (
+    SimulationInvariantError,
+    project_scoring,
+    project_zones,
+    require_driver_transition,
+    require_order_transition,
+    validate_state,
+)
 
-__all__ = ["ScenarioFixture", "ScenarioValidationError", "load_scenario"]
+__all__ = [
+    "AcclimatizationClass",
+    "DeterministicRandom",
+    "DriverState",
+    "DriverStatus",
+    "InterventionState",
+    "InterventionStatus",
+    "OrderEvent",
+    "OrderEventType",
+    "OrderState",
+    "OrderStatus",
+    "PauseControl",
+    "ScenarioFixture",
+    "ScenarioValidationError",
+    "ScoringProjection",
+    "SimulationInvariantError",
+    "SimulationState",
+    "TickResult",
+    "WeatherState",
+    "ZonePrior",
+    "ZoneProjection",
+    "advance_minute",
+    "advance_tick",
+    "canonical_checksum",
+    "canonical_json",
+    "hourly_summary",
+    "initialize_state",
+    "load_scenario",
+    "load_zone_priors",
+    "project_scoring",
+    "project_zones",
+    "require_driver_transition",
+    "require_order_transition",
+    "run_full_day",
+    "stable_int",
+    "validate_state",
+    "weather_at",
+]
