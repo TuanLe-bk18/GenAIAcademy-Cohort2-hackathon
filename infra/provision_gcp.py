@@ -9,9 +9,11 @@ import math
 import random
 import sys
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +37,57 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
         _f("avg_platform_contribution_vnd", "INT64"),
         _f("avg_driver_earnings_vnd", "INT64"), _f("is_simulated", "BOOL"),
     ]
+    weather_lineage = [
+        _f("simulation_run_id", "STRING", "NULLABLE"),
+        _f("tick_id", "STRING", "NULLABLE"),
+        _f("source_observed_at", "TIMESTAMP", "NULLABLE"),
+        _f("source_next_observed_at", "TIMESTAMP", "NULLABLE"),
+        _f("source_interpolation_fraction", "FLOAT64", "NULLABLE"),
+        _f("source_temperature_c", "FLOAT64", "NULLABLE"),
+        _f("temperature_adjustment_c", "FLOAT64", "NULLABLE"),
+        _f("station_peak_anchor_c", "FLOAT64", "NULLABLE"),
+        _f("apparent_temperature_c", "FLOAT64", "NULLABLE"),
+        _f("wind_speed_mps", "FLOAT64", "NULLABLE"),
+        _f("wind_gust_mps", "FLOAT64", "NULLABLE"),
+        _f("precipitation_mm", "FLOAT64", "NULLABLE"),
+        _f("cloud_cover_pct", "FLOAT64", "NULLABLE"),
+        _f("shortwave_radiation_wm2", "FLOAT64", "NULLABLE"),
+        _f("utci_c", "FLOAT64", "NULLABLE"),
+        _f("derivation_version", "STRING", "NULLABLE"),
+        _f("generator_version", "STRING", "NULLABLE"),
+    ]
+    operation_lineage = [
+        _f("simulation_run_id", "STRING", "NULLABLE"),
+        _f("tick_id", "STRING", "NULLABLE"),
+        _f("online_drivers", "INT64", "NULLABLE"),
+        _f("idle_drivers", "INT64", "NULLABLE"),
+        _f("to_pickup_drivers", "INT64", "NULLABLE"),
+        _f("on_trip_drivers", "INT64", "NULLABLE"),
+        _f("to_coolstop_drivers", "INT64", "NULLABLE"),
+        _f("paused_drivers", "INT64", "NULLABLE"),
+        _f("exposed_2_to_4h", "INT64", "NULLABLE"),
+        _f("requests_15m", "INT64", "NULLABLE"),
+        _f("matched_15m", "INT64", "NULLABLE"),
+        _f("completed_15m", "INT64", "NULLABLE"),
+        _f("cancelled_15m", "INT64", "NULLABLE"),
+        _f("unfulfilled_15m", "INT64", "NULLABLE"),
+        _f("median_wait_minutes", "FLOAT64", "NULLABLE"),
+        _f("p90_wait_minutes", "FLOAT64", "NULLABLE"),
+        _f("fulfillment_rate", "FLOAT64", "NULLABLE"),
+        _f("generator_version", "STRING", "NULLABLE"),
+    ]
+    prediction_lineage = [
+        _f("simulation_run_id", "STRING", "NULLABLE"),
+        _f("tick_id", "STRING", "NULLABLE"),
+        _f("generator_version", "STRING", "NULLABLE"),
+    ]
+    audit_lineage = [
+        _f("scenario_id", "STRING", "NULLABLE"),
+        _f("source_snapshot_id", "STRING", "NULLABLE"),
+        _f("simulation_run_id", "STRING", "NULLABLE"),
+        _f("source_tick_id", "STRING", "NULLABLE"),
+        _f("expires_at", "TIMESTAMP", "NULLABLE"),
+    ]
     return {
         "weather_observations": scenario + [
             _f("zone_id", "STRING"), _f("name", "STRING"),
@@ -43,12 +96,14 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("heat_index_c", "FLOAT64"), _f("observed_at", "TIMESTAMP"),
             _f("ingested_at", "TIMESTAMP"), _f("source", "STRING"),
             _f("raw_gcs_uri", "STRING"), _f("is_simulated", "BOOL"),
+            *weather_lineage,
         ],
-        "zone_operations": scenario + operations,
+        "zone_operations": scenario + operations + operation_lineage,
         "demand_history": [
             _f("scenario_id", "STRING", "NULLABLE"), _f("zone_id", "STRING"),
             _f("interval_start", "TIMESTAMP"), _f("requests", "INT64"),
             _f("is_simulated", "BOOL"),
+            *prediction_lineage,
         ],
         "driver_state_history": [
             _f("state_id", "STRING"), _f("scenario_id", "STRING"),
@@ -61,6 +116,16 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("hydration_gap_minutes", "INT64"),
             _f("route_heat_load", "FLOAT64"),
             _f("workload_intensity", "FLOAT64"), _f("is_simulated", "BOOL"),
+            _f("simulation_run_id", "STRING", "NULLABLE"),
+            _f("tick_id", "STRING", "NULLABLE"),
+            _f("driver_status", "STRING", "NULLABLE"),
+            _f("heat_dose_120m", "FLOAT64", "NULLABLE"),
+            _f("acclimatization_class", "STRING", "NULLABLE"),
+            _f("current_order_id", "STRING", "NULLABLE"),
+            _f("current_intervention_id", "STRING", "NULLABLE"),
+            _f("earnings_60m_vnd", "INT64", "NULLABLE"),
+            _f("platform_contribution_60m_vnd", "INT64", "NULLABLE"),
+            _f("generator_version", "STRING", "NULLABLE"),
         ],
         "driver_intervention_outcomes": [
             _f("state_id", "STRING"), _f("scenario_id", "STRING"),
@@ -83,6 +148,12 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("hydration_gap_minutes", "INT64"),
             _f("route_heat_load", "FLOAT64"),
             _f("workload_intensity", "FLOAT64"), _f("is_simulated", "BOOL"),
+            _f("simulation_run_id", "STRING", "NULLABLE"),
+            _f("tick_id", "STRING", "NULLABLE"),
+            _f("driver_status", "STRING", "NULLABLE"),
+            _f("heat_dose_120m", "FLOAT64", "NULLABLE"),
+            _f("acclimatization_class", "STRING", "NULLABLE"),
+            _f("generator_version", "STRING", "NULLABLE"),
         ],
         "driver_risk_predictions": [
             _f("prediction_run_id", "STRING"), _f("generated_at", "TIMESTAMP"),
@@ -95,6 +166,7 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("risk_probability", "FLOAT64"),
             _f("baseline_risk_probability", "FLOAT64"),
             _f("top_factors_json", "JSON"), _f("is_simulated", "BOOL"),
+            *prediction_lineage,
         ],
         "zone_demand_forecasts": [
             _f("prediction_run_id", "STRING"), _f("generated_at", "TIMESTAMP"),
@@ -103,6 +175,7 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("forecast_at", "TIMESTAMP"), _f("predicted_requests", "INT64"),
             _f("lower_bound", "INT64"), _f("upper_bound", "INT64"),
             _f("model_version", "STRING"), _f("status", "STRING"),
+            *prediction_lineage,
         ],
         "model_evaluations": [
             _f("model_version", "STRING"), _f("evaluated_at", "TIMESTAMP"),
@@ -128,6 +201,7 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("net_platform_cost_vnd", "INT64"),
             _f("projected_fulfillment_rate", "FLOAT64"),
             _f("within_guardrails", "BOOL"), _f("proposal_json", "JSON"),
+            *audit_lineage,
         ],
         "intervention_events": [
             _f("intervention_id", "STRING"), _f("proposal_id", "STRING"),
@@ -138,6 +212,7 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("selected_drivers", "INT64", "NULLABLE"),
             _f("exposure_minutes_avoided", "INT64"),
             _f("net_platform_cost_vnd", "INT64"),
+            *audit_lineage,
         ],
         "zone_snapshots_current": [
             _f("scenario_id", "STRING"), _f("snapshot_id", "STRING"),
@@ -152,6 +227,126 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("coolstop_longitude", "FLOAT64"), _f("source", "STRING"),
             _f("weather_is_simulated", "BOOL"),
             _f("operations_is_simulated", "BOOL"),
+            *prediction_lineage,
+            *operation_lineage[2:-1],
+        ],
+        "simulation_scenario_locks": [
+            _f("scenario_id", "STRING"),
+            _f("active_simulation_run_id", "STRING", "NULLABLE"),
+            _f("generation", "INT64"),
+            _f("updated_at", "TIMESTAMP"),
+        ],
+        "simulation_runs": [
+            _f("simulation_run_id", "STRING"), _f("scenario_id", "STRING"),
+            _f("scenario_version", "STRING"), _f("seed", "INT64"),
+            _f("status", "STRING"), _f("simulation_start_at", "TIMESTAMP"),
+            _f("simulation_end_at", "TIMESTAMP"),
+            _f("next_simulation_at", "TIMESTAMP"), _f("tick_minutes", "INT64"),
+            _f("speed_multiplier", "FLOAT64"),
+            _f("last_published_tick_index", "INT64", "NULLABLE"),
+            _f("last_completed_tick_index", "INT64", "NULLABLE"),
+            _f("pending_score_tick_id", "STRING", "NULLABLE"),
+            _f("config_json", "JSON"), _f("created_at", "TIMESTAMP"),
+            _f("updated_at", "TIMESTAMP"), _f("is_simulated", "BOOL"),
+        ],
+        "simulation_ticks": [
+            _f("simulation_run_id", "STRING"), _f("scenario_id", "STRING"),
+            _f("tick_id", "STRING"), _f("tick_index", "INT64"),
+            _f("simulation_time", "TIMESTAMP"), _f("snapshot_id", "STRING"),
+            _f("status", "STRING"), _f("lease_owner", "STRING", "NULLABLE"),
+            _f("lease_expires_at", "TIMESTAMP", "NULLABLE"),
+            _f("input_checksum", "STRING", "NULLABLE"),
+            _f("output_checksum", "STRING", "NULLABLE"),
+            _f("driver_count", "INT64", "NULLABLE"),
+            _f("order_event_count", "INT64", "NULLABLE"),
+            _f("started_at", "TIMESTAMP", "NULLABLE"),
+            _f("finished_at", "TIMESTAMP", "NULLABLE"),
+            _f("error_code", "STRING", "NULLABLE"),
+            _f("error_message", "STRING", "NULLABLE"),
+            _f("generator_version", "STRING"), _f("is_simulated", "BOOL"),
+        ],
+        "driver_simulation_state": [
+            _f("simulation_run_id", "STRING"), _f("scenario_id", "STRING"),
+            _f("driver_id_hash", "STRING"), _f("last_tick_id", "STRING"),
+            _f("event_time", "TIMESTAMP"), _f("zone_id", "STRING"),
+            _f("latitude", "FLOAT64"), _f("longitude", "FLOAT64"),
+            _f("status", "STRING"),
+            _f("shift_started_at", "TIMESTAMP", "NULLABLE"),
+            _f("shift_ends_at", "TIMESTAMP", "NULLABLE"),
+            _f("current_order_id", "STRING", "NULLABLE"),
+            _f("current_intervention_id", "STRING", "NULLABLE"),
+            _f("online_minutes_24h", "INT64"), _f("trips_60m", "INT64"),
+            _f("distance_km_60m", "FLOAT64"),
+            _f("workload_intensity", "FLOAT64"),
+            _f("continuous_exposure_minutes", "INT64"),
+            _f("heat_dose_120m", "FLOAT64"),
+            _f("rest_minutes_120m", "INT64"),
+            _f("hydration_gap_minutes", "INT64"),
+            _f("route_heat_load", "FLOAT64"),
+            _f("acclimatization_class", "STRING"),
+            _f("earnings_60m_vnd", "INT64"),
+            _f("platform_contribution_60m_vnd", "INT64"),
+            _f("generator_version", "STRING"), _f("is_simulated", "BOOL"),
+            _f("updated_at", "TIMESTAMP"),
+        ],
+        "order_events": [
+            _f("event_id", "STRING"), _f("simulation_run_id", "STRING"),
+            _f("tick_id", "STRING"), _f("scenario_id", "STRING"),
+            _f("order_id", "STRING"), _f("event_time", "TIMESTAMP"),
+            _f("event_type", "STRING"), _f("status", "STRING"),
+            _f("driver_id_hash", "STRING", "NULLABLE"),
+            _f("origin_zone_id", "STRING"), _f("destination_zone_id", "STRING"),
+            _f("zone_id", "STRING"), _f("requested_at", "TIMESTAMP"),
+            _f("accepted_at", "TIMESTAMP", "NULLABLE"),
+            _f("pickup_at", "TIMESTAMP", "NULLABLE"),
+            _f("dropoff_at", "TIMESTAMP", "NULLABLE"),
+            _f("cancelled_at", "TIMESTAMP", "NULLABLE"),
+            _f("distance_km", "FLOAT64", "NULLABLE"),
+            _f("estimated_duration_minutes", "FLOAT64", "NULLABLE"),
+            _f("actual_duration_minutes", "FLOAT64", "NULLABLE"),
+            _f("wait_minutes", "FLOAT64", "NULLABLE"),
+            _f("fare_vnd", "INT64", "NULLABLE"),
+            _f("driver_pay_vnd", "INT64", "NULLABLE"),
+            _f("platform_contribution_vnd", "INT64", "NULLABLE"),
+            _f("generator_version", "STRING"), _f("is_simulated", "BOOL"),
+        ],
+        "driver_intervention_events": [
+            _f("event_id", "STRING"), _f("simulation_run_id", "STRING"),
+            _f("tick_id", "STRING"), _f("scenario_id", "STRING"),
+            _f("intervention_id", "STRING"), _f("proposal_id", "STRING"),
+            _f("driver_id_hash", "STRING"), _f("zone_id", "STRING"),
+            _f("event_time", "TIMESTAMP"), _f("event_type", "STRING"),
+            _f("pause_start_delay_minutes", "INT64", "NULLABLE"),
+            _f("planned_duration_minutes", "INT64", "NULLABLE"),
+            _f("completed_rest_minutes", "INT64", "NULLABLE"),
+            _f("coolstop_name", "STRING", "NULLABLE"),
+            _f("baseline_risk_probability", "FLOAT64", "NULLABLE"),
+            _f("action_risk_probability", "FLOAT64", "NULLABLE"),
+            _f("earnings_delta_vnd", "INT64", "NULLABLE"),
+            _f("is_simulated", "BOOL"), _f("generator_version", "STRING"),
+        ],
+        "simulation_control_events": [
+            _f("control_event_id", "STRING"), _f("scenario_id", "STRING"),
+            _f("simulation_run_id", "STRING"), _f("source_tick_id", "STRING"),
+            _f("source_snapshot_id", "STRING"), _f("proposal_id", "STRING"),
+            _f("proposal_payload_checksum", "STRING"),
+            _f("status", "STRING"),
+            _f("selected_driver_count", "INT64"), _f("requested_by", "STRING"),
+            _f("actor_type", "STRING"), _f("request_execution_id", "STRING"),
+            _f("created_at", "TIMESTAMP"),
+            _f("authorization_expires_at", "TIMESTAMP"),
+            _f("valid_from_simulation_at", "TIMESTAMP"),
+            _f("valid_until_simulation_at", "TIMESTAMP"),
+            _f("max_selected_drivers", "INT64"), _f("is_simulated", "BOOL"),
+            _f("generator_version", "STRING"),
+        ],
+        "simulation_control_consumptions": [
+            _f("consumption_id", "STRING"), _f("control_event_id", "STRING"),
+            _f("scenario_id", "STRING"), _f("simulation_run_id", "STRING"),
+            _f("consumed_by_tick_id", "STRING", "NULLABLE"),
+            _f("outcome", "STRING"), _f("recorded_at", "TIMESTAMP"),
+            _f("rejection_reason", "STRING", "NULLABLE"),
+            _f("generator_version", "STRING"), _f("is_simulated", "BOOL"),
         ],
     }
 
@@ -181,8 +376,24 @@ def _table_exists(client: bigquery.Client, table_id: str) -> bool:
     try:
         client.get_table(table_id)
         return True
-    except Exception:
+    except NotFound:
         return False
+
+
+def _normalized_type(field_type: str) -> str:
+    return {
+        "INTEGER": "INT64",
+        "FLOAT": "FLOAT64",
+        "BOOLEAN": "BOOL",
+        "RECORD": "STRUCT",
+    }.get(field_type.upper(), field_type.upper())
+
+
+def _partition_signature(table: bigquery.Table) -> tuple[str, str] | None:
+    partitioning = table.time_partitioning
+    if partitioning is None:
+        return None
+    return (partitioning.field or "", str(partitioning.type_ or "DAY").upper())
 
 
 def _ensure_table(
@@ -201,20 +412,68 @@ def _ensure_table(
         client.create_table(table)
         return
     table = client.get_table(table_id)
-    existing = {field.name for field in table.schema}
+    existing = {field.name: field for field in table.schema}
+    desired = {field.name: field for field in schema}
+    if len(desired) != len(schema):
+        raise ValueError(f"{table_id} desired schema contains duplicate field names")
+    conflicts = []
+    for name in existing.keys() & desired.keys():
+        actual_field = existing[name]
+        desired_field = desired[name]
+        actual_signature = (
+            _normalized_type(actual_field.field_type),
+            actual_field.mode.upper(),
+        )
+        desired_signature = (
+            _normalized_type(desired_field.field_type),
+            desired_field.mode.upper(),
+        )
+        if actual_signature != desired_signature:
+            conflicts.append(
+                f"{name}: existing={actual_signature} desired={desired_signature}"
+            )
+    if conflicts:
+        raise RuntimeError(f"{table_id} schema conflict: {'; '.join(conflicts)}")
+    expected_partition = (partition_field, "DAY") if partition_field else None
+    actual_partition = _partition_signature(table)
+    if actual_partition != expected_partition:
+        raise RuntimeError(
+            f"{table_id} partition conflict: "
+            f"existing={actual_partition} desired={expected_partition}"
+        )
+    actual_clustering = list(table.clustering_fields or [])
+    expected_clustering = list(clustering or [])
+    if actual_clustering != expected_clustering:
+        raise RuntimeError(
+            f"{table_id} clustering conflict: "
+            f"existing={actual_clustering} desired={expected_clustering}"
+        )
     missing = [field for field in schema if field.name not in existing]
+    required_missing = [field.name for field in missing if field.mode == "REQUIRED"]
+    if required_missing:
+        raise RuntimeError(
+            f"{table_id} cannot add REQUIRED fields to an existing table: "
+            f"{required_missing}"
+        )
     fields = []
     if missing:
         table.schema = [*table.schema, *missing]
         fields.append("schema")
-    labels = dict(table.labels or {})
+    original_labels = dict(table.labels or {})
+    labels = dict(original_labels)
     labels.update({"app": "heatsafe", "env": "demo", "managed_by": "scripts"})
     table.labels = labels
-    fields.append("labels")
-    client.update_table(table, fields)
+    if labels != original_labels:
+        fields.append("labels")
+    if fields:
+        client.update_table(table, fields)
 
 
-def ensure_bigquery(settings: Settings) -> bigquery.Client:
+def ensure_bigquery(
+    settings: Settings,
+    *,
+    include_views: bool = True,
+) -> bigquery.Client:
     client = bigquery.Client(project=settings.project_id)
     dataset_ref = settings.dataset_path
     dataset = bigquery.Dataset(dataset_ref)
@@ -222,6 +481,11 @@ def ensure_bigquery(settings: Settings) -> bigquery.Client:
     dataset.labels = {"app": "heatsafe", "env": "demo", "managed_by": "scripts"}
     client.create_dataset(dataset, exists_ok=True)
     current_dataset = client.get_dataset(dataset_ref)
+    if current_dataset.location.lower() != settings.region.lower():
+        raise RuntimeError(
+            f"{dataset_ref} location conflict: existing={current_dataset.location!r} "
+            f"desired={settings.region!r}"
+        )
     current_dataset.labels = dataset.labels
     client.update_dataset(current_dataset, ["labels"])
 
@@ -232,6 +496,11 @@ def ensure_bigquery(settings: Settings) -> bigquery.Client:
         "driver_intervention_outcomes": "decision_at",
         "driver_risk_predictions": "generated_at",
         "zone_demand_forecasts": "generated_at", "model_evaluations": "evaluated_at",
+        "simulation_runs": "created_at", "simulation_ticks": "simulation_time",
+        "order_events": "event_time",
+        "driver_intervention_events": "event_time",
+        "simulation_control_events": "created_at",
+        "simulation_control_consumptions": "recorded_at",
     }
     clustered = {
         "weather_observations": ["scenario_id", "zone_id"],
@@ -246,11 +515,41 @@ def ensure_bigquery(settings: Settings) -> bigquery.Client:
         "intervention_proposals": ["zone_id"],
         "intervention_events": ["zone_id", "status"],
         "zone_snapshots_current": ["scenario_id", "zone_id"],
+        "simulation_scenario_locks": ["scenario_id"],
+        "simulation_runs": ["scenario_id", "status"],
+        "simulation_ticks": ["scenario_id", "simulation_run_id", "status"],
+        "driver_simulation_state": [
+            "scenario_id", "simulation_run_id", "zone_id", "driver_id_hash"
+        ],
+        "order_events": [
+            "scenario_id", "simulation_run_id", "zone_id", "order_id"
+        ],
+        "driver_intervention_events": [
+            "scenario_id", "simulation_run_id", "intervention_id", "driver_id_hash"
+        ],
+        "simulation_control_events": [
+            "scenario_id", "simulation_run_id", "status", "proposal_id"
+        ],
+        "simulation_control_consumptions": [
+            "scenario_id", "simulation_run_id", "outcome", "control_event_id"
+        ],
     }
     for name, schema in table_schemas().items():
+        schema_names = {field.name for field in schema}
+        missing_cluster_fields = set(clustered.get(name, [])) - schema_names
+        if missing_cluster_fields:
+            raise ValueError(
+                f"{name} clustering fields are absent from schema: "
+                f"{sorted(missing_cluster_fields)}"
+            )
+        partition_field = partitioned.get(name)
+        if partition_field and partition_field not in schema_names:
+            raise ValueError(
+                f"{name} partition field is absent from schema: {partition_field}"
+            )
         _ensure_table(
             client, f"{dataset_ref}.{name}", schema,
-            partitioned.get(name), clustered.get(name),
+            partition_field, clustered.get(name),
         )
 
     view_specs = {
@@ -258,7 +557,7 @@ def ensure_bigquery(settings: Settings) -> bigquery.Client:
         "zone_snapshots_live": "SELECT * FROM `{table}` WHERE scenario_id = 'live'",
         "zone_snapshots_heatwave": "SELECT * FROM `{table}` WHERE scenario_id = 'heatwave'",
     }
-    for view_name, query_template in view_specs.items():
+    for view_name, query_template in view_specs.items() if include_views else ():
         view_id = f"{dataset_ref}.{view_name}"
         view = bigquery.Table(view_id)
         view.view_query = query_template.format(
@@ -272,6 +571,29 @@ def ensure_bigquery(settings: Settings) -> bigquery.Client:
             client.create_table(view)
     print(f"Prepared BigQuery dataset {dataset_ref} without seeding data")
     return client
+
+
+def print_schema_readback(
+    client: bigquery.Client,
+    settings: Settings,
+) -> None:
+    readback = {}
+    for name in table_schemas():
+        table = client.get_table(f"{settings.dataset_path}.{name}")
+        readback[name] = {
+            "schema": [
+                {
+                    "name": field.name,
+                    "type": _normalized_type(field.field_type),
+                    "mode": field.mode,
+                }
+                for field in table.schema
+            ],
+            "partition": _partition_signature(table),
+            "clustering": list(table.clustering_fields or []),
+            "rows": table.num_rows,
+        }
+    print(json.dumps(readback, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def seed_demo(settings: Settings, bucket: storage.Bucket, client: bigquery.Client) -> None:
@@ -374,8 +696,15 @@ def seed_demo(settings: Settings, bucket: storage.Bucket, client: bigquery.Clien
     ]
     for name, rows, keys, target_predicate in batches:
         schema_name = "zone_snapshots_current" if name == settings.current_snapshot_table else name
+        update_fields = None
+        if name == settings.current_snapshot_table:
+            update_fields = [
+                field.name for field in schemas[schema_name]
+                if field.name not in keys
+            ]
         merge_rows(
             client, f"{dataset}.{name}", rows, schemas[schema_name], keys,
+            update_fields=update_fields,
             target_predicate=target_predicate,
         )
         print(f"Merged {len(rows):,} demo rows into {dataset}.{name}")
@@ -387,8 +716,52 @@ def main() -> None:
         "--seed-demo", action="store_true",
         help="Explicitly upsert the heatwave replay and simulated demand history.",
     )
+    parser.add_argument(
+        "--schema-only",
+        action="store_true",
+        help="Provision and read back tables only; never access Cloud Storage.",
+    )
+    parser.add_argument(
+        "--dataset",
+        help="Explicit disposable dataset ID for --schema-only.",
+    )
+    parser.add_argument(
+        "--cleanup-schema-only",
+        action="store_true",
+        help="Delete only the explicit disposable --dataset and its contents.",
+    )
     args = parser.parse_args()
     settings = Settings.from_env()
+    if args.schema_only:
+        if args.seed_demo:
+            parser.error("--schema-only cannot be combined with --seed-demo")
+        if not args.dataset:
+            parser.error("--schema-only requires an explicit --dataset")
+        if not (
+            args.dataset.startswith("heatsafe_phase1_")
+            or args.dataset.startswith("heatsafe_p0_test_")
+        ):
+            parser.error(
+                "--schema-only dataset must start with heatsafe_phase1_ "
+                "or heatsafe_p0_test_"
+            )
+        if args.dataset == settings.dataset_id:
+            parser.error("--schema-only refuses the configured production dataset")
+        schema_settings = replace(settings, dataset_id=args.dataset)
+        if args.cleanup_schema_only:
+            client = bigquery.Client(project=schema_settings.project_id)
+            client.delete_dataset(
+                schema_settings.dataset_path,
+                delete_contents=True,
+                not_found_ok=True,
+            )
+            print(f"Deleted disposable dataset {schema_settings.dataset_path}")
+            return
+        client = ensure_bigquery(schema_settings, include_views=False)
+        print_schema_readback(client, schema_settings)
+        return
+    if args.dataset or args.cleanup_schema_only:
+        parser.error("--dataset and --cleanup-schema-only require --schema-only")
     bucket = ensure_bucket(settings)
     client = ensure_bigquery(settings)
     if args.seed_demo:

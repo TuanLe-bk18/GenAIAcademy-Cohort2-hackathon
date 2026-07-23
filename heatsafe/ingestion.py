@@ -157,6 +157,10 @@ class WeatherIngestionService:
         merge_rows(
             client, f"{dataset}.{self.settings.current_snapshot_table}", current_rows,
             schemas["zone_snapshots_current"], ["scenario_id", "zone_id"],
+            update_fields=[
+                field.name for field in schemas["zone_snapshots_current"]
+                if field.name not in {"scenario_id", "zone_id"}
+            ],
         )
         log_event(
             "live_snapshot_ingestion_completed",

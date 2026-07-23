@@ -1,0 +1,2038 @@
+# HeatSafe P0 Stateful Accelerated Replay Implementation Plan
+
+**Date**: 23-07-26
+**Status**: ✅ VALIDATED · ✅ PHASE 1 VERIFIED · 🔬 PHASE 2 STAGE 0 AUTHORIZED
+**Complexity**: COMPLEX — standard complex, one authoritative execution stream
+**Execution model**: Sequential phase gates; no phase advances until its proof boundary is green
+
+> **TL;DR:** Replace HeatSafe's regenerated static aggregates with a deterministic, stateful 24-hour Hanoi replay that advances 15 simulated minutes per tick, preserves driver/order identity, applies only authenticated, exact-snapshot SafePause control events to later state, materializes the existing snapshot contract, scores that exact snapshot, and can be triggered once per minute by an opt-in Cloud Scheduler job.
+
+## Quick Links
+
+- [1. Context and Goals](#1-context-and-goals)
+- [2. Scope](#2-scope)
+- [3. Architecture Decisions](#3-architecture-decisions)
+- [4. Public Data Contract](#4-public-data-contract)
+- [5. Data Flow](#5-data-flow)
+- [6. Acceptance Criteria](#6-acceptance-criteria)
+- [7. Phase Completion Rules](#7-phase-completion-rules)
+- [8. Execution Brief](#8-execution-brief)
+- [9. Phased Delivery Plan](#9-phased-delivery-plan)
+- [10. Implementation Checklist](#10-implementation-checklist)
+- [Touchpoints](#touchpoints)
+- [Public Contracts](#public-contracts)
+- [Blast Radius](#blast-radius)
+- [Verification Evidence](#verification-evidence)
+- [Resume and Execution Handoff](#resume-and-execution-handoff)
+- [Validate Contract](#validate-contract)
+
+## 1. Context and Goals
+
+HeatSafe currently has a coherent snapshot boundary and snapshot-matched BigQuery ML decision path, but its operational state does not evolve:
+
+- `data/demo_snapshot.json` is one fixed ten-zone Hanoi heatwave snapshot.
+- `heatsafe/ingestion.py` refreshes real weather but copies fleet operations from the static snapshot.
+- `infra/ml_pipeline.py::score_snapshot` deletes and regenerates the same deterministic drivers from zone aggregates.
+- `infra/provision_gcp.py::seed_demo` synthesizes 21 days of demand with a fixed formula, but this history is not driven by a continuing order/driver process.
+- Approved actions are auditable and explicitly `SIMULATED`, but they do not change the driver's state at the next snapshot.
+
+P0 creates a simulation substrate under the existing application contract. It must make the demo behave like a coherent operational system without claiming that synthetic risk outcomes are medical evidence or real platform telemetry.
+
+### Goals
+
+1. Advance one configured Hanoi scenario through a full 24-hour replay.
+2. Preserve driver identity and order lifecycle across successive ticks.
+3. Produce correlated weather, demand, supply, exposure, rest, and economics.
+4. Make a trusted, authenticated SafePause control event change later driver availability, rest, exposure, and risk inputs; public audit approval remains non-authoritative.
+5. Keep the existing `ZoneSnapshot`, forecast, prediction, optimizer, UI, and audit contracts compatible.
+6. Make every tick reproducible, idempotent, inspectable, and safe to retry.
+7. Support manual execution first and an opt-in one-minute Cloud Scheduler trigger after verification.
+
+### Success Metrics
+
+| Metric | P0 target |
+|---|---|
+| Replay horizon | 24 hours / 96 published ticks |
+| Published tick | 15 simulated minutes |
+| Internal state resolution | Fifteen one-minute substeps per published tick |
+| Wall-clock acceleration | Configurable; demo default 15x via one scheduled tick per minute |
+| Zones | Existing ten Hanoi zones |
+| Driver continuity | 100% of continuing drivers retain the same `driver_id_hash` |
+| Tick reproducibility | Same scenario version + seed + tick input produces the same checksum |
+| Snapshot coherence | Exactly one `snapshot_id` across all current zones |
+| Exposure compatibility | `fresh_drivers + exposed_2h = active_drivers`; `exposed_4h` remains a subset of `exposed_2h` |
+| Score coherence | Every prediction references the tick's exact `snapshot_id` |
+| Retry behavior | Re-running a successful tick writes no duplicate logical events |
+| Safety behavior | Missing/mismatched predictions remain monitoring-only |
+
+## 2. Scope
+
+### In Scope — P0
+
+- Versioned scenario manifest and bounded, source-attributed weather replay fixture.
+- Deterministic simulation clock, seeded randomness, tick ledger, and lease/idempotency handling.
+- Stateful driver population with shift, zone, status, exposure, rest, hydration, workload, distance, current order, and current intervention.
+- Event-sourced request/accept/pickup/dropoff/cancel/complete order lifecycle.
+- Time-of-day demand baseline with day type, weather modifier, correlated city shock, zone variation, and over-dispersed counts.
+- Driver/order movement between existing zone centroids; no turn-by-turn road routing.
+- Projection into existing `weather_observations`, `zone_operations`, `demand_history`, and `zone_snapshots_current`.
+- Persisted driver state as the source for `driver_current_features`.
+- SafePause assignment lifecycle derived only from a trusted control queue with exact proposal/run/tick/snapshot lineage; existing public proposal/audit rows remain evidence-only.
+- Per-tick snapshot scoring using the existing evaluated BigQuery ML model.
+- Structured telemetry, status CLI, replay reset/start/tick commands, and verification queries.
+- Opt-in Cloud Run simulation job and authenticated Cloud Scheduler trigger.
+- Automated tests, BigQuery integration probes, manual UI proof, rollback/disable instructions, and README updates.
+
+### Explicitly Out of Scope
+
+- Apache Airflow, Composer, Pub/Sub streaming, Dataflow, Kafka, or WebSockets.
+- Real production dispatch to drivers.
+- Model retraining from simulated replay events on every tick.
+- Claiming synthetic labels as real-world model accuracy or causal health outcomes.
+- Core body temperature, diagnosis, illness labels, or mandatory wearable telemetry.
+- Turn-by-turn OSM routing and raw 1-second GPS tracks.
+- Importing raw Grab-Posisi, LaDe, TLC, or WorldPop data into production.
+- Multi-city support.
+- Automatic UI rerender without user refresh; the existing refresh control is the P0 proof path.
+- Replacement of the `live` weather scenario.
+- Destructive migration or deletion of the existing demo history.
+
+### Assumptions and Constraints
+
+- `heatwave` becomes the stateful replay scenario; `live` retains current behavior.
+- The current evaluated `heat_risk_escalation_model` exists before scheduled scoring begins.
+- New fields added to existing BigQuery tables are `NULLABLE` for backward compatibility.
+- New event tables are partitioned and clustered; current-state tables have an explicit retention/archival policy.
+- Historical weather source time is preserved separately from the operational `simulation_time`; the replay clock never depends on wall-clock time.
+- Root-level ignored `hanoi_weather.csv` and `hanoi_drivers.csv` are not authoritative inputs and are excluded from P0.
+- Heat Index remains the decision model's screening input. Wind, rain, cloud, radiation, and optional UTCI are provenance/context fields, not medical outputs.
+- All driver identifiers remain synthetic hashes; no PII is introduced.
+- Provisioning and scheduler creation remain non-destructive and opt-in.
+- `process/context/all-context.md` and `process/context/tests/all-tests.md` do not exist in this repository. Source files, README verification commands, and the current unittest suite are the planning source of truth.
+
+## 3. Architecture Decisions
+
+### AD-001: Stateful Replay, Not Random Snapshot Regeneration
+
+**Decision:** Each tick loads the last committed driver state, processes fifteen deterministic one-minute substeps, persists events/history, then projects a new current snapshot.
+
+**Rationale:** Identity continuity and state transitions are required for exposure, shift, trip, earnings, and intervention effects. Randomly perturbing zone aggregates cannot provide those relationships.
+
+**Implications:**
+
+- `driver_id_hash` is created once at run start and survives the run.
+- New drivers may enter and existing drivers may leave according to shift transitions.
+- State at tick `N+1` must be a function of committed state and events at tick `N`.
+
+### AD-002: Determinism Is Defined Per Entity and Event
+
+**Decision:** Seed every stochastic choice from:
+
+```text
+hash(scenario_version, run_seed, tick_index, entity_id, event_type)
+```
+
+Do not depend on one mutable process-global random stream.
+
+**Rationale:** A retry, batching change, or reordered loop must not change unrelated entities.
+
+**Implications:**
+
+- Same inputs produce the same rows and checksum.
+- Tests can reproduce one driver/order transition without replaying the whole fleet.
+- The simulator may use standard-library gamma/Poisson sampling to avoid a new runtime dependency.
+
+### AD-003: One Published Tick Contains Fifteen One-Minute Substeps
+
+**Decision:** A tick advances `simulation_time` by 15 minutes, while the engine computes order and driver transitions at one-minute resolution.
+
+**Rationale:** Fifteen-minute data aligns with existing demand history and TimesFM. One-minute internal steps prevent unrealistic instantaneous trip and pause transitions.
+
+**Implications:**
+
+- A 24-hour replay has 96 published ticks.
+- The default scheduler cadence of one wall-clock minute creates a 15x accelerated demo.
+- The cadence is configuration, not business logic.
+
+### AD-004: Event Tables Are Additive; Existing Snapshot Contract Is a Projection
+
+**Decision:** Add run/tick/current-state/event storage, but continue to serve the UI from `zone_snapshots_current` and continue to score from `driver_current_features`.
+
+**Rationale:** This isolates simulation complexity from the existing repository, decision service, copilot, and UI.
+
+**Implications:**
+
+- P0 does not rename or redefine `fresh_drivers`, `exposed_2h`, or `exposed_4h`.
+- Their existing cumulative semantics remain:
+  - `fresh_drivers`: active and continuous exposure `< 120` minutes.
+  - `exposed_2h`: active and continuous exposure `>= 120` minutes.
+  - `exposed_4h`: active and continuous exposure `>= 240` minutes.
+- `active_drivers` means available/working supply only: `IDLE + TO_PICKUP + ON_TRIP`.
+- `TO_COOLSTOP`, `PAUSED`, and `OFFLINE` are not active supply. `online_drivers` is a new nullable aggregate for all connected non-`OFFLINE` drivers.
+- A new nullable `exposed_2_to_4h` may expose the exclusive middle cohort without overloading the public `exposed_2h` contract.
+
+### AD-005: Write Events First, Publish Current Snapshot Last
+
+**Decision:** Pre-create one coordinator row per scenario and all 96 tick-ledger rows. Load deterministic staging rows before publication, then use one BigQuery transaction to revalidate a unique lease fencing token, merge all tick-visible events/history, update current driver state and zone projection, advance the run cursor, and commit the tick ledger last.
+
+**Rationale:** A partially written tick must never publish a mixed current snapshot.
+
+**Tick states:**
+
+```text
+PENDING → RUNNING → SNAPSHOT_READY → SCORED → SUCCEEDED
+                    └──────────────→ SCORE_FAILED
+RUNNING with expired lease → RETRYING
+```
+
+**Implications:**
+
+- A `SUCCEEDED` tick is a no-op on retry.
+- A fresh `RUNNING` lease plus in-transaction owner/expiry revalidation prevents concurrent publication.
+- A stale lease retries the same deterministic tick.
+- `SCORE_FAILED` keeps the coherent snapshot but the app fails closed to monitoring-only until scoring succeeds.
+- Conflicting BigQuery transactions use bounded retry with status re-read; staging tables live in an expiring disposable staging dataset.
+- Publication sets `last_published_tick_index` and `pending_score_tick_id` but does not advance `last_completed_tick_index` or `next_simulation_at`.
+- A scoring-success transaction marks the same tick `SUCCEEDED`, clears `pending_score_tick_id`, advances the completed cursor/time, and only then licenses the next tick.
+- `tick` always resumes `SNAPSHOT_READY`/`SCORE_FAILED` scoring before simulation. `tick --tick-id <id>` is the bounded operator/test retry surface; targeting a different tick fails closed.
+
+### AD-006: Simulation Scoring Uses Persisted Driver State
+
+**Decision:** Extend `score_snapshot` with an explicit feature source:
+
+```text
+simulation | legacy
+```
+
+The heatwave replay uses `simulation`; existing live behavior can retain `legacy`.
+
+**Rationale:** Regenerating features from `active_drivers` destroys driver continuity and intervention effects.
+
+**Implications:**
+
+- `driver_current_features` is materialized from the active run's current driver rows.
+- Only drivers eligible for current scoring are included.
+- Predictions still include all existing counterfactual action choices and exact `snapshot_id`.
+
+### AD-007: Trusted SafePause Control Is Consumed; Public Audit Is Not
+
+**Decision:** Existing `intervention_proposals` and `intervention_events` remain audit-only. The authenticated control job creates an immutable `simulation_control_events` row that references an exact proposal, scenario, run, tick, and snapshot; the simulator records consumption/rejection/expiry in a separate receipt table and applies only valid, receipt-free, policy-bounded requests.
+
+**Rationale:** The public UI is unauthenticated and the current audit service deliberately never dispatches commands. Treating its rows as authoritative simulation inputs would allow arbitrary Internet users to alter fleet state and demo economics.
+
+**Implications:**
+
+- Existing audit rows remain `SIMULATED` / `NOT_APPLICABLE` and are never consumed directly.
+- Public monitoring is read-only/approval-disabled by default. The sole P0 writer is the IAM-authenticated `heatsafe-simulation-control` Cloud Run Job, invoked by a trusted operator with the `queue-control` CLI arguments.
+- Control rows carry deterministic ID, source lineage, validity/expiry, actor/source, caps, consumption tick/time, and rejection reason.
+- New lifecycle statuses are `ASSIGNED`, `TO_COOLSTOP`, `PAUSED`, `COMPLETED`, and `CANCELLED`.
+- Pause/recovery parameters are scenario policy, not medical guidance.
+- Recovery is gradual; no risk or heat-dose value resets instantly on approval.
+
+### AD-008: Real Weather Shape, Synthetic Operations
+
+**Decision:** Check in a small versioned 15-minute replay fixture derived from an official historical source and include source URL/query, retrieval time, units, timezone, license note, and derivation version in its manifest.
+
+**Rationale:** Weather can be grounded in observed/reanalysis data while fleet operations remain clearly synthetic.
+
+**Implications:**
+
+- A city-level weather curve is shared across zones with stable zone offsets and correlated variation.
+- P0 requires temperature, humidity, wind, rain, cloud, and shortwave radiation.
+- Each fixture row preserves `source_observed_at`; operational tables map the curve onto `simulation_time`.
+- `utci_c` may be stored when source-derived, but is not required by the current model.
+- Independent per-zone random weather is forbidden.
+
+### AD-009: Scheduler Is Opt-In and Authenticated
+
+**Decision:** Add a `heatsafe-simulation-tick` Cloud Run Job and an opt-in Cloud Scheduler HTTP trigger calling the Cloud Run Jobs v2 `:run` endpoint with OAuth.
+
+**Rationale:** Cloud Scheduler is sufficient for a once-per-minute prototype tick; Airflow adds no P0 value.
+
+**Implications:**
+
+- Enable `cloudscheduler.googleapis.com` only when requested.
+- Use separate identities for the public reader, trusted operator/control writer, simulator runtime, scorer/trainer, deployer, and scheduler caller.
+- Grant the scheduler caller only job-level `roles/run.invoker`; it receives no BigQuery, Storage, or Vertex role.
+- Default deployment must not silently begin recurring writes or cost.
+- Provide explicit create, pause, resume, force-run, and delete commands.
+
+Reference: [Google Cloud — Execute Cloud Run jobs on a schedule](https://docs.cloud.google.com/run/docs/execute/jobs-on-schedule).
+
+## 4. Public Data Contract
+
+### 4.0 New Table: `simulation_scenario_locks`
+
+Current coordinator table; cluster: `scenario_id`.
+
+| Field | Type | Mode | Meaning |
+|---|---|---|---|
+| `scenario_id` | STRING | REQUIRED | Pre-provisioned singleton key |
+| `active_simulation_run_id` | STRING | NULLABLE | Current run, if any |
+| `generation` | INT64 | REQUIRED | Monotonic fencing generation |
+| `updated_at` | TIMESTAMP | REQUIRED | Wall-clock coordination timestamp |
+
+Every `start` transaction must conditionally mutate this existing row. BigQuery logical keys are not treated as enforced uniqueness.
+
+### 4.1 New Table: `simulation_runs`
+
+Partition: `created_at`
+Cluster: `scenario_id`, `status`
+
+| Field | Type | Mode | Meaning |
+|---|---|---|---|
+| `simulation_run_id` | STRING | REQUIRED | Immutable run identity |
+| `scenario_id` | STRING | REQUIRED | `heatwave` for P0 |
+| `scenario_version` | STRING | REQUIRED | Versioned manifest identifier |
+| `seed` | INT64 | REQUIRED | Run seed |
+| `status` | STRING | REQUIRED | `READY`, `RUNNING`, `PAUSED`, `COMPLETED`, `FAILED` |
+| `simulation_start_at` | TIMESTAMP | REQUIRED | First simulated instant |
+| `simulation_end_at` | TIMESTAMP | REQUIRED | Exclusive replay end |
+| `next_simulation_at` | TIMESTAMP | REQUIRED | Next published tick target |
+| `tick_minutes` | INT64 | REQUIRED | `15` in P0 |
+| `speed_multiplier` | FLOAT64 | REQUIRED | Display/operations metadata |
+| `last_published_tick_index` | INT64 | NULLABLE | Last atomically published snapshot, whether scored or not |
+| `last_completed_tick_index` | INT64 | NULLABLE | Resume cursor |
+| `pending_score_tick_id` | STRING | NULLABLE | Published tick that must be scored/retried before any later simulation |
+| `config_json` | JSON | REQUIRED | Frozen scenario/runtime config |
+| `created_at` | TIMESTAMP | REQUIRED | Creation time |
+| `updated_at` | TIMESTAMP | REQUIRED | Last state transition |
+| `is_simulated` | BOOL | REQUIRED | Always `TRUE` |
+
+### 4.2 New Table: `simulation_ticks`
+
+Partition: `simulation_time`
+Cluster: `scenario_id`, `simulation_run_id`, `status`
+
+| Field | Type | Mode | Meaning |
+|---|---|---|---|
+| `simulation_run_id` | STRING | REQUIRED | Owning run |
+| `scenario_id` | STRING | REQUIRED | Scenario |
+| `tick_id` | STRING | REQUIRED | Deterministic `run_id:tick_index` |
+| `tick_index` | INT64 | REQUIRED | `0..95` |
+| `simulation_time` | TIMESTAMP | REQUIRED | Published time |
+| `snapshot_id` | STRING | REQUIRED | Deterministic current snapshot ID |
+| `status` | STRING | REQUIRED | Tick state |
+| `lease_owner` | STRING | NULLABLE | Job execution identity |
+| `lease_expires_at` | TIMESTAMP | NULLABLE | Retry safety |
+| `input_checksum` | STRING | NULLABLE | Filled at lease acquisition; previous-state/config checksum |
+| `output_checksum` | STRING | NULLABLE | Canonical output checksum |
+| `driver_count` | INT64 | NULLABLE | Published driver count |
+| `order_event_count` | INT64 | NULLABLE | Tick event count |
+| `started_at` | TIMESTAMP | NULLABLE | Wall-clock start |
+| `finished_at` | TIMESTAMP | NULLABLE | Wall-clock completion |
+| `error_code` | STRING | NULLABLE | Stable failure code |
+| `error_message` | STRING | NULLABLE | Bounded diagnostic |
+| `generator_version` | STRING | REQUIRED | Simulator version |
+| `is_simulated` | BOOL | REQUIRED | Always `TRUE` |
+
+Logical uniqueness: `(simulation_run_id, tick_index)`.
+
+### 4.3 New Table: `driver_simulation_state`
+
+Current-state table; cluster: `scenario_id`, `simulation_run_id`, `zone_id`, `driver_id_hash`.
+
+| Field group | Fields |
+|---|---|
+| Identity | `simulation_run_id`, `scenario_id`, `driver_id_hash`, `last_tick_id`, `event_time` |
+| Location | `zone_id`, `latitude`, `longitude` |
+| Lifecycle | `status`, `shift_started_at`, `shift_ends_at`, `current_order_id`, `current_intervention_id` |
+| Work | `online_minutes_24h`, `trips_60m`, `distance_km_60m`, `workload_intensity` |
+| Heat | `continuous_exposure_minutes`, `heat_dose_120m`, `rest_minutes_120m`, `hydration_gap_minutes`, `route_heat_load`, `acclimatization_class` |
+| Economics | `earnings_60m_vnd`, `platform_contribution_60m_vnd` |
+| Provenance | `generator_version`, `is_simulated`, `updated_at` |
+
+Allowed `status` values:
+
+```text
+OFFLINE
+IDLE
+TO_PICKUP
+ON_TRIP
+TO_COOLSTOP
+PAUSED
+```
+
+Logical uniqueness: `(simulation_run_id, driver_id_hash)`.
+
+### 4.4 New Table: `order_events`
+
+Partition: `event_time`
+Cluster: `scenario_id`, `simulation_run_id`, `zone_id`, `order_id`
+
+| Field group | Fields |
+|---|---|
+| Identity | `event_id`, `simulation_run_id`, `tick_id`, `scenario_id`, `order_id` |
+| Lifecycle | `event_time`, `event_type`, `status`, `driver_id_hash` |
+| Geography | `origin_zone_id`, `destination_zone_id`, `zone_id` |
+| Service | `requested_at`, `accepted_at`, `pickup_at`, `dropoff_at`, `cancelled_at` |
+| Metrics | `distance_km`, `estimated_duration_minutes`, `actual_duration_minutes`, `wait_minutes` |
+| Economics | `fare_vnd`, `driver_pay_vnd`, `platform_contribution_vnd` |
+| Provenance | `generator_version`, `is_simulated` |
+
+Allowed `event_type` values:
+
+```text
+REQUESTED
+MATCHED
+PICKED_UP
+COMPLETED
+CANCELLED
+UNFULFILLED
+```
+
+Logical uniqueness: `event_id`; the event ID is deterministic from run/order/event type/event time.
+
+### 4.5 New Table: `driver_intervention_events`
+
+Partition: `event_time`
+Cluster: `scenario_id`, `simulation_run_id`, `intervention_id`, `driver_id_hash`
+
+Fields:
+
+```text
+event_id
+simulation_run_id
+tick_id
+scenario_id
+intervention_id
+proposal_id
+driver_id_hash
+zone_id
+event_time
+event_type
+pause_start_delay_minutes
+planned_duration_minutes
+completed_rest_minutes
+coolstop_name
+baseline_risk_probability
+action_risk_probability
+earnings_delta_vnd
+is_simulated
+generator_version
+```
+
+Logical uniqueness: `event_id`.
+
+### 4.6 New Table: `simulation_control_events`
+
+Partition: `created_at`
+Cluster: `scenario_id`, `simulation_run_id`, `status`, `proposal_id`
+
+| Field | Type | Mode | Meaning |
+|---|---|---|---|
+| `control_event_id` | STRING | REQUIRED | Deterministic trusted-control identity |
+| `scenario_id` | STRING | REQUIRED | Exact scenario |
+| `simulation_run_id` | STRING | REQUIRED | Exact active run |
+| `source_tick_id` | STRING | REQUIRED | Tick whose proposal is being authorized |
+| `source_snapshot_id` | STRING | REQUIRED | Exact scored snapshot |
+| `proposal_id` | STRING | REQUIRED | Existing audit proposal reference |
+| `proposal_payload_checksum` | STRING | REQUIRED | Canonical immutable proposal/driver-decision checksum |
+| `status` | STRING | REQUIRED | `AUTHORIZED`; required by the frozen clustering contract |
+| `selected_driver_count` | INT64 | REQUIRED | Frozen authorized selection count |
+| `requested_by` | STRING | REQUIRED | Fixed control-job service identity; not caller input |
+| `actor_type` | STRING | REQUIRED | `TRUSTED_CONTROL_JOB` |
+| `request_execution_id` | STRING | REQUIRED | Cloud Run control-job execution correlation |
+| `created_at` | TIMESTAMP | REQUIRED | Wall-clock creation time |
+| `authorization_expires_at` | TIMESTAMP | REQUIRED | Wall-clock authorization TTL |
+| `valid_from_simulation_at` | TIMESTAMP | REQUIRED | Earliest replay time for consumption |
+| `valid_until_simulation_at` | TIMESTAMP | REQUIRED | Latest replay time for consumption |
+| `max_selected_drivers` | INT64 | REQUIRED | Bounded fan-out |
+| `is_simulated` | BOOL | REQUIRED | Always `TRUE` |
+| `generator_version` | STRING | REQUIRED | Control schema/generator version |
+
+Only the `heatsafe-simulation-control` Cloud Run Job may create these immutable request rows. A trusted operator/group receives job-level invoke permission; the public principal is denied. The job records its fixed service identity and execution ID, while Cloud Audit Logs preserve the authenticated invoker. It loads the referenced immutable proposal, validates exact scenario/run/tick/snapshot and current predictions, canonicalizes `proposal_json` plus selected driver decisions, and stores the checksum/count.
+
+### 4.7 New Table: `simulation_control_consumptions`
+
+Partition: `recorded_at`
+Cluster: `scenario_id`, `simulation_run_id`, `outcome`, `control_event_id`
+
+| Field | Type | Mode | Meaning |
+|---|---|---|---|
+| `consumption_id` | STRING | REQUIRED | Deterministic receipt identity |
+| `control_event_id` | STRING | REQUIRED | Immutable request reference |
+| `scenario_id` | STRING | REQUIRED | Exact scenario |
+| `simulation_run_id` | STRING | REQUIRED | Exact run |
+| `consumed_by_tick_id` | STRING | NULLABLE | Consumer tick; null for pre-consumption rejection/expiry |
+| `outcome` | STRING | REQUIRED | `CONSUMED`, `REJECTED`, or `EXPIRED` |
+| `recorded_at` | TIMESTAMP | REQUIRED | Wall-clock receipt time |
+| `rejection_reason` | STRING | NULLABLE | Stable bounded reason |
+| `generator_version` | STRING | REQUIRED | Simulator version |
+| `is_simulated` | BOOL | REQUIRED | Always `TRUE` |
+
+The simulator has read-only access to immutable control requests and write access only to this receipt table. One deterministic receipt per control provides the anti-join/idempotency boundary; a control is pending only when no receipt exists.
+
+### 4.8 Existing Table Extensions
+
+All added fields are `NULLABLE`.
+
+**`weather_observations`:**
+
+```text
+simulation_run_id, tick_id, source_observed_at, source_next_observed_at,
+source_interpolation_fraction, apparent_temperature_c,
+source_temperature_c, temperature_adjustment_c, station_peak_anchor_c,
+wind_speed_mps, wind_gust_mps,
+precipitation_mm, cloud_cover_pct, shortwave_radiation_wm2,
+utci_c, derivation_version, generator_version
+```
+
+**`zone_operations`:**
+
+```text
+simulation_run_id, tick_id,
+online_drivers, idle_drivers, to_pickup_drivers, on_trip_drivers,
+to_coolstop_drivers, paused_drivers, exposed_2_to_4h,
+requests_15m, matched_15m, completed_15m, cancelled_15m, unfulfilled_15m,
+median_wait_minutes, p90_wait_minutes, fulfillment_rate, generator_version
+```
+
+**`demand_history`:**
+
+```text
+simulation_run_id, tick_id, generator_version
+```
+
+**`driver_state_history`:**
+
+```text
+simulation_run_id, tick_id, driver_status, heat_dose_120m,
+acclimatization_class, current_order_id, current_intervention_id,
+earnings_60m_vnd, platform_contribution_60m_vnd, generator_version
+```
+
+**`driver_current_features`:**
+
+```text
+simulation_run_id, tick_id, driver_status, heat_dose_120m,
+acclimatization_class, generator_version
+```
+
+**`driver_risk_predictions` and `zone_demand_forecasts`:**
+
+```text
+simulation_run_id, tick_id, generator_version
+```
+
+**`intervention_proposals` and `intervention_events`:**
+
+```text
+scenario_id, source_snapshot_id, simulation_run_id, source_tick_id,
+expires_at
+```
+
+These fields improve audit lineage only. They do not authorize simulator control.
+
+**`zone_snapshots_current`:**
+
+```text
+simulation_run_id, tick_id, generator_version,
+online_drivers, idle_drivers, to_pickup_drivers, on_trip_drivers,
+to_coolstop_drivers, paused_drivers, exposed_2_to_4h,
+requests_15m, matched_15m, completed_15m, cancelled_15m, unfulfilled_15m,
+median_wait_minutes, p90_wait_minutes, fulfillment_rate
+```
+
+### 4.9 Existing Snapshot Projection
+
+`zone_snapshots_current` keeps its current caller-visible fields and semantics; the
+new nullable lineage fields are ignored by existing `ZoneSnapshot` parsing.
+
+For a simulation tick:
+
+```text
+scenario_id = "heatwave"
+snapshot_id = deterministic tick snapshot ID
+observed_at = simulation_time
+weather_observed_at = simulation_time
+operations_observed_at = simulation_time
+active_drivers = IDLE + TO_PICKUP + ON_TRIP
+online_drivers = every status except OFFLINE
+fresh_drivers = active drivers with exposure < 120
+exposed_2h = active drivers with exposure >= 120
+exposed_4h = active drivers with exposure >= 240
+exposed_2_to_4h = exposed_2h - exposed_4h
+forecast_requests_30m = expected requests in the next two 15-minute slots
+weather_is_simulated = FALSE only when replayed values are directly source-derived
+operations_is_simulated = TRUE
+source = historical weather replay + stateful simulated fleet operations
+```
+
+Compatibility invariants:
+
+```text
+fresh_drivers + exposed_2h = active_drivers
+0 <= exposed_4h <= exposed_2h
+exposed_2_to_4h = exposed_2h - exposed_4h
+active_drivers <= online_drivers
+```
+
+## 5. Data Flow
+
+```text
+Versioned scenario manifest + historical weather fixture
+                         |
+                         v
+              start/resume simulation run
+                         |
+Cloud Scheduler ---> acquire deterministic tick lease
+                         |
+                         v
+              fifteen one-minute substeps
+       +-----------------+------------------+
+       |                 |                  |
+       v                 v                  v
+ weather state       order events       driver transitions
+       |                 |                  |
+       +-----------------+------------------+
+                         |
+       authenticated exact-snapshot control events
+                         |
+                         v
+       append events/history + update current state
+                         |
+                         v
+ project weather + zone operations + demand + current snapshot
+                         |
+                         v
+ materialize driver_current_features from persistent driver state
+                         |
+                         v
+ score exact snapshot with existing BQML counterfactual pipeline
+                         |
+                         v
+ Streamlit repository loads one coherent snapshot_id
+                         |
+                         v
+ user refreshes UI and sees changed weather/supply/exposure/risk/trade-offs
+```
+
+## 6. Acceptance Criteria
+
+### Functional
+
+- **AC-01:** `start` creates one active run from a versioned scenario and creates its initial persistent driver population.
+- **AC-02:** `tick` advances exactly 15 simulated minutes and never uses wall-clock time as simulation state.
+- **AC-03:** Successive ticks retain continuing driver IDs and valid status transitions.
+- **AC-04:** Orders follow valid lifecycle transitions; no completion precedes pickup and no order is assigned to two drivers.
+- **AC-05:** Demand, weather, and supply vary over time while remaining reproducible for the same scenario and seed.
+- **AC-06:** Every current zone shares exactly one tick `snapshot_id`, and snapshot timestamps equal the simulation time.
+- **AC-07:** `fresh_drivers + exposed_2h = active_drivers`, `0 <= exposed_4h <= exposed_2h`, and `exposed_2_to_4h = exposed_2h - exposed_4h` for every zone.
+- **AC-08:** Heatwave scoring reads persistent current driver state and produces predictions for the exact active snapshot.
+- **AC-09:** Only an authenticated, unexpired, unconsumed control row with exact proposal/scenario/run/tick/snapshot lineage may create per-driver lifecycle events and change later state. Public audit approval alone has no control authority.
+- **AC-10:** Retrying a successful tick does not duplicate order, driver-history, intervention, prediction, or snapshot rows.
+- **AC-11:** A scoring failure leaves the snapshot coherent and the UI in monitoring-only mode.
+- **AC-12:** Completing all 96 ticks marks the run `COMPLETED` and stops further advancement.
+- **AC-13:** `live` ingestion/scoring behavior and snapshot-mode fallback tests continue to pass.
+- **AC-14:** Scheduler creation is opt-in, authenticated, pauseable, and documented.
+- **AC-24:** A lease fencing token is revalidated inside the same publication transaction; an expired/late owner cannot commit.
+- **AC-25:** Heatwave TimesFM context ends at or before `simulation_time` and its horizon starts after it; live forecasting preserves wall-clock behavior.
+- **AC-26:** Tick-scoped forecasts and predictions are deterministic, retained for the declared evidence window, and are not deleted by a later tick retry.
+- **AC-27:** Project, dataset, bucket, table, scenario, and model identifiers are validated before interpolation into SQL or resource paths.
+- **AC-28:** Public reader, trusted operator, simulator, scorer/trainer, deployer, and Scheduler caller permissions are separated; the public identity cannot write simulation control state.
+- **AC-29:** The terminal tick produces an operator alert/terminal signal and the runbook pauses or deletes the recurring schedule within the declared SLA; later dispatches remain no-op.
+- **AC-30:** One mandatory production-path replay publishes exactly tick indices `0..95`; invocation 97 is a measured no-op with unchanged state/event/prediction/checksum counts.
+
+### Data Quality
+
+- **AC-15:** Weather values are source-attributed, timezone-aware, unit-validated, and spatially correlated.
+- **AC-16:** Each tick passes non-negative count, valid state, exposure partition, demand reconciliation, and snapshot-coherence checks.
+- **AC-17:** `requests = matched + cancelled + unfulfilled` at the defined 15-minute aggregation boundary; completed trips are reported separately by completion time.
+- **AC-18:** Simulation-produced state/event rows carry `simulation_run_id`, the applicable `tick_id` or `source_tick_id`, `generator_version`, and `is_simulated`; coordinator/run metadata use their explicitly defined provenance fields.
+- **AC-19:** No field or UI copy represents synthetic risk as diagnosis, observed illness, or proven incident reduction.
+
+### Operational
+
+- **AC-20:** Measured one-tick `duration_ms` stays within the configured SLO and Cloud Run Job timeout for the ten-zone demo fleet; lease TTL exceeds the allowed runtime plus safety margin.
+- **AC-21:** Failed/stale leases can be retried safely; fresh concurrent leases do not double-process.
+- **AC-22:** Structured Cloud Logging emits execution ID, run, tick, snapshot, row-count, checksum, duration, scoring, invariant, lease, and terminal/no-op outcomes under a versioned schema.
+- **AC-23:** Deployment can pause/delete the scheduler and job IAM binding without deleting run, snapshot, prediction, audit, or historical evidence.
+
+## 7. Phase Completion Rules
+
+A phase is NOT complete until:
+
+1. **Integration Test** — it works with the existing system pieces.
+2. **Manual Test** — the documented command or user flow works.
+3. **Data Verification** — database/state changes are queried and confirmed.
+4. **Error Handling** — failure and retry behavior are exercised.
+5. **User Confirmation** — the user says the phase works.
+
+Status meanings:
+
+- ⏳ PLANNED — not started.
+- 🔨 CODE DONE — written but not tested end-to-end.
+- 🧪 TESTING — currently being tested.
+- ✅ VERIFIED — tested and user-confirmed.
+- 🚧 BLOCKED — an issue prevents completion.
+
+After each phase, document:
+
+- [ ] Automated test command and result.
+- [ ] Manual test performed.
+- [ ] BigQuery/state query and result.
+- [ ] Failure case exercised.
+- [ ] User confirmation received.
+
+Do not mark a phase ✅ VERIFIED from build, compile, file existence, or HTTP 200 alone.
+
+## 8. Execution Brief
+
+### Phase 1 — Contract and Scenario Foundation
+
+Add schemas, config, scenario manifest, real-weather fixture contract, and deterministic identifiers without switching the runtime.
+
+**Proof boundary:** provisioning is additive; fixture validates; all existing tests remain green.
+
+### Phase 2 — Local Deterministic Engine
+
+Implement the clock, per-entity RNG, demand/order lifecycle, driver state machine, heat/recovery transitions, intervention transition rules, aggregation, and invariant validator as pure Python.
+
+**Proof boundary:** two same-seed replays match exactly; different seeds vary bounded details; transitions and invariants pass locally.
+
+### Phase 3 — BigQuery Persistence and Snapshot Projection
+
+Implement run start/resume, lease handling, event/history writes, current-state update, and projection into existing HeatSafe tables.
+
+**Proof boundary:** one tick transaction creates a coherent snapshot; an exact targeted retry does not republish, a fake-success finalizer advances the cursor once, and the disposable concurrency/rollback probe is green. Two changing scored snapshots are proven in Phase 4.
+
+### Phase 4 — Scoring and Closed-Loop Intervention
+
+Read current features from persistent driver state, score the exact snapshot, consume simulated approvals, and apply pause/recovery effects to later ticks.
+
+**Proof boundary:** a controlled approval changes only selected drivers in the next ticks and predictions remain snapshot-matched.
+
+### Phase 5 — Cloud Run Job and Optional Scheduler
+
+Package the tick CLI as a Cloud Run Job, create a least-privilege scheduler trigger behind an explicit flag, and document pause/resume/force-run.
+
+**Proof boundary:** one authenticated scheduler dispatch advances exactly one tick; a concurrent dispatch does not duplicate it.
+
+### Phase 6 — End-to-End Replay, UI Proof, and Closeout
+
+Run a bounded replay, verify distributions/invariants/checksums, inspect the UI across multiple ticks, test failure recovery, and update operational documentation.
+
+**Proof boundary:** the user confirms that the demo visibly changes while preserving decision safety and provenance.
+
+### Expected Outcome
+
+- HeatSafe's heatwave scenario evolves through a repeatable operational day.
+- Driver and order state persist between refreshes.
+- SafePause has visible downstream state and risk-input effects.
+- Existing UI and copilot contracts continue to work.
+- The simulator can run manually or once per minute on GCP.
+- All data remains clearly labelled as simulated where appropriate.
+
+## 9. Phased Delivery Plan
+
+### Phase 1 — Contract and Scenario Foundation
+
+**Status:** ✅ VERIFIED — automated/disposable-cloud proof green and user-confirmed 24-07-2026
+**Dependencies:** Validate Contract approved
+**Estimate:** 0.5–1 day
+
+#### Stage 0: Pre-Phase Research
+
+1. Re-read `infra/provision_gcp.py`, `heatsafe/bigquery_io.py`, `heatsafe/config.py`, `.env.example`, and current table contents.
+2. Freeze a field-by-field BigQuery name/type/mode/partition/cluster matrix; every extension to a non-empty table must be `NULLABLE`.
+3. Add a schema preflight that rejects existing name/type/mode/partition/cluster conflicts instead of silently accepting them.
+4. Select and record the exact historical weather source/date/query/checksum, timezone mapping, units, ranges, 96 expected timestamps, zone-offset representation, and derivation version; do not treat ignored root CSVs as source data.
+5. Define legacy-write policy: unchanged seed/live rows preserve simulation lineage on a matched replay key, and legacy ingestion may not clear lineage by staging omitted nullable fields as `NULL`.
+6. Define a `--schema-only` disposable-dataset path that never calls `ensure_bucket()`.
+7. Present final schema/fixture diff and stop for approval.
+
+#### Implementation
+
+1. Add simulation settings and strict parsing to `heatsafe/config.py`.
+2. Add the eight new tables and nullable extensions to `table_schemas()`, partitioning, and clustering maps.
+3. Add `infra/provision_gcp.py --schema-only`: create/update only the selected disposable dataset, skip `ensure_bucket()`, print schema/config read-back, and support explicit cleanup of only that dataset.
+4. Add table-specific legacy write policies: history/event writers never match or clear simulation lineage; demand history keys include run isolation for replay; intentional static/live current-snapshot replacement explicitly clears stale simulation lineage.
+5. Extend `merge_rows()` with an explicit validated update-field policy or use dedicated writers; omitted nullable fields must not implicitly become destructive updates.
+6. Add `data/scenarios/hanoi_heatwave_v1/manifest.json`.
+7. Add a bounded `weather_15m.csv` fixture with source attribution and validated units.
+8. Add scenario loading/validation models under `heatsafe/simulation/`.
+9. Add schema conflict, partition/cluster, legacy seed/live compatibility, identifier negative/injection, image-context, and fixture tests.
+10. Update `.env.example` with disabled-safe simulator defaults.
+
+#### Test Procedure
+
+```bash
+venv/bin/python -m unittest tests.test_simulation_contract -v
+venv/bin/python -m unittest discover -s tests -v
+venv/bin/python -m compileall -q app.py heatsafe infra
+venv/bin/python -m pip check
+```
+
+Run provisioning against a disposable/test dataset and verify existing tables retain their rows.
+
+```bash
+venv/bin/python infra/provision_gcp.py \
+  --schema-only \
+  --dataset "<explicit-disposable-dataset>"
+```
+
+#### Data Verification
+
+```sql
+SELECT table_name
+FROM `<project>.<dataset>.INFORMATION_SCHEMA.TABLES`
+WHERE table_name IN (
+  'simulation_runs',
+  'simulation_ticks',
+  'simulation_scenario_locks',
+  'driver_simulation_state',
+  'order_events',
+  'driver_intervention_events',
+  'simulation_control_events',
+  'simulation_control_consumptions'
+)
+ORDER BY table_name;
+```
+
+```sql
+SELECT table_name, column_name, data_type, is_nullable
+FROM `<project>.<dataset>.INFORMATION_SCHEMA.COLUMNS`
+WHERE column_name IN ('simulation_run_id', 'tick_id', 'wind_speed_mps')
+ORDER BY table_name, column_name;
+```
+
+#### Failure Scenarios
+
+- Missing manifest field.
+- Non-monotonic weather timestamps.
+- Wrong timezone or unit.
+- Duplicate zone/time row.
+- Existing field name with incompatible BigQuery type/mode/partition/cluster configuration.
+- Legacy MERGE clears simulation lineage.
+- Schema-only probe attempts to touch the shared raw bucket.
+- Coordinator preflight returns zero or more than one row, or conditional start does not affect/read back exactly one row.
+- Schema migration against existing non-empty tables.
+
+#### Done Criteria
+
+- New schemas are additive and provisioning remains non-destructive.
+- Scenario fixture provenance is explicit and all ten zones can resolve each tick.
+- Existing test suite remains green.
+- User approves the contract before Phase 2.
+
+#### Phase 1 Execution Evidence — 24-07-2026
+
+**Execution boundary:** Phase 1 only. No simulator engine, runtime switch, shared
+dataset mutation, deploy, IAM, Cloud Run Job, Scheduler, or Phase 2 code was
+created.
+
+Implemented:
+
+- Strict fail-closed settings parsing and allowlists for project, dataset,
+  bucket, region, mode, scenario, current snapshot table, model, scenario
+  version, generator version, booleans, tick, seed, and lease values.
+- Eight simulator tables plus all frozen `NULLABLE` existing-table extensions.
+- Existing-table preflight for field name/type/mode, partition field/type,
+  clustering fields/order, and dataset location.
+- `--schema-only --dataset <explicit-disposable>` provisioning/read-back and
+  explicit cleanup; its code path does not call `ensure_bucket()`.
+- Explicit MERGE update-field ownership. Legacy/live writes update only fields
+  present in every row; deliberate current-snapshot replacement may explicitly
+  clear stale simulator lineage.
+- Checked `hanoi_heatwave_v1` manifest, deterministic fixture builder, 96-row
+  `weather_15m.csv`, and fail-closed runtime loader/validator.
+- Disabled-safe simulator environment defaults.
+
+Contract correction discovered during implementation:
+
+- Section 4.6 froze `simulation_control_events` clustering as
+  `(scenario_id, simulation_run_id, status, proposal_id)` but its field matrix
+  omitted `status`. BigQuery cannot cluster on a missing field, so Phase 1 adds
+  `status STRING REQUIRED` with the frozen P0 value `AUTHORIZED`. This is an
+  additive new-table correction and does not alter any existing table.
+
+Fixture evidence:
+
+- Exact source canonical SHA-256:
+  `13e289c702b3d4213986d237d54eeb3225fbd8b4c493e8b169c16af371c859ac`.
+- Checked fixture SHA-256:
+  `6e47f3e0a4e7590cbd6e16913ac86fa465f30695c4b7adb80ab6bd8e92400137`.
+- 96 ticks from `2026-05-26T00:00:00+07:00` through
+  `2026-05-26T23:45:00+07:00`.
+- Peak calibrated temperature `41.1°C` at 16:00, source ERA5 `39.5°C`,
+  humidity `44%`, derived Heat Index `53.9°C`, maximum transparent adjustment
+  `1.6°C`, and zero daily precipitation.
+
+Local proof:
+
+```text
+venv/bin/python -m unittest discover -s tests -v
+Ran 62 tests in 0.591s — OK
+
+venv/bin/python -m compileall -q app.py heatsafe infra scripts tests
+PASS
+
+venv/bin/python -m pip check
+No broken requirements found.
+
+git diff --check
+PASS
+
+validate-plan-artifact.mjs --strict <selected-plan>
+0 failures, 0 warnings (2,039 validator-counted lines)
+```
+
+The existing Streamlit suite still emits pre-existing bare-mode, AI-unavailable,
+SQLite resource, and dependency deprecation warnings; there were no test
+failures.
+
+Disposable BigQuery proof in project `cohort2track2`:
+
+1. `heatsafe_phase1_20260724_0108` created 21 total tables, including all eight
+   new simulator tables, with exact partition/clustering read-back and
+   `rows_total=0`. Storage was not called. The dataset was then deleted and
+   absence verified.
+2. `heatsafe_phase1_migration_20260724_0112` began with one legacy
+   `weather_observations` row. Provisioning appended
+   `simulation_run_id STRING NULLABLE`; post-migration row count remained `1`,
+   the legacy `snapshot_id` remained `legacy-proof`, and the new field read
+   back as `NULL`. The dataset was then deleted and absence verified.
+
+**Gate result:** implementation and proof boundary are green. The user confirmed
+Phase 1 on 24-07-2026, so it is `VERIFIED`. Phase 2 Stage 0 research is
+authorized; its implementation remains behind the parameter-review stop gate.
+
+#### Phase 1 Research Findings — 23-07-2026
+
+**Research status:** COMPLETE for contract/source selection; no schema, data, code, or cloud mutation performed.
+
+##### R1. BigQuery migration contract
+
+- Existing non-empty tables accept only new `NULLABLE`/`REPEATED` columns; fields are appended at schema tail. Immediate verification uses `tables.get`, not eventually consistent `INFORMATION_SCHEMA`. Source: [Google Cloud — Modifying table schemas](https://docs.cloud.google.com/bigquery/docs/managing-table-schemas).
+- New empty simulator tables may use `REQUIRED` fields. Existing-table extensions below are all `NULLABLE`.
+- Preflight compares exact field name/type/mode, time partition field/type, clustering fields/order, and table location. Any collision fails closed; no type coercion, relaxation, repartition, or clustering rewrite is automatic.
+- Clustering uses top-level non-repeated supported fields and no more than four columns. Source: [Google Cloud — Create clustered tables](https://docs.cloud.google.com/bigquery/docs/creating-clustered-tables).
+- `--schema-only` accepts an explicit disposable dataset, does not instantiate a Storage client, verifies with `tables.get`, and cleans up only that dataset after row-count/schema evidence is retained.
+
+Authoritative exact schemas for previously grouped tables:
+
+| Table | Type / mode | Fields |
+|---|---|---|
+| `driver_simulation_state` | STRING REQUIRED | `simulation_run_id`, `scenario_id`, `driver_id_hash`, `last_tick_id`, `zone_id`, `status`, `acclimatization_class`, `generator_version` |
+|  | STRING NULLABLE | `current_order_id`, `current_intervention_id` |
+|  | TIMESTAMP REQUIRED | `event_time`, `updated_at` |
+|  | TIMESTAMP NULLABLE | `shift_started_at`, `shift_ends_at` |
+|  | FLOAT64 REQUIRED | `latitude`, `longitude`, `distance_km_60m`, `workload_intensity`, `heat_dose_120m`, `route_heat_load` |
+|  | INT64 REQUIRED | `online_minutes_24h`, `trips_60m`, `continuous_exposure_minutes`, `rest_minutes_120m`, `hydration_gap_minutes`, `earnings_60m_vnd`, `platform_contribution_60m_vnd` |
+|  | BOOL REQUIRED | `is_simulated` |
+| `order_events` | STRING REQUIRED | `event_id`, `simulation_run_id`, `tick_id`, `scenario_id`, `order_id`, `event_type`, `status`, `origin_zone_id`, `destination_zone_id`, `zone_id`, `generator_version` |
+|  | STRING NULLABLE | `driver_id_hash` |
+|  | TIMESTAMP REQUIRED | `event_time`, `requested_at` |
+|  | TIMESTAMP NULLABLE | `accepted_at`, `pickup_at`, `dropoff_at`, `cancelled_at` |
+|  | FLOAT64 NULLABLE | `distance_km`, `estimated_duration_minutes`, `actual_duration_minutes`, `wait_minutes` |
+|  | INT64 NULLABLE | `fare_vnd`, `driver_pay_vnd`, `platform_contribution_vnd` |
+|  | BOOL REQUIRED | `is_simulated` |
+| `driver_intervention_events` | STRING REQUIRED | `event_id`, `simulation_run_id`, `tick_id`, `scenario_id`, `intervention_id`, `proposal_id`, `driver_id_hash`, `zone_id`, `event_type`, `generator_version` |
+|  | STRING NULLABLE | `coolstop_name` |
+|  | TIMESTAMP REQUIRED | `event_time` |
+|  | INT64 NULLABLE | `pause_start_delay_minutes`, `planned_duration_minutes`, `completed_rest_minutes`, `earnings_delta_vnd` |
+|  | FLOAT64 NULLABLE | `baseline_risk_probability`, `action_risk_probability` |
+|  | BOOL REQUIRED | `is_simulated` |
+
+Exact existing-table extensions (every field `NULLABLE`):
+
+| Table(s) | Fields and BigQuery types | Legacy matched-write policy |
+|---|---|---|
+| `weather_observations` | STRING: `simulation_run_id`, `tick_id`, `derivation_version`, `generator_version`; TIMESTAMP: `source_observed_at`, `source_next_observed_at`; FLOAT64: `source_interpolation_fraction`, `source_temperature_c`, `temperature_adjustment_c`, `station_peak_anchor_c`, `apparent_temperature_c`, `wind_speed_mps`, `wind_gust_mps`, `precipitation_mm`, `cloud_cover_pct`, `shortwave_radiation_wm2`, `utci_c` | Legacy/live writer updates only legacy-owned weather values; it does not clear simulator lineage on unrelated keys |
+| `zone_operations` | STRING: `simulation_run_id`, `tick_id`, `generator_version`; INT64: `online_drivers`, `idle_drivers`, `to_pickup_drivers`, `on_trip_drivers`, `to_coolstop_drivers`, `paused_drivers`, `exposed_2_to_4h`, `requests_15m`, `matched_15m`, `completed_15m`, `cancelled_15m`, `unfulfilled_15m`; FLOAT64: `median_wait_minutes`, `p90_wait_minutes`, `fulfillment_rate` | Dedicated simulator projection; legacy writer updates only its original columns |
+| `demand_history` | STRING: `simulation_run_id`, `tick_id`, `generator_version` | Replay key includes run/tick/time; legacy `(scenario, zone, interval)` rows cannot overwrite replay rows |
+| `driver_state_history` | STRING: `simulation_run_id`, `tick_id`, `driver_status`, `acclimatization_class`, `current_order_id`, `current_intervention_id`, `generator_version`; FLOAT64: `heat_dose_120m`; INT64: `earnings_60m_vnd`, `platform_contribution_60m_vnd` | Append/idempotent event ID only; never full-row legacy update |
+| `driver_current_features` | STRING: `simulation_run_id`, `tick_id`, `driver_status`, `acclimatization_class`, `generator_version`; FLOAT64: `heat_dose_120m` | Explicit full current replacement by scenario/run; old lineage is intentionally removed only in this current-state operation |
+| `driver_risk_predictions`, `zone_demand_forecasts`, `zone_snapshots_current` | STRING: `simulation_run_id`, `tick_id`, `generator_version`; snapshot also receives the operation fields listed above with matching types | Prediction/forecast append-MERGE by deterministic tick key; current snapshot replacement explicitly clears stale lineage for a deliberate static/live restore |
+| `intervention_proposals`, `intervention_events` | STRING: `scenario_id`, `source_snapshot_id`, `simulation_run_id`, `source_tick_id`; TIMESTAMP: `expires_at` | Audit-only lineage; no direct simulator consumption |
+
+##### R2. Exact historical weather source
+
+Selected source:
+
+- Provider/API: [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api), explicitly `models=era5`.
+- Underlying dataset: ERA5 reanalysis, hourly, approximately 0.25° grid. ERA5 was chosen over ERA5-Land because the live response test returned complete wind, gust, cloud, precipitation, and solar radiation fields; ERA5-Land returned `null` for several of them. Open-Meteo documents the model/variable coverage difference.
+- Scenario day: **2026-05-26 local Hanoi time**, selected because Láng station measured `41.1°C`. Reports citing the National Center for Hydro-Meteorological Forecasting identify this as Hanoi's highest reading that day and joint-highest nationally with Đô Lương—not the sole national maximum and not Láng's all-time record. References: [NCHMF forecast for 26 May](https://nchmf.gov.vn/kttv/vi-VN/1/dieu-tiet-ho-chua-2079-15.html), [VnExpress measured-temperature report](https://vnexpress.net/ha-noi-nghe-an-nong-41-do-c-5078532.html).
+- Station anchor: Láng/Hanoi WMO `48820`, coordinate `21.02, 105.80`.
+- Requested ERA5 coordinate: `21.02, 105.80`.
+- Resolved ERA5 grid/elevation: `21.0, 105.75`, `16 m`.
+- Timezone: `Asia/Ho_Chi_Minh`, UTC+07:00.
+- Retrieval time: `2026-07-23T17:43:09Z`.
+- License: CC BY 4.0; manifest/UI attribution is `Weather data by Open-Meteo.com`, links the license, credits ERA5/Copernicus, and says the data were temporally interpolated. Source: [Open-Meteo license](https://open-meteo.com/en/license).
+
+Exact acquisition query (one-hour buffer day on each side is required for boundary interpolation):
+
+```text
+https://archive-api.open-meteo.com/v1/archive?latitude=21.02&longitude=105.80&start_date=2026-05-25&end_date=2026-05-27&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,wind_gusts_10m,shortwave_radiation&wind_speed_unit=ms&timezone=Asia%2FHo_Chi_Minh&models=era5
+```
+
+Canonical source-payload SHA-256 on retrieval (JSON key-sorted with volatile `generationtime_ms` removed):
+
+```text
+13e289c702b3d4213986d237d54eeb3225fbd8b4c493e8b169c16af371c859ac
+```
+
+Observed target-day envelope from the captured response:
+
+| Variable | 2026-05-26 ERA5 range |
+|---|---:|
+| Temperature | `29.8..39.5 °C`; peak at `16:00` |
+| Relative humidity | `44..74 %` |
+| Apparent temperature | `35.1..45.4 °C` |
+| Precipitation | `0.0 mm/day` |
+| Cloud cover | `0..6 %` |
+| Wind speed | `1.96..3.53 m/s` |
+| Wind gust | maximum `7.60 m/s` |
+| Shortwave radiation | maximum `968 W/m²` |
+
+ERA5 underestimates the point-station maximum because it represents a coarse grid cell: `39.5°C` versus Láng's measured `41.1°C`. P0 therefore uses the station value as a single daily-maximum calibration anchor and ERA5 for the 24-hour shape plus humidity/wind/cloud/radiation. This produces a credible hot-night, extreme-afternoon, clear/dry, low-wind day without pretending that ERA5 is the station observation.
+
+##### R3. Fixture and manifest contract
+
+`manifest.json` required keys:
+
+```text
+schema_version, scenario_id, scenario_version, display_name, description,
+timezone, simulation_start_local, tick_minutes, expected_ticks,
+source.provider, source.dataset, source.api_url, source.requested_coordinate,
+source.resolved_grid, source.retrieved_at, source.canonical_sha256,
+source.license, source.attribution, source.modifications,
+calibration_anchor.station_name, calibration_anchor.wmo_id,
+calibration_anchor.coordinate, calibration_anchor.observed_daily_max_c,
+calibration_anchor.observation_date, calibration_anchor.source_urls,
+calibration_anchor.era5_daily_min_c, calibration_anchor.era5_daily_max_c,
+calibration_anchor.method, calibration_anchor.limitations,
+derivation.version, derivation.method_by_field, derivation.output_columns,
+validation.expected_first_time, validation.expected_last_time,
+validation.expected_rows, validation.ranges,
+zone_weather_offsets, operational_priors, disclaimer
+```
+
+Frozen values:
+
+```text
+scenario_id = heatwave
+scenario_version = hanoi_heatwave_v1
+simulation_start_local = 2026-05-26T00:00:00+07:00
+tick_minutes = 15
+expected_ticks = 96
+expected_first_time = 2026-05-26T00:00:00+07:00
+expected_last_time = 2026-05-26T23:45:00+07:00
+derivation.version = lang-max-anchor-era5-linear-15m-v2
+```
+
+`weather_15m.csv` exact columns:
+
+```text
+simulation_offset_minutes, local_time, source_observed_at,
+source_next_observed_at, source_interpolation_fraction,
+source_temperature_c, temperature_adjustment_c, temperature_c,
+station_peak_anchor_c, relative_humidity_percent, apparent_temperature_c,
+precipitation_mm, cloud_cover_pct, wind_speed_mps, wind_gust_mps,
+shortwave_radiation_wm2, source_grid_latitude, source_grid_longitude,
+derivation_version
+```
+
+Derivation:
+
+- Emit exactly 96 rows at 15-minute intervals.
+- First calibrate each ERA5 hourly temperature with the transparent affine range mapping:
+
+  ```text
+  temperature_c =
+    29.8 + (source_temperature_c - 29.8) * (41.1 - 29.8) / (39.5 - 29.8)
+  ```
+
+  This preserves the ERA5 daily minimum and timing while making the `16:00` maximum equal the observed Láng anchor. The factor is approximately `1.16495`; `temperature_adjustment_c` is explicit and bounded `0..1.6°C`.
+- For calibrated temperature and other instant/continuous variables—humidity, source apparent temperature, cloud, wind, gust, radiation—use bounded linear interpolation between surrounding hourly rows; fractions are exactly `0`, `0.25`, `0.5`, `0.75`.
+- For hourly accumulated precipitation, split the hour total across its four intervals and assert daily/three-day mass conservation. The selected target day remains zero throughout.
+- Clamp only floating-point noise to physical domains (`humidity/cloud 0..100`, non-negative precipitation/wind/radiation); fail instead of silently clipping a materially invalid source value.
+- Compute app `heat_index_c` with the existing `calculate_heat_index()` from calibrated temperature and ERA5 humidity. At the anchored peak (`41.1°C`, `44% RH`) the current formula yields `53.9°C`; keep this as a derived screening value, not a measured station field. Preserve Open-Meteo apparent temperature as uncalibrated source provenance; do not substitute it for Heat Index or label it UTCI.
+- All ten P0 zones use the same city reference weather curve and **zero zone offsets**. This is more defensible than inventing unsupported 3–5°C district differences within one coarse ERA5 cell. Operational route heat load may vary by zone; microclimate offsets remain future calibrated work.
+- Because the curve combines one station maximum, ERA5 reanalysis, affine calibration, and interpolation, projected rows use `weather_is_simulated=TRUE`, `operations_is_simulated=TRUE`, source `Láng 41.1°C anchor + Open-Meteo ERA5 historical replay`, and explicit derivation fields. Only `station_peak_anchor_c=41.1` is a reported station observation; the 96-point curve is source-grounded derived data.
+
+Validation domains:
+
+```text
+source_temperature_c: 0..50
+temperature_adjustment_c: 0..2
+temperature_c: 0..50 and daily max exactly 41.1 within 0.05
+station_peak_anchor_c: exactly 41.1
+relative_humidity_percent: 0..100
+apparent_temperature_c: 0..60
+precipitation_mm per 15m: 0..100
+cloud_cover_pct: 0..100
+wind_speed_mps: 0..30
+wind_gust_mps: 0..50 and >= wind_speed_mps
+shortwave_radiation_wm2: 0..1400
+```
+
+The fixture test additionally locks the canonical source checksum, exact 96 timestamps, ERA5 envelope, calibrated maximum/time/tolerance, `temperature_c >= source_temperature_c`, maximum adjustment `1.6°C`, monotonic time, interpolation fractions, no null/NaN/infinite value, daily precipitation conservation, and image inclusion under `Dockerfile`/`.dockerignore`.
+
+##### R4. Identifier policy
+
+This app intentionally uses a stricter subset than the maximum platform grammar:
+
+| Input | Frozen validation |
+|---|---|
+| GCP project ID | `^[a-z][a-z0-9-]{4,28}[a-z0-9]$` |
+| BigQuery dataset ID | `^[a-z][a-z0-9_]{0,127}$` |
+| GCS bucket | `^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$`, plus reject IP-like names, `..`, `.-`, and `-.` |
+| Region | allowlist: `asia-southeast1` for P0 |
+| Scenario | allowlist: `heatwave`, `live` |
+| Mode | allowlist: `auto`, `cloud`, `snapshot` |
+| Current snapshot table | allowlist: `zone_snapshots_current` |
+| Every other table/model name | internal constant allowlist derived from `table_schemas()` and the fixed model names; never accept a free-form external identifier |
+| Scenario/generator version | `^[a-z][a-z0-9._-]{0,63}$`, and scenario version must resolve under the checked-in scenario catalog |
+| Gemini model | allowlist: current configured production model only; changing it is a reviewed config change |
+
+Tests include empty/overlong values, leading/trailing separators, dots/backticks/whitespace, SQL fragments, Unicode confusables, path traversal, unknown allowlist values, and a positive case for every current default. Validation occurs in `Settings.from_env()`/scenario loading before any SQL string or GCP resource path is built.
+
+##### R5. Phase 1 decision
+
+Phase 1 uses **Láng's measured 41.1°C daily maximum as a calibration anchor + ERA5 via Open-Meteo for the full-day meteorological shape + transparent 15-minute interpolation + zero district weather offsets**. The fixture explicitly separates reported station evidence, ERA5 source values, calibration delta, and derived values. This is reproducible, license-compatible, and materially more honest than either ignoring the station extreme or pretending a synthetic 96-point curve was directly observed. Phase 1 was implemented, proven, and user-confirmed on 24-07-2026.
+
+### Phase 2 — Local Deterministic Engine
+
+**Status:** 🔬 STAGE 0 RESEARCH AUTHORIZED — implementation awaits parameter review
+**Dependencies:** Phase 1 ✅ VERIFIED
+**Estimate:** 1–1.5 days
+
+#### Stage 0: Pre-Phase Research
+
+1. Re-read current demand heuristic, `safepause.py`, risk features, and model feature ranges.
+2. Lock scenario parameters: initial fleet distribution, shifts, transition probabilities, trip duration/distance bounds, recovery policy, and weather multipliers.
+3. Identify every parameter that is an engineering prior rather than sourced evidence.
+4. Reconcile the incomplete static aggregates into a coherent initial fleet: derive the population from `active_drivers`, preserve cumulative exposure cohorts, and document how unavailable/online drivers are added.
+5. Freeze the current scoring envelope and define raw-state-to-scoring projection with explicit clipping/OOD flags and acceptance thresholds.
+6. Present the parameter table and stop for approval.
+
+#### Implementation
+
+1. Implement immutable domain models and valid transition enums.
+2. Implement deterministic per-entity random streams and canonical checksums using sorted entities/events, UTC datetime encoding, fixed float quantization, and no wall-clock fields.
+3. Implement start-of-run driver population generation.
+4. Implement city/zone demand mean, correlated shock, and over-dispersed request counts with a specified bounded small-/large-lambda sampler; never use a shared mutable RNG.
+5. Implement order request/match/pickup/dropoff/cancel/unfulfilled lifecycle.
+6. Implement driver shift, location, status, workload, earnings, exposure, rest, hydration, and heat-dose updates using one frozen per-minute order: finish due transitions → apply trusted control → shift/offline transitions → generate requests → match → advance travel/trips → update heat/rest/hydration/economics → validate.
+7. Implement intervention assignment/pause/recovery transitions.
+8. Implement zone projection and invariant validator.
+9. Implement an in-memory two-tick and full-day runner for tests.
+
+#### Test Procedure
+
+Test files:
+
+```text
+tests/test_simulation_randomness.py
+tests/test_simulation_demand.py
+tests/test_simulation_transitions.py
+tests/test_simulation_invariants.py
+```
+
+Command:
+
+```bash
+venv/bin/python -m unittest \
+  tests.test_simulation_randomness \
+  tests.test_simulation_demand \
+  tests.test_simulation_transitions \
+  tests.test_simulation_invariants -v
+```
+
+Required cases:
+
+- Same seed/input returns byte-stable canonical output.
+- Reordered drivers do not change their stochastic result.
+- Different seeds change bounded details, not schema or invariants.
+- All valid and invalid driver/order transitions.
+- Overnight, meal/commute peaks, rain shock, zero demand, oversupply, and undersupply.
+- Pause assignment, travel to CoolStop, partial pause, completion, and cancellation.
+- Exposure bucket boundary values at 119, 120, 239, and 240 minutes.
+- Cross-process determinism under different `PYTHONHASHSEED` and input iteration order.
+- `TO_COOLSTOP` remains online but unavailable; intervention lifecycle is distinct from driver status.
+- Raw scoring features retain operational truth while the model projection records clipping/OOD rates.
+
+#### Manual Test
+
+Run two local in-memory replays with the same seed and compare final checksum; run a third with a different seed and compare hourly aggregate shapes.
+
+#### Done Criteria
+
+- Pure engine has no BigQuery or wall-clock dependency.
+- Determinism and invariant tests are green.
+- Full-day in-memory replay completes.
+- User accepts the printed hourly demand/supply/exposure summary.
+
+### Phase 3 — BigQuery Persistence and Snapshot Projection
+
+**Status:** ⏳ PLANNED
+**Dependencies:** Phase 2 ✅ VERIFIED
+**Estimate:** 1 day
+
+#### Stage 0: Pre-Phase Research
+
+1. Inspect current production/test row counts and partition sizes.
+2. Confirm transaction/staging strategy, conflict error codes, partition-pruned predicates, and per-query/per-tick/full-replay `maximum_bytes_billed`.
+3. Define run-tagged current-table backup and targeted transactional restore; keep `--seed-demo` only as a clearly labelled full reseed/emergency path, not normal rollback.
+4. Present persistence SQL and rollback path; stop for approval.
+
+#### Implementation
+
+1. Add `heatsafe.simulation.cli` commands:
+
+   ```text
+   validate-scenario
+   start
+   tick
+   tick --tick-id <deterministic-tick-id>
+   status
+   pause
+   resume
+   ```
+
+2. Pre-provision one coordinator row per scenario and all 96 tick rows; future tick `input_checksum` remains `NULL` until acquisition. Abort start unless coordinator `COUNT(*)=1`, conditional mutation affects exactly one row, and read-back returns the expected generation/run.
+3. Implement conditional tick lease acquisition with a unique owner/fencing token, winner read-back, TTL greater than timeout plus margin, and bounded conflict retry.
+4. Load deterministic rows into an expiring staging dataset before publication.
+5. In one BigQuery transaction, revalidate the lease owner and expiry, merge tick-visible order/intervention/history rows, update current driver state, demand history, weather/operations projection and current snapshot, set `last_published_tick_index`/`pending_score_tick_id`, and commit the tick ledger `SNAPSHOT_READY` last. Do not advance the completed cursor/time.
+6. Add a scoring-finalization repository transaction. On success it marks `SUCCEEDED`, clears the pending score, and advances `last_completed_tick_index`/`next_simulation_at`; on failure it records `SCORE_FAILED` without advancing. After tick 95 succeeds it marks the run `COMPLETED`.
+7. Emit structured tick telemetry.
+8. Add fake-client crash-point tests and a disposable-dataset integration probe covering two concurrent clients, rollback, `SNAPSHOT_READY` retry without republish, `SUCCEEDED` total no-op, delayed retry, partition pruning, byte caps, and staging expiry.
+9. Keep legacy `merge_rows()` behavior isolated; do not broaden it into the multi-table publisher.
+10. Apply explicit retention: archive/preserve event evidence and delete inactive-run current state only through a separate, documented cleanup command.
+
+#### Test Procedure
+
+```bash
+venv/bin/python -m unittest tests.test_simulation_repository tests.test_simulation_cli -v
+venv/bin/python -m unittest discover -s tests -v
+venv/bin/python -m compileall -q app.py heatsafe infra
+```
+
+Manual:
+
+```bash
+venv/bin/python -m heatsafe.simulation.cli start \
+  --scenario heatwave \
+  --scenario-version hanoi_heatwave_v1 \
+  --seed 42
+
+venv/bin/python -m heatsafe.simulation.cli tick --scenario heatwave
+venv/bin/python -m heatsafe.simulation.cli tick \
+  --scenario heatwave \
+  --tick-id "<tick-id>"
+venv/bin/python -m heatsafe.simulation.cli status --scenario heatwave
+```
+
+#### Data Verification
+
+```sql
+SELECT tick_index, simulation_time, snapshot_id, status,
+       driver_count, order_event_count, output_checksum
+FROM `<project>.<dataset>.simulation_ticks`
+WHERE simulation_run_id = @run_id
+ORDER BY tick_index;
+```
+
+```sql
+SELECT snapshot_id, COUNT(*) AS zones,
+       COUNT(DISTINCT observed_at) AS observed_times
+FROM `<project>.<dataset>.zone_snapshots_current`
+WHERE scenario_id = 'heatwave'
+GROUP BY snapshot_id;
+```
+
+Expected: one row, ten zones, one observed time.
+
+```sql
+SELECT zone_id, active_drivers, fresh_drivers, exposed_2h, exposed_4h
+FROM `<project>.<dataset>.zone_snapshots_current`
+WHERE scenario_id = 'heatwave'
+  AND (
+    active_drivers != fresh_drivers + exposed_2h
+    OR exposed_4h < 0
+    OR exposed_4h > exposed_2h
+  );
+```
+
+Expected: zero rows.
+
+Retry the published tick by exact `--tick-id`. In the Phase 3 repository probe, use a deterministic fake-success scoring finalizer to prove completed-cursor advancement without depending on Phase 4 ML changes. Confirm `SNAPSHOT_READY` retry never republishes state/events and `SUCCEEDED` retry is a total no-op. Two different production snapshots become a Phase 4 proof boundary after scoring integration exists.
+
+#### Failure Scenarios
+
+- Concurrent tick caller.
+- Expired versus fresh lease.
+- Staging write failure.
+- Transaction failure before current snapshot publication.
+- Expired owner attempts to publish after a new owner acquired the lease.
+- Transaction conflict is retried only within the bounded retry policy.
+- Process crash leaves an orphan staging table that must expire automatically.
+- Missing previous current state.
+- Tick invoked after run completion.
+
+#### Done Criteria
+
+- One tick publishes one coherent snapshot; its targeted retry is no-republish and its fake-success finalization advances the cursor exactly once.
+- Retry is logically idempotent.
+- No mixed snapshot is observable.
+- User confirms BigQuery evidence before Phase 4.
+
+### Phase 4 — Snapshot Scoring and Closed-Loop SafePause
+
+**Status:** ⏳ PLANNED
+**Dependencies:** Phase 3 ✅ VERIFIED
+**Estimate:** 1 day
+
+#### Stage 0: Pre-Phase Research
+
+1. Re-read `score_snapshot`, repository prediction queries, audit proposal JSON, decision-service selection, and fail-closed tests.
+2. Inspect one real proposal JSON to verify driver decisions are available and add proposal lineage (`scenario_id`, source run/tick/snapshot, expiry) without granting control authority.
+3. Define the `heatsafe-simulation-control` Job, `queue-control` command, proposal checksum/decision-count rule, wall-clock authorization TTL, simulation-time validity window, caps, atomic exact-lineage consumption, and public approval-disabled behavior.
+4. Define heatwave TimesFM history seeding and simulation-time anchoring while preserving the live wall-clock branch.
+5. Present the feature SQL, scoring envelope/OOD policy, retention policy, and action lifecycle mapping; stop for approval.
+
+#### Implementation
+
+1. Add explicit `feature_source` handling to `score_snapshot`.
+2. Materialize heatwave `driver_current_features` from `driver_simulation_state`, not `GENERATE_ARRAY`; preserve raw state and emit explicit bounded scoring features plus clipping/OOD flags.
+3. Preserve all existing model feature names and action counterfactuals.
+4. Invoke scoring with explicit `simulation_run_id`, `tick_id`, `snapshot_id`, and `simulation_time`; require ten coherent zones and write tick status `SCORED`/`SCORE_FAILED`.
+5. Keep current features current-only, but append/MERGE forecasts and predictions by deterministic run/tick/snapshot/model/action keys. Retain all replay forecasts/predictions for 30 days after run completion and never delete them before the Phase 6 evidence pack is archived; cleanup is an explicit partition-pruned command.
+6. Anchor heatwave TimesFM context to `@simulation_time` and run-scoped seeded history; keep live forecasting wall-clock based.
+7. Add `queue-control` to `heatsafe.simulation.cli` and deploy it only through the `heatsafe-simulation-control` Job. It loads the proposal/predictions, verifies immutable checksum/count and exact lineage, and takes no free-form actor field.
+8. Query trusted immutable `simulation_control_events`, anti-join `simulation_control_consumptions`, revalidate exact lineage/payload/clocks/caps, and atomically write one deterministic consumption/rejection/expiry receipt plus any driver lifecycle events.
+9. Apply assignment, delay, travel, pause, completion, recovery, and economics on later substeps.
+10. Ensure current baseline scores reflect the updated driver state.
+11. Add lineage/payload mismatch, both expiry clocks, duplicate consumption, public non-authority, score failure, OOD, and selected-versus-control tests.
+
+#### Test Procedure
+
+```bash
+venv/bin/python -m unittest \
+  tests.test_simulation_scoring \
+  tests.test_simulation_interventions \
+  tests.test_core -v
+```
+
+Manual E2E:
+
+1. Start run and execute a tick.
+2. Score and open the Streamlit app.
+3. Authenticate as a trusted operator and run:
+
+   ```bash
+   gcloud run jobs execute heatsafe-simulation-control \
+     --region "$GOOGLE_CLOUD_REGION" \
+     --args="queue-control,--proposal-id=<proposal-id>,--run-id=<run-id>,--source-tick-id=<tick-id>,--source-snapshot-id=<snapshot-id>"
+   ```
+
+   Public/unauthenticated execution must return permission denied and write zero control rows.
+4. Execute enough ticks to cover delay and pause duration.
+5. Compare selected and control driver histories.
+
+#### Data Verification
+
+```sql
+SELECT snapshot_id, COUNT(DISTINCT prediction_run_id) AS runs,
+       COUNT(DISTINCT driver_id_hash) AS drivers
+FROM `<project>.<dataset>.driver_risk_predictions`
+WHERE scenario_id = 'heatwave'
+GROUP BY snapshot_id
+ORDER BY snapshot_id DESC
+LIMIT 2;
+```
+
+```sql
+SELECT event_time, driver_id_hash, event_type, completed_rest_minutes,
+       baseline_risk_probability, action_risk_probability
+FROM `<project>.<dataset>.driver_intervention_events`
+WHERE intervention_id = @intervention_id
+ORDER BY driver_id_hash, event_time;
+```
+
+```sql
+SELECT event_time, driver_status, continuous_exposure_minutes,
+       rest_minutes_120m, current_intervention_id
+FROM `<project>.<dataset>.driver_state_history`
+WHERE simulation_run_id = @run_id
+  AND driver_id_hash = @driver_id
+ORDER BY event_time;
+```
+
+#### Failure Scenarios
+
+- No evaluated model.
+- Prediction does not match current snapshot.
+- Proposal has no driver decisions.
+- Public audit approval is presented as if authoritative.
+- Control lineage is stale/mismatched, expired, over cap, or processed twice.
+- Proposal payload/selected decisions changed after the control checksum was created.
+- Driver goes offline before pause begins.
+- Scoring fails after snapshot commit.
+
+#### Done Criteria
+
+- Exact-snapshot predictions exist for the active tick.
+- Selected drivers show valid downstream state changes.
+- Control drivers are not mutated by the intervention.
+- Public/unauthenticated users cannot write authoritative control state.
+- TimesFM horizon is replay-time-relative and tick history remains queryable after later ticks.
+- The mandatory disposable TimesFM Hybrid probe passes: 21-day run-scoped 15-minute seed ending at `@simulation_time`; `MAX(context_time) <= @simulation_time`; `MIN(forecast_at) > @simulation_time`; ten successful zones; two-run results within an explicitly recorded tolerance; live-branch regression green; partition/byte ceiling respected.
+- Model failure remains monitoring-only.
+- User confirms the closed-loop behavior.
+
+### Phase 5 — Cloud Run Job and Optional Scheduler
+
+**Status:** ⏳ PLANNED
+**Dependencies:** Phase 4 ✅ VERIFIED
+**Estimate:** 0.5 day
+
+#### Stage 0: Pre-Phase Research
+
+1. Verify current gcloud syntax against official Cloud Run Scheduler documentation.
+2. Confirm exact identities and bindings for public reader, trusted operator, simulator runtime, scorer/trainer, deployer, and Scheduler caller.
+3. Inspect current Scheduler resources to avoid name collision and preserve the paused legacy `heatsafe-live-ingest-15m` resource.
+4. Measure manual tick duration and dry-run/actual bytes before enabling a one-minute cadence.
+5. Present commands, pinned image digest, IAM migration order, terminal-pause owner/SLA, and cost/write cadence; stop for deployment approval.
+
+P0 identity matrix (exact service-account names may receive the project suffix):
+
+| Principal | Resource-scoped grants | Explicit denial/absence proof |
+|---|---|---|
+| `heatsafe-public-reader` | Project `roles/bigquery.jobUser`; dataset `roles/bigquery.dataViewer`; runtime identity for the public service | No dataset/table editor, control-job invoke, Scheduler, Storage writer, or Vertex role |
+| trusted operator group | Job-level `roles/run.invoker` on `heatsafe-simulation-control` only | Cannot invoke tick job or write BigQuery directly |
+| `heatsafe-sim-control-writer` | Project `roles/bigquery.jobUser`; table-level viewer on proposals/predictions/runs/ticks; table-level `roles/bigquery.dataEditor` only on `simulation_control_events` | No dataset-wide editor, tick-job invoke, Scheduler, Storage, or Vertex role |
+| `heatsafe-sim-runtime` | Project `roles/bigquery.jobUser`; table-level `roles/bigquery.dataEditor` on simulator-owned state/event/projection/prediction tables and `simulation_control_consumptions`; table-level viewer on immutable controls/proposals/audit/model inputs; runtime/logging permissions | No editor on `simulation_control_events`, proposals, or audit; no Scheduler/admin/Run-invoker role; fixture is packaged, so no Storage role |
+| `heatsafe-trainer` | Project `roles/bigquery.jobUser`; model/training dataset `roles/bigquery.dataEditor` | No public service, control, Scheduler, or Run-admin role |
+| `heatsafe-sim-scheduler` | Job-level `roles/run.invoker` on `heatsafe-simulation-tick` only | No BigQuery, Storage, Vertex, control-job, or project-wide Run role |
+| deployer human/CI | `roles/run.admin`, `roles/cloudscheduler.admin`, and `roles/iam.serviceAccountUser` only on the named workload service accounts; API enablement remains a separately approved bootstrap action | Not used as any runtime identity |
+
+Scoring executes in-process inside the tick job under `heatsafe-sim-runtime`; there is no separate scorer identity in P0. Training remains a separate job/identity. IAM validation must read back every binding and run negative permission tests for each “absence proof.” Broad project roles on legacy `heatsafe-demo` are revoked only after its public/ingest/train/score workloads have been migrated and smoke-tested; the exact before/after binding manifest is retained.
+
+The IAM negative suite must prove `heatsafe-sim-runtime` cannot insert/update/delete `simulation_control_events`, while `heatsafe-sim-control-writer` cannot write `simulation_control_consumptions` or driver/current-state tables.
+
+#### Implementation
+
+1. Keep the existing Scheduler API state; do not disable/re-enable it during rollback because missed executions can run after re-enable.
+2. Add a separate simulator deployment command rather than coupling schedule enablement to public UI/schema/score deployment.
+3. Deploy `heatsafe-simulation-tick` and `heatsafe-simulation-control` from one recorded image digest under their separate runtime identities. Tick uses `tasks=1`, `parallelism=1`, `max-retries=1`, `task-timeout=300s`, `cpu=1`, and `memory=1Gi`; control uses `tasks=1`, `parallelism=1`, `max-retries=0`, and a 60-second timeout.
+4. Require measured p95 tick duration `<=45s` before schedule enablement; set lease TTL to `360s`. A fresh lease returns a bounded no-op but does not hide overlapping-execution cost.
+5. Add an explicit deployment flag such as `--enable-simulation-schedule`.
+6. Create/update `heatsafe-simulation-every-minute` using:
+   - HTTP `POST`
+   - Cloud Run Jobs v2 `:run` URI
+   - OAuth service account
+   - `Asia/Ho_Chi_Minh` timezone
+   - `* * * * *` schedule
+   - `attempt-deadline=30s`
+   - Scheduler `max-retry-attempts=0`
+7. Grant only job-level `roles/run.invoker` on the simulation job to the Scheduler caller; it has no BigQuery, Storage, Vertex, or project-wide Run role.
+8. Give the simulator runtime project-level `roles/bigquery.jobUser`, dataset-scoped data access, and only bucket-scoped object-read if the packaged fixture is not used.
+9. Migrate IAM in order: create identities → grant scoped roles → deploy/smoke-test → switch workload identity → verify → revoke obsolete broad roles.
+10. Add pause, resume, force-run, terminal alert, and delete instructions. The operator pauses/deletes the schedule within five minutes of `COMPLETED`; all later dispatches remain logical no-ops.
+11. Enforce per-query/per-tick/full-replay byte ceilings and record maximum execution/task-attempt counts in the cost evidence.
+
+#### Test Procedure
+
+```bash
+gcloud run jobs execute heatsafe-simulation-tick \
+  --project "$GOOGLE_CLOUD_PROJECT" \
+  --region "$GOOGLE_CLOUD_REGION" \
+  --wait
+```
+
+After scheduler creation:
+
+```bash
+gcloud scheduler jobs run heatsafe-simulation-every-minute \
+  --project "$GOOGLE_CLOUD_PROJECT" \
+  --location "$GOOGLE_CLOUD_REGION"
+```
+
+#### Data Verification
+
+- One scheduler dispatch produces one new successful tick.
+- Two near-simultaneous dispatches produce at most one logical tick.
+- IAM read-back proves the Scheduler caller has only job-level invoke permission.
+- Cloud Logging contains the same `simulation_run_id`, `tick_id`, `snapshot_id`, and checksum as BigQuery.
+- Pausing the scheduler stops advancement without changing the run state.
+- Tick 95 emits a terminal signal; schedule state becomes `PAUSED` or absent within five minutes, and a later dispatch is a no-op.
+
+#### Done Criteria
+
+- Job invocation is authenticated and least-privilege.
+- Scheduler is explicitly opt-in and operationally reversible.
+- Cleanup pauses Scheduler first, waits for active executions, then deletes only the new scheduler/job/binding while preserving image and BigQuery evidence.
+- User confirms recurring execution before Phase 6.
+
+### Phase 6 — End-to-End Replay, UI Proof, and Closeout
+
+**Status:** ⏳ PLANNED
+**Dependencies:** Phase 5 ✅ VERIFIED
+**Estimate:** 0.5–1 day
+
+#### Stage 0: Pre-Phase Research
+
+1. Review all prior phase evidence and unresolved test-infra notes.
+2. Create a dedicated evidence/backup dataset with default expiration longer than the evidence window. Before replay, copy exact heatwave rows from every overwritten current table (`zone_snapshots_current`, `driver_current_features`, and the coordinator/current-run rows) into run-tagged backup tables and store row counts plus canonical checksums.
+3. Confirm UI proof steps and expected changes at selected times.
+4. Stop if any prior phase is not ✅ VERIFIED.
+
+#### Implementation and Validation
+
+1. Pause Scheduler and execute one mandatory isolated production-path replay of all 96 ticks, followed by a recorded 97th no-op invocation.
+2. Validate hourly demand/supply/exposure shapes, state invariants, and checksums.
+3. Exercise one no-action control interval and one SafePause interval.
+4. Simulate scoring failure and successful retry.
+5. Refresh the deployed Streamlit service at three distinct ticks and capture named evidence:
+   - early/low heat,
+   - heat/demand escalation,
+   - post-intervention.
+6. Run full tests, compile, and dependency checks.
+7. Update README architecture, runbook, commands, data provenance, and disclaimers.
+8. Validate logs with a versioned JSON-schema checker/query: every Cloud Run execution has execution/run/tick/snapshot IDs, lease outcome, row counts, checksum, `duration_ms`, scoring/invariant result, bounded redacted error fields, and exactly one terminal outcome.
+9. Measure tick duration against the 45-second SLO and 300-second task timeout.
+10. Record known gaps; do not relabel them as P0 completion.
+11. Cleanup in order: keep Scheduler paused, wait for executions, preserve the evidence manifest, and use one bounded transaction to delete only heatwave/current coordinator rows then restore them from the run-tagged backups. Recompute pre/post row counts and canonical checksums; abort and retain backups on mismatch. Then optionally delete only the new scheduler/job/binding. Do not use `--seed-demo` as rollback because it also mutates demand history and GCS.
+
+#### Test Procedure
+
+```bash
+venv/bin/python -m unittest discover -s tests -v
+venv/bin/python -m compileall -q app.py heatsafe infra
+venv/bin/python -m pip check
+```
+
+Manual UI:
+
+1. Open the deployed HeatSafe service with `heatwave` selected.
+2. Record snapshot/time/zone metrics.
+3. Advance tick and use the existing refresh control.
+4. Verify changed weather, demand, supply, exposure, and risk.
+5. Authenticate to the operator path, queue a trusted simulated SafePause, and advance through its lifecycle.
+6. Verify audit, driver state, zone capacity, and risk-input changes.
+7. Confirm no copy implies a medical diagnosis or real dispatch.
+
+#### Final Verification Queries
+
+```sql
+SELECT COUNT(*) AS tick_rows,
+       COUNT(DISTINCT tick_index) AS tick_indices,
+       MIN(tick_index) AS first_index,
+       MAX(tick_index) AS last_index,
+       MIN(simulation_time) AS first_tick,
+       MAX(simulation_time) AS last_tick
+FROM `<project>.<dataset>.simulation_ticks`
+WHERE simulation_run_id = @run_id AND status = 'SUCCEEDED';
+```
+
+```sql
+WITH ordered AS (
+  SELECT tick_index, simulation_time,
+         TIMESTAMP_DIFF(
+           simulation_time,
+           LAG(simulation_time) OVER (ORDER BY tick_index),
+           MINUTE
+         ) AS gap_minutes
+  FROM `<project>.<dataset>.simulation_ticks`
+  WHERE simulation_run_id = @run_id AND status = 'SUCCEEDED'
+)
+SELECT *
+FROM ordered
+WHERE tick_index NOT BETWEEN 0 AND 95
+   OR (tick_index > 0 AND gap_minutes != 15);
+```
+
+Expected: zero rows; the aggregate query returns one summary row with `tick_rows=96`, `tick_indices=96`, `first_index=0`, and `last_index=95`.
+
+```sql
+SELECT tick_id,
+       COUNTIF(
+         active_drivers != fresh_drivers + exposed_2h
+         OR exposed_4h < 0
+         OR exposed_4h > exposed_2h
+       ) AS violations,
+       COUNT(DISTINCT snapshot_id) AS snapshot_ids,
+       COUNT(DISTINCT observed_at) AS observed_times
+FROM `<project>.<dataset>.zone_operations`
+WHERE simulation_run_id = @run_id
+GROUP BY tick_id
+HAVING violations > 0 OR snapshot_ids != 1 OR observed_times != 1;
+```
+
+Expected: zero rows. Store this exact query and result in the phase report.
+
+The run must be `COMPLETED` with `last_published_tick_index=95`, `last_completed_tick_index=95`, and no pending score. Before and after invocation 97, store and compare a manifest containing run cursor/status, all tick/event/history/prediction/forecast counts and checksums, current driver/features/snapshot counts and checksums, control consumption statuses, and remaining staging tables. Every value must remain unchanged and staging count must be zero.
+
+UI artifacts are:
+
+```text
+phase6_tick-00_early.png
+phase6_tick-48_peak.png
+phase6_tick-N_post-safepause.png
+```
+
+The evidence table beside them records service revision/URL, capture time, run/tick/snapshot IDs, zone, temperature, demand, active/online supply, cumulative exposure cohorts, risk, and intervention state.
+Each screenshot row references a saved BigQuery result artifact and Cloud Logging execution query. A deployed negative-auth record proves the public principal cannot invoke the control job or create a control row; a trusted-operator positive record proves one valid row is created with matching Cloud Audit Log execution.
+
+#### Done Criteria
+
+- Required automated, integration, data, error, and manual gates are green.
+- User confirms the visible demo behavior.
+- Scheduler can be paused and replay state preserved.
+- README and closeout evidence match the deployed behavior.
+- P0 is marked ✅ VERIFIED only after user confirmation.
+
+## 10. Implementation Checklist
+
+### Contract and Fixtures
+
+- [ ] Add disabled-safe simulator settings and validation.
+- [ ] Add eight new BigQuery tables, including the coordinator, immutable trusted control queue, and consumption receipts.
+- [ ] Add nullable fields to existing weather/operations/driver tables.
+- [ ] Add partitioning and clustering definitions.
+- [ ] Add a source-attributed versioned Hanoi scenario manifest.
+- [ ] Add and validate a bounded 15-minute weather fixture.
+- [ ] Add schema/fixture unit tests.
+
+### Engine
+
+- [ ] Add deterministic entity/event RNG and checksum utilities.
+- [ ] Add simulation clock and run/tick models.
+- [ ] Add driver state machine and initial fleet generator.
+- [ ] Add demand generator and order lifecycle.
+- [ ] Add heat exposure/rest/hydration/economics transitions.
+- [ ] Add intervention transitions.
+- [ ] Add zone aggregation and invariant validation.
+- [ ] Add same-seed/different-seed/full-day tests.
+
+### Persistence
+
+- [ ] Add start/tick/status/pause/resume CLI.
+- [ ] Add run ownership and tick lease handling.
+- [ ] Add coordinator/tick precreation, fencing-token validation, bounded conflict retry, and expiring staging.
+- [ ] Add idempotent event/history persistence.
+- [ ] Add transactional current-state and snapshot projection.
+- [ ] Add retry/concurrency/failure tests.
+
+### Scoring and Closed Loop
+
+- [ ] Add simulation feature source to `score_snapshot`.
+- [ ] Materialize current features from persistent state.
+- [ ] Preserve exact-snapshot prediction guarantees.
+- [ ] Keep public approvals audit-only; write immutable trusted controls through the authenticated job and consume them via separate idempotent receipts.
+- [ ] Apply intervention effects over later ticks.
+- [ ] Add selected/control/mismatch/failure tests.
+
+### Automation and Proof
+
+- [ ] Add simulation Cloud Run Job deployment.
+- [ ] Add opt-in authenticated Scheduler creation.
+- [ ] Add pause/resume/force-run/disable runbook.
+- [ ] Run full test/compile/dependency gates.
+- [ ] Run the mandatory full 96-tick replay and invocation-97 no-op gate.
+- [ ] Complete UI and BigQuery evidence.
+- [ ] Update README and phase evidence.
+- [ ] Obtain user confirmation.
+
+## 11. Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Existing rows cannot accept new required fields | Provisioning failure | Add fields as nullable; require strict values only for simulation rows |
+| Concurrent scheduler executions | Duplicate/corrupt tick | Deterministic tick key, lease, event IDs, and transactional publication |
+| BigQuery partial write | Mixed snapshot | Stage events; publish current state/snapshot and tick marker transactionally |
+| Score fails after snapshot publish | UI temporarily lacks recommendation | Preserve coherent snapshot and fail closed; retry same score step |
+| Synthetic model appears scientifically validated | Misleading demo | Keep `is_simulated`, provenance, disclaimer, and no medical claims |
+| Demand/supply appears noisy or scripted | Low demo credibility | Shared latent shocks, autocorrelation, bounded transitions, distribution checks |
+| SafePause changes aggregate only | No causal story | Persist per-driver lifecycle and compare selected versus control histories |
+| Scheduler creates unbounded cost | Operational cost | Opt-in flag, measured cadence gate, explicit byte ceilings, terminal alert, five-minute pause/delete SLA, and no-op after completion |
+| Public approval mutates simulator | Unauthorized state/cost change | Public identity is read-only; audit remains non-authoritative; only authenticated exact-lineage controls are consumed |
+| Lease expires during publication | Late writer corrupts current state | Lease TTL exceeds timeout plus margin and fencing token is revalidated inside publication transaction |
+| TimesFM follows wall clock | Empty/wrong historical forecast | Heatwave branch caps context at `simulation_time`; source time is preserved separately; live branch remains wall-clock |
+| Ignored CSVs become accidental inputs | Unreproducible deployment | Exclude them explicitly; use checked-in versioned scenario fixture |
+| Existing live scenario regresses | Demo outage | Feature-source switch and regression tests; no live schema rewrite |
+
+## 12. Security and Safety Posture
+
+- Every environment-derived project/dataset/bucket/table/model/scenario identifier is validated against an explicit format/allowlist before SQL/resource interpolation.
+- All BigQuery values use query parameters or validated enums.
+- Scenario paths are selected from an allowlist; no arbitrary filesystem paths.
+- Scheduler uses OAuth to a Google API endpoint and a dedicated caller identity.
+- Public reader, trusted operator/control writer, simulator, scorer/trainer, deployer, and Scheduler caller use separate identities.
+- Simulator service account receives only required dataset-scoped BigQuery, optional bucket-scoped object-read, Logging, and job permissions.
+- Existing public UI is read-only/approval-disabled by default and cannot create trusted controls, enable schedulers, or dispatch.
+- Trusted controls require exact proposal/run/tick/snapshot lineage, TTL, deterministic ID, atomic consumption, and fan-out caps.
+- All driver IDs are synthetic hashes.
+- Event payloads exclude secrets and raw provider credentials.
+- Structured error messages are bounded before persistence.
+- Production dispatch remains `NOT_APPLICABLE`.
+
+## Touchpoints
+
+### New Files
+
+```text
+data/scenarios/hanoi_heatwave_v1/manifest.json
+data/scenarios/hanoi_heatwave_v1/weather_15m.csv
+heatsafe/simulation/__init__.py
+heatsafe/simulation/models.py
+heatsafe/simulation/randomness.py
+heatsafe/simulation/scenario.py
+heatsafe/simulation/demand.py
+heatsafe/simulation/transitions.py
+heatsafe/simulation/engine.py
+heatsafe/simulation/repository.py
+heatsafe/simulation/cli.py
+scripts/deploy_simulation.sh
+tests/test_simulation_full_replay.py
+tests/test_simulation_contract.py
+tests/test_simulation_randomness.py
+tests/test_simulation_demand.py
+tests/test_simulation_transitions.py
+tests/test_simulation_invariants.py
+tests/test_simulation_repository.py
+tests/test_simulation_cli.py
+tests/test_simulation_scoring.py
+tests/test_simulation_interventions.py
+```
+
+The executor may consolidate test modules when that preserves the stated scenario coverage; any consolidation must be recorded before implementation.
+
+### Modified Files
+
+```text
+heatsafe/config.py
+heatsafe/bigquery_io.py
+heatsafe/audit.py
+heatsafe/models.py
+heatsafe/ai_decision.py
+heatsafe/safepause.py
+heatsafe/repository.py
+infra/provision_gcp.py
+infra/ml_pipeline.py
+scripts/deploy_gcp.sh
+.env.example
+README.md
+```
+
+### Read/Compatibility Surfaces
+
+```text
+app.py
+data/demo_snapshot.json
+heatsafe/services/decision_service.py
+tests/test_app.py
+tests/test_core.py
+tests/test_refinement.py
+Dockerfile
+requirements.txt
+```
+
+## Public Contracts
+
+1. **`ZoneSnapshot` compatibility:** existing fields and scenario/snapshot behavior remain valid.
+2. **Snapshot coherence:** all current heatwave zones share one `snapshot_id`.
+3. **Prediction coherence:** predictions must match the active `snapshot_id`; no stale fallback.
+4. **Audit semantics:** actions remain `SIMULATED` with `dispatch_status=NOT_APPLICABLE`.
+5. **Exposure semantics:** `exposed_2h` remains cumulative `>=120` and `exposed_4h` remains its `>=240` subset; the optional `exposed_2_to_4h` is exclusive.
+6. **CLI contract:**
+
+   ```text
+   venv/bin/python -m heatsafe.simulation.cli validate-scenario
+   venv/bin/python -m heatsafe.simulation.cli start
+   venv/bin/python -m heatsafe.simulation.cli tick
+   venv/bin/python -m heatsafe.simulation.cli status
+   venv/bin/python -m heatsafe.simulation.cli pause
+   venv/bin/python -m heatsafe.simulation.cli resume
+   venv/bin/python -m heatsafe.simulation.cli queue-control [exact lineage args]
+   ```
+
+   `queue-control` is packaged in the same CLI but is authorized for cloud use only through the `heatsafe-simulation-control` Job identity; it is not a public/local anonymous write path.
+
+7. **Configuration contract:**
+
+   ```text
+   HEATSAFE_SIMULATION_ENABLED
+   HEATSAFE_SIMULATION_SCENARIO_VERSION
+   HEATSAFE_SIMULATION_SEED
+   HEATSAFE_SIMULATION_TICK_MINUTES
+   HEATSAFE_SIMULATION_LEASE_SECONDS
+   HEATSAFE_SIMULATION_GENERATOR_VERSION
+   ```
+
+8. **Deployment contract:** scheduler creation requires an explicit opt-in flag and can be paused independently.
+9. **Provenance contract:** every simulation-produced state/event carries run, applicable tick/source-tick, generator version, and simulated status; coordinator/run metadata follow their explicit schema.
+10. **Medical-safety contract:** model output remains operational decision support, not diagnosis or proven health impact.
+11. **Control-authority contract:** public audit approval is evidence only; only the authenticated trusted-control path can influence simulator state.
+12. **Replay-time contract:** heatwave forecasting and scoring are anchored to the active run/tick/snapshot/simulation time; live remains wall-clock based.
+
+## Blast Radius
+
+**Risk class:** Medium–High for the demo data plane and external abuse surface. `SIMULATED` limits real-world dispatch impact but does not make unauthorized data/cost mutation low risk.
+
+| Surface | Change | Risk |
+|---|---|---|
+| BigQuery schema | Eight new tables and nullable extensions | Migration/partition/query errors |
+| Heatwave current snapshot | New stateful writer | Mixed or stale snapshot if publication is wrong |
+| Driver scoring | New simulation feature source | Feature mismatch or missing predictions |
+| Intervention control | Authenticated exact-lineage control queue | Replay, expiry, cap, or wrong-driver targeting |
+| Cloud deployment | New job and optional schedule | Recurring cost/concurrent runs |
+| UI/repository | No intended interface rewrite | Regression only if projected semantics drift |
+| Live scenario | Intended unchanged | Must be covered by regression suite |
+
+Expected implementation footprint: approximately 15–25 source/test files plus one compact scenario fixture. No destructive table replacement, no production driver command surface, and no new public HTTP API.
+
+## Verification Evidence
+
+| Gate / Scenario | Strategy | Proves SPEC criterion |
+|---|---|---|
+| Scenario manifest and weather fixture validation | Fully-Automated | AC-15, AC-18 |
+| Additive schema test and disposable dataset provisioning | Hybrid | AC-13, AC-18 |
+| Same-seed canonical replay equality | Fully-Automated | AC-02, AC-05, AC-10 |
+| Per-entity randomness remains stable under reordered iteration | Fully-Automated | AC-05, AC-10 |
+| Driver/order state transition matrix | Fully-Automated | AC-03, AC-04 |
+| Exposure bucket boundary and partition invariants | Fully-Automated | AC-07, AC-16 |
+| Demand/order aggregation reconciliation | Fully-Automated | AC-17 |
+| Two real BigQuery ticks plus retry | Hybrid | AC-06, AC-10, AC-21 |
+| Mixed-snapshot query returns zero violations | Hybrid | AC-06 |
+| Simulation scoring references exact snapshot | Hybrid | AC-08, AC-11 |
+| TimesFM historical replay-clock disposable probe | Hybrid | AC-25, AC-26 |
+| Approval produces selected-driver lifecycle only | Hybrid | AC-09 |
+| Missing model/mismatched prediction remains monitoring-only | Fully-Automated | AC-11 |
+| Live and snapshot-mode regression suite | Fully-Automated | AC-13 |
+| Scheduler OAuth invocation, IAM read-back, and concurrent dispatch | Hybrid | AC-14, AC-21, AC-23, AC-28 |
+| Streamlit refresh across three ticks | Agent-Probe | AC-05, AC-06, AC-08 |
+| Mandatory 96-tick replay plus invocation-97 no-op | Hybrid | AC-12, AC-15, AC-16, AC-30 |
+| Versioned structured-log schema and one-terminal-outcome query | Hybrid | AC-20, AC-22, AC-29 |
+| Pre-replay backup and targeted restore checksum equality | Hybrid | AC-23, AC-30 |
+| Disclaimer/provenance UI and row inspection | Agent-Probe | AC-18, AC-19 |
+
+## Test Infra Improvement Notes
+
+(none identified yet)
+
+Update this section during test-coverage planning and validation if any of the following become necessary:
+
+- reusable fake BigQuery client/transaction harness,
+- disposable dataset fixture,
+- golden replay checksum fixture,
+- Cloud Scheduler integration probe,
+- UI screenshot/runtime automation.
+
+## 13. Ops Runbook Requirements
+
+The implementation must document:
+
+- Validate scenario without writes.
+- Start a new run and inspect its config.
+- Advance one tick manually.
+- Inspect current run/tick/snapshot status.
+- Pause and resume logical run state.
+- Pause and resume Cloud Scheduler.
+- Force-run Scheduler once.
+- Retry `SCORE_FAILED` without advancing simulation time.
+- Restore overwritten current heatwave/coordinator rows from the run-tagged backup transaction and prove pre/post checksums. Document `--seed-demo` separately as a broader reseed that also mutates demand history/GCS.
+- Disable/delete the scheduler without deleting BigQuery evidence.
+- Determine whether a failure occurred before or after snapshot publication.
+- Query latest successful checksum and exact prediction run.
+
+## 14. Change Management
+
+If execution discovers a material change, stop and update this plan before coding further.
+
+Material changes include:
+
+- Replacing BigQuery with another state store.
+- Changing the 15-minute published tick.
+- Changing public exposure bucket semantics.
+- Adding physiological telemetry to the decision model.
+- Adding real dispatch, Pub/Sub, Dataflow, or Airflow.
+- Training the model from replay output.
+- Making scheduler deployment default-on.
+- Changing the `live` scenario behavior.
+
+For each change record:
+
+1. Proposed modification.
+2. Reason and evidence.
+3. Affected acceptance criteria.
+4. Schema/API compatibility impact.
+5. New verification gates.
+6. User approval.
+
+## 15. Future Work
+
+- Import/calibrate distributions from Grab-Posisi or LaDe.
+- OSM route-level movement and shade/radiation exposure.
+- UTCI-derived decision features after validation.
+- Wearable signals with signal-quality metadata.
+- Pub/Sub event transport and Dataflow streaming.
+- Airflow/Composer only if multi-source backfills/training DAGs justify it.
+- Automatic UI refresh and replay controls.
+- Multiple cities/scenario catalogs.
+- Real outcome collection and model retraining governance.
+
+## Resume and Execution Handoff
+
+1. **Selected plan file path:**
+   `process/general-plans/active/heatsafe-p0-stateful-replay_23-07-26/heatsafe-p0-stateful-replay_PLAN_23-07-26.md`
+2. **Last completed phase or step:**
+   Phase 1 implementation, local/disposable-cloud proof, and user confirmation
+   completed. Phase 1 is VERIFIED.
+3. **Validate-contract status:**
+   PASS for plan correctness. Three live-cloud feasibility mechanisms remain mandatory Hybrid execution gates and are explicitly recorded below.
+4. **Supporting context files loaded:**
+   - `README.md`
+   - `data/demo_snapshot.json`
+   - `heatsafe/config.py`
+   - `heatsafe/ingestion.py`
+   - `heatsafe/models.py`
+   - `heatsafe/repository.py`
+   - `heatsafe/safepause.py`
+   - `heatsafe/audit.py`
+   - `heatsafe/bigquery_io.py`
+   - `infra/provision_gcp.py`
+   - `infra/ml_pipeline.py`
+   - `scripts/deploy_gcp.sh`
+   - `tests/test_app.py`
+   - `tests/test_core.py`
+   - `tests/test_refinement.py`
+   - `.env.example`
+   - `requirements.txt`
+   - `process/context/all-context.md` — absent
+   - `process/context/tests/all-tests.md` — absent
+5. **Fresh-agent next step:**
+   Complete Phase 2 Stage 0 parameter/scoring research, write the frozen table
+   into this plan, and stop for review before Phase 2 source edits.
+6. **Working-tree note:**
+   Preserve all user changes. Phase 1 source, fixture, tests, and this plan are
+   uncommitted. Both disposable BigQuery datasets were deleted; the shared demo
+   dataset was not changed.
+7. **Execution authority:**
+   Phase 1 execute authority has been consumed. Phase 2 Stage 0 research is
+   authorized. Phase 2 source edits remain behind its research-review gate;
+   shared-data mutation, IAM, jobs, scheduler, and deployment are unauthorized.
+
+## Validate Contract
+
+**Validation date:** 23-07-2026
+**Net Gate:** **PASS** for plan entry; EXECUTE still requires the user's explicit phase authorization.
+**Strategy:** One authoritative sequential implementation stream with phase gates. Parallel agents were appropriate for read-only VALIDATE only.
+
+### V1 pre-check evidence
+
+- Plan target and branch/worktree were resolved to this file on `main`.
+- `process/context/all-context.md` and `process/context/tests/all-tests.md` are absent; source/tests were used as truth.
+- Strict artifact validation: `0 failures`, `0 warnings`.
+- Baseline: `48/48` unittests passed via `venv/bin/python`; compile passed; `venv/bin/python -m pip check` reported no broken requirements.
+- Global `python`/`pip` are unavailable in the fresh shell, so every local command was corrected to the venv path.
+
+### Initial Layer 1 dimensions
+
+| Layer 1 dimensions | Initial status | Final status |
+|---|---|---|
+| Infra fit | CONCERN | PASS |
+| Test coverage | CONCERN | PASS |
+| Breaking changes | FAIL | PASS |
+| Security surface | FAIL | PASS |
+
+### Initial Layer 2 sections
+
+| Layer 2 sections | Initial status | Final status |
+|---|---|---|
+| Phase 1 — Contract and Scenario Foundation | CONCERN | PASS |
+| Phase 2 — Local Deterministic Engine | FAIL | PASS |
+| Phase 3 — Persistence, Snapshots, Lease | FAIL | PASS |
+| Phase 4 — Scoring and Closed-loop Intervention | FAIL | PASS |
+| Phase 5 — Cloud Run Job, IAM, Scheduler | FAIL | PASS |
+| Phase 6 — End-to-End Replay, UI Proof, Closeout | FAIL | PASS |
+
+**Initial totals: 7 FAILs / 3 CONCERNs / 0 PASSes**
+**Final re-validation totals: 0 FAILs / 0 CONCERNs / 10 PASSes**
+**→ Net Gate: PASS**
+
+### Plan fixes applied during VALIDATE
+
+| # | Finding | Remediation now locked in the plan |
+|---|---|---|
+| P1 | `exposed_2h` was incorrectly redefined as exclusive | Preserve cumulative `>=120`; `exposed_4h` remains its subset; add optional exclusive `exposed_2_to_4h` |
+| P2 | `active_drivers`/`TO_COOLSTOP` conflict | Active means available/working supply; add `online_drivers`; CoolStop is online but unavailable |
+| P3 | Public unauthenticated audit approval became authoritative | Public audit remains evidence-only; add IAM-authenticated immutable control job plus separate simulator consumption receipts |
+| P4 | Proposal/control lineage was replayable/mutable | Exact run/tick/snapshot/prediction checks, canonical payload checksum/count, dual clocks, caps, immutable requests, idempotent receipts |
+| P5 | Wall-clock TimesFM and scenario-wide DELETE broke replay | Heatwave uses `simulation_time`; current features remain current-only; deterministic prediction/forecast history is retained 30 days |
+| P6 | Cross-table publication and lease were underspecified | Precreated coordinator/ticks, fencing token, in-transaction owner recheck, commit ledger last, bounded conflict retry, expiring staging |
+| P7 | Published and scored cursors were conflated | Separate published/completed/pending-score cursors; score retry blocks later simulation; targeted tick retry is explicit |
+| P8 | Legacy full-schema MERGE could null lineage | Table-specific update-field policies, replay-isolated demand keys, explicit current-state replacement only |
+| P9 | Scheduler/IAM/cost behavior was vague | Two exact jobs, pinned image, exact tasks/retries/timeouts, identity matrix, read-back/negative tests, terminal pause SLA, byte ceilings |
+| P10 | Representative replay could not prove completion | Mandatory 96 ticks + invocation 97 no-op, continuity query, expanded manifest, log schema, UI evidence, targeted restore |
+| P11 | Phase 1 lacked exact schema/source/identifier contract | Research section freezes types/modes, Láng 41.1°C anchor, ERA5 query/checksum/calibration/interpolation, zero zone offsets, and strict identifier grammar |
+
+### High-risk PREDICT review
+
+| Persona | Primary risk | Locked response |
+|---|---|---|
+| Architect | Partial/mixed state across BigQuery tables | Fenced multi-table transaction with cursor separation and disposable concurrency probe |
+| Security | Public UI or broad runtime identity writes controls | Immutable control request table, separate receipt table, table-level IAM, public negative-auth proof |
+| Performance/cost | One-minute cron overlaps or scans old partitions | 45-second measured SLO, lease no-op, byte caps, partition predicates, terminal pause/delete SLA |
+| Product/UX | Demo implies real telemetry/medical certainty | Source/derivation/simulation labels, historical replay date, monitoring-only failures, no diagnosis claim |
+| QA/operations | Tests pass but deployed behavior/rollback fails | Mandatory Hybrid 96+1 run, deployed refresh/auth/log evidence, run-tagged backup and checksum restore |
+
+### Execute-agent instructions
+
+| # | Instruction | Trigger |
+|---|---|---|
+| E1 | Re-run strict plan validation and the venv baseline before the first source edit; stop on drift. | Phase 1 entry |
+| E2 | Implement only Phase 1 scope and stop at its proof/user-confirmation boundary. Do not infer later-phase authority. | Every phase |
+| E3 | Run `--schema-only` only against an explicit disposable dataset; assert Storage is untouched and delete only that dataset after evidence capture. | Phase 1 Hybrid gate |
+| E4 | Do not run any live BigQuery feasibility probe against the shared demo dataset. | Phases 3, 4, 6 |
+| E5 | Do not allow public audit rows, caller-supplied actor names, or simulator runtime permissions to create immutable control requests. | Phase 4/5 |
+| E6 | Scheduler creation remains default-off and requires explicit deployment approval after manual duration/byte/IAM gates. | Phase 5 |
+| E7 | Pause Scheduler and preserve evidence before any restore/cleanup; never use `--seed-demo` as normal rollback. | Phase 6 |
+
+### Open mandatory Hybrid feasibility gates
+
+These are not plan defects and were not run because VALIDATE/RESEARCH did not authorize billed/mutating cloud work:
+
+- [`bigquery_tick_publication_FEASIBILITY_23-07-26.md`](bigquery_tick_publication_FEASIBILITY_23-07-26.md) — `INCONCLUSIVE`; must prove concurrent lease fencing, transaction rollback, historical retry, byte bounds, and staging expiry.
+- [`timesfm_replay_clock_FEASIBILITY_23-07-26.md`](timesfm_replay_clock_FEASIBILITY_23-07-26.md) — `INCONCLUSIVE`; must prove replay-relative ten-zone TimesFM behavior and live regression.
+- [`full_replay_runtime_FEASIBILITY_23-07-26.md`](full_replay_runtime_FEASIBILITY_23-07-26.md) — `INCONCLUSIVE`; must prove 96+1 deployed runtime, log lineage, evidence preservation, and targeted restore.
+
+No backlog artifact is used to waive these gates.
+
+## Autonomous Goal Block
+
+```text
+SESSION GOAL
+Implement HeatSafe P0 as a deterministic, stateful 24-hour Hanoi replay while preserving the existing snapshot/exposure/live contracts and keeping public audit non-authoritative.
+
+AUTONOMY RULES
+- Follow the selected plan phase by phase using one authoritative writer.
+- Make informed in-phase implementation decisions that do not expand scope or weaken a contract.
+- Preserve unrelated user changes and record any discovered drift in the plan before proceeding.
+- Run the exact proof boundary and stop for user confirmation after each phase.
+
+HARD STOPS
+- No phase implementation without the matching explicit ENTER PHASE N EXECUTE MODE command.
+- No shared demo dataset/cloud mutation for disposable feasibility probes.
+- No public/unauthenticated simulation-control write.
+- No scheduler creation without explicit deployment approval after manual gates.
+- No destructive migration, broad restore, or --seed-demo rollback.
+
+NEXT PHASE
+Phase 2 Stage 0 research. Freeze the engine parameter/scoring contract and stop for review before source edits.
+
+CONTRACT SUMMARY
+Validate PASS. Preserve cumulative exposure semantics; use the 26 May 2026 Láng 41.1°C station anchor plus ERA5 historical shape with explicit calibration/interpolation; enforce additive nullable migration, trusted immutable controls plus receipts, fenced publication, replay-time scoring, scoped IAM, mandatory Hybrid cloud gates, and 96+1 closeout proof.
+
+EXECUTE START COMMAND
+After Stage 0 parameter review: ENTER PHASE 2 EXECUTE MODE — heatsafe-p0-stateful-replay_PLAN_23-07-26.md
+```
+
+## Next Step — Cursor Plan / RIPER-5
+
+Complete and review Phase 2 Stage 0. Do not begin Phase 2 source implementation
+or mutate shared cloud data, IAM, jobs, schedulers, or deployments before the
+matching execute authorization.

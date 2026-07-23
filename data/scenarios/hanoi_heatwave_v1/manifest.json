@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "scenario_id": "heatwave",
+  "scenario_version": "hanoi_heatwave_v1",
+  "display_name": "Hanoi Láng extreme heat replay — 26 May 2026",
+  "description": "A source-grounded 15-minute replay derived from ERA5 and calibrated to Láng station's reported 41.1°C daily maximum.",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "simulation_start_local": "2026-05-26T00:00:00+07:00",
+  "tick_minutes": 15,
+  "expected_ticks": 96,
+  "source": {
+    "provider": "Open-Meteo",
+    "dataset": "ERA5 reanalysis",
+    "api_url": "https://archive-api.open-meteo.com/v1/archive?latitude=21.02&longitude=105.80&start_date=2026-05-25&end_date=2026-05-27&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,wind_gusts_10m,shortwave_radiation&wind_speed_unit=ms&timezone=Asia%2FHo_Chi_Minh&models=era5",
+    "requested_coordinate": {"latitude": 21.02, "longitude": 105.8},
+    "resolved_grid": {"latitude": 21.0, "longitude": 105.75, "elevation_m": 16.0},
+    "retrieved_at": "2026-07-23T17:43:09Z",
+    "canonical_sha256": "13e289c702b3d4213986d237d54eeb3225fbd8b4c493e8b169c16af371c859ac",
+    "license": "CC BY 4.0",
+    "attribution": "Weather data by Open-Meteo.com; ERA5 data from Copernicus Climate Change Service.",
+    "modifications": "Hourly ERA5 values were temporally interpolated to 15 minutes. Temperature was affinely calibrated to the reported Láng daily maximum; precipitation was divided across each hour's four intervals."
+  },
+  "calibration_anchor": {
+    "station_name": "Láng, Hanoi",
+    "wmo_id": "48820",
+    "coordinate": {"latitude": 21.02, "longitude": 105.8},
+    "observed_daily_max_c": 41.1,
+    "observation_date": "2026-05-26",
+    "source_urls": [
+      "https://vnexpress.net/ha-noi-nghe-an-nong-41-do-c-5078532.html",
+      "https://nchmf.gov.vn/kttv/vi-VN/1/dieu-tiet-ho-chua-2079-15.html"
+    ],
+    "era5_daily_min_c": 29.8,
+    "era5_daily_max_c": 39.5,
+    "method": "temperature_c = 29.8 + (source_temperature_c - 29.8) * (41.1 - 29.8) / (39.5 - 29.8)",
+    "limitations": "Only the 41.1°C daily maximum is a reported station observation. The intraday curve is derived from a coarse ERA5 grid cell and is not direct 15-minute station telemetry."
+  },
+  "derivation": {
+    "version": "lang-max-anchor-era5-linear-15m-v2",
+    "method_by_field": {
+      "temperature_c": "Affine range calibration followed by linear interpolation.",
+      "relative_humidity_percent": "Bounded linear interpolation of ERA5 hourly values.",
+      "apparent_temperature_c": "Bounded linear interpolation of uncalibrated ERA5 hourly values.",
+      "precipitation_mm": "Each ERA5 hourly accumulation divided equally among four 15-minute intervals.",
+      "cloud_cover_pct": "Bounded linear interpolation of ERA5 hourly values.",
+      "wind_speed_mps": "Bounded linear interpolation of ERA5 hourly values.",
+      "wind_gust_mps": "Bounded linear interpolation of ERA5 hourly values.",
+      "shortwave_radiation_wm2": "Bounded linear interpolation of ERA5 hourly values."
+    },
+    "output_columns": [
+      "simulation_offset_minutes",
+      "local_time",
+      "source_observed_at",
+      "source_next_observed_at",
+      "source_interpolation_fraction",
+      "source_temperature_c",
+      "temperature_adjustment_c",
+      "temperature_c",
+      "station_peak_anchor_c",
+      "relative_humidity_percent",
+      "apparent_temperature_c",
+      "precipitation_mm",
+      "cloud_cover_pct",
+      "wind_speed_mps",
+      "wind_gust_mps",
+      "shortwave_radiation_wm2",
+      "source_grid_latitude",
+      "source_grid_longitude",
+      "derivation_version"
+    ]
+  },
+  "validation": {
+    "expected_first_time": "2026-05-26T00:00:00+07:00",
+    "expected_last_time": "2026-05-26T23:45:00+07:00",
+    "expected_rows": 96,
+    "ranges": {
+      "source_temperature_c": [0, 50],
+      "temperature_adjustment_c": [0, 2],
+      "temperature_c": [0, 50],
+      "relative_humidity_percent": [0, 100],
+      "apparent_temperature_c": [0, 60],
+      "precipitation_mm": [0, 100],
+      "cloud_cover_pct": [0, 100],
+      "wind_speed_mps": [0, 30],
+      "wind_gust_mps": [0, 50],
+      "shortwave_radiation_wm2": [0, 1400]
+    }
+  },
+  "zone_weather_offsets": {
+    "hoan-kiem": 0.0,
+    "hai-ba-trung": 0.0,
+    "dong-da": 0.0,
+    "ba-dinh": 0.0,
+    "cau-giay": 0.0,
+    "thanh-xuan": 0.0,
+    "hoang-mai": 0.0,
+    "nam-tu-liem": 0.0,
+    "ha-dong": 0.0,
+    "bac-tu-liem": 0.0
+  },
+  "operational_priors": {
+    "source": "data/demo_snapshot.json",
+    "interpretation": "Phase 2 may use existing zone fleet and demand values as explicit simulator priors; Phase 1 does not generate operational state."
+  },
+  "disclaimer": "This is a simulated replay for prototype evaluation. It combines one reported station maximum with ERA5 reanalysis, calibration, and interpolation; it is not live telemetry or a direct station time series."
+}
