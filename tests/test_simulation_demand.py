@@ -4,9 +4,12 @@ import statistics
 import unittest
 from dataclasses import replace
 from datetime import timedelta
+from unittest.mock import patch
 
 from heatsafe.simulation import (
     DeterministicRandom,
+    advance_tick,
+    initialize_state,
     load_scenario,
     load_zone_priors,
     weather_at,
@@ -76,6 +79,7 @@ class DemandTests(unittest.TestCase):
         self.assertGreater(mean(8), mean(4) * 1.8)
         self.assertGreater(mean(18), mean(15))
         self.assertGreater(mean(13), mean(0))
+        self.assertGreater(mean(13), mean(10))
 
     def test_correlated_shocks_remain_in_frozen_bounds(self):
         city = 1.0
@@ -118,6 +122,50 @@ class DemandTests(unittest.TestCase):
             weather_demand_factor(heavy_rain) / weather_demand_factor(dry),
             1.15,
         )
+
+    def _tick_with_fixed_requests(self, active_anchor: int, count_per_minute: int):
+        zone = replace(
+            self.zone,
+            active_anchor=active_anchor,
+            exposed_2h_anchor=min(2, active_anchor),
+            exposed_4h_anchor=min(1, active_anchor),
+            forecast_requests_30m=count_per_minute * 30,
+        )
+        state = initialize_state(seed=222, fixture=self.fixture, zones=(zone,))
+        with patch(
+            "heatsafe.simulation.engine.sample_requests",
+            return_value=count_per_minute,
+        ):
+            return advance_tick(state, fixture=self.fixture, zones=(zone,))
+
+    def test_zero_demand_tick_is_coherent(self):
+        result = self._tick_with_fixed_requests(20, 0)
+        zone = result.zones[0]
+        self.assertEqual(zone.requests_15m, 0)
+        self.assertEqual(zone.matched_15m, 0)
+        self.assertEqual(zone.open_unmatched_end, 0)
+        self.assertEqual(zone.request_flow_balance, 0)
+
+    def test_oversupply_matches_every_request(self):
+        result = self._tick_with_fixed_requests(100, 1)
+        zone = result.zones[0]
+        self.assertEqual(zone.requests_15m, 15)
+        self.assertEqual(zone.matched_15m, 15)
+        self.assertEqual(zone.open_unmatched_end, 0)
+        self.assertEqual(zone.request_flow_balance, 0)
+
+    def test_undersupply_leaves_bounded_queue_or_terminal_outcome(self):
+        result = self._tick_with_fixed_requests(4, 20)
+        zone = result.zones[0]
+        self.assertEqual(zone.requests_15m, 300)
+        self.assertLess(zone.matched_15m, zone.requests_15m)
+        self.assertGreater(
+            zone.open_unmatched_end
+            + zone.cancelled_15m
+            + zone.unfulfilled_15m,
+            0,
+        )
+        self.assertEqual(zone.request_flow_balance, 0)
 
 
 if __name__ == "__main__":

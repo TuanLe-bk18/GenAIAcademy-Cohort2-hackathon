@@ -8,6 +8,7 @@ from heatsafe.simulation import (
     SimulationInvariantError,
     advance_tick,
     initialize_state,
+    hourly_summary,
     load_scenario,
     load_zone_priors,
     project_scoring,
@@ -134,6 +135,13 @@ class InvariantTests(unittest.TestCase):
                 result.zones[0].active_drivers,
                 target_active(bounded, result.tick_index * 15),
             )
+        summaries = hourly_summary(results)
+        self.assertEqual(len(summaries), 24)
+        self.assertIn("raw_feature_extrema", summaries[0])
+        self.assertIn("heat_index_c", summaries[0]["raw_feature_extrema"])
+        self.assertIn("behavior_clip_rates", summaries[0])
+        self.assertIn("weather_clip_rate", summaries[0])
+        self.assertIn("interventions", summaries[0])
 
     def test_bounded_full_day_is_same_seed_stable_and_seed_sensitive(self):
         base = self.zones[0]

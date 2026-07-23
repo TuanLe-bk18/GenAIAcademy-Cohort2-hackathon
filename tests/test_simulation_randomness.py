@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 from heatsafe.simulation import (
     DeterministicRandom,
@@ -40,6 +41,11 @@ class DeterministicRandomnessTests(unittest.TestCase):
         self.assertEqual(
             canonical_checksum({"b": 1.25, "a": (1, 2)}),
             canonical_checksum({"a": [1, 2], "b": 1.25000001}),
+        )
+        instant = datetime(2026, 5, 26, 0, tzinfo=timezone(timedelta(hours=7)))
+        self.assertEqual(
+            canonical_checksum(instant),
+            canonical_checksum(instant.astimezone(timezone.utc)),
         )
 
     def test_reordered_entities_do_not_change_tick(self):

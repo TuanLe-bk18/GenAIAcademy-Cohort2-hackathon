@@ -642,6 +642,7 @@ def _expire_delayed_interventions(
 
 def _apply_shift_boundaries(
     drivers: dict[str, DriverState],
+    interventions: dict[str, InterventionState],
     minute: int,
 ) -> None:
     for driver_id in sorted(drivers):
@@ -662,10 +663,33 @@ def _apply_shift_boundaries(
                 offline_since_minute=minute,
             )
         elif not scheduled and driver.status in {
-            DriverStatus.TO_PICKUP,
-            DriverStatus.ON_TRIP,
             DriverStatus.TO_COOLSTOP,
             DriverStatus.PAUSED,
+        }:
+            intervention = interventions[driver.current_intervention_id or ""]
+            reason = (
+                "SHIFT_ENDED_PARTIAL_PAUSE"
+                if intervention.completed_rest_minutes > 0
+                else "SHIFT_ENDED_BEFORE_PAUSE"
+            )
+            interventions[intervention.intervention_id] = replace(
+                intervention,
+                status=InterventionStatus.CANCELLED,
+                completed_minute=minute,
+                cancel_reason=reason,
+            )
+            drivers[driver_id] = replace(
+                driver,
+                status=DriverStatus.OFFLINE,
+                current_intervention_id=None,
+                transition_due_minute=None,
+                pending_offline=False,
+                online_since_minute=None,
+                offline_since_minute=minute,
+            )
+        elif not scheduled and driver.status in {
+            DriverStatus.TO_PICKUP,
+            DriverStatus.ON_TRIP,
         }:
             drivers[driver_id] = replace(driver, pending_offline=True)
 
@@ -923,6 +947,12 @@ def advance_minute(
     minute = state.minute_index
     if not 0 <= minute < 24 * 60:
         raise ValueError("full-day replay is already complete")
+    minute_start_open = Counter(
+        order.origin_zone_id
+        for order in state.orders
+        if order.status == OrderStatus.REQUESTED
+    )
+    prior_event_count = len(state.events)
     drivers = {driver.driver_id_hash: driver for driver in state.drivers}
     orders = {order.order_id: order for order in state.orders}
     interventions = {
@@ -941,7 +971,7 @@ def advance_minute(
     )
     _apply_controls(state, controls, drivers, interventions, minute)
     _expire_delayed_interventions(drivers, interventions, minute)
-    _apply_shift_boundaries(drivers, minute)
+    _apply_shift_boundaries(drivers, interventions, minute)
     terminal |= _expire_requests(state, orders, events, minute)
     for order_id in terminal:
         orders.pop(order_id, None)
@@ -981,6 +1011,18 @@ def advance_minute(
         events=tuple(sorted(events, key=lambda item: (item.event_minute, item.event_id))),
         city_shock=city_shock,
         zone_shocks=zone_shocks,
+    )
+    # Prove the complete structural, cohort, ownership, and queue-flow
+    # invariants for this exact one-minute transition. The public tick later
+    # repeats the same checks over the whole 15-minute aggregation boundary.
+    minute_state = replace(
+        next_state,
+        events=next_state.events[prior_event_count:],
+    )
+    validate_state(
+        minute_state,
+        zones,
+        tuple(sorted(minute_start_open.items())),
     )
     return next_state
 
@@ -1198,6 +1240,18 @@ def hourly_summary(results: tuple[TickResult, ...]) -> tuple[dict[str, object], 
     for result in results[3::4]:
         zones = result.zones
         feature_total = result.total_feature_cells
+        raw_values: dict[str, list[float]] = defaultdict(list)
+        for projection in result.scoring:
+            for name, value in projection.raw_features:
+                raw_values[name].append(value)
+        raw_extrema = {
+            name: {
+                "min": round(min(values), 4),
+                "max": round(max(values), 4),
+            }
+            for name, values in sorted(raw_values.items())
+            if values
+        }
         summary.append(
             {
                 "time": result.simulation_time.isoformat(),
@@ -1227,11 +1281,22 @@ def hourly_summary(results: tuple[TickResult, ...]) -> tuple[dict[str, object], 
                 "exposed_2h": sum(zone.exposed_2h for zone in zones),
                 "exposed_4h": sum(zone.exposed_4h for zone in zones),
                 "paused": sum(zone.paused_drivers for zone in zones),
+                "interventions": sum(
+                    intervention.status
+                    not in {
+                        InterventionStatus.COMPLETED,
+                        InterventionStatus.CANCELLED,
+                    }
+                    for intervention in result.state.interventions
+                ),
+                "raw_feature_extrema": raw_extrema,
                 "clip_rate": round(
                     result.clipped_feature_cells / feature_total, 4
                 )
                 if feature_total
                 else 0.0,
+                "behavior_clip_rates": dict(result.behavior_clip_rates),
+                "weather_clip_rate": result.weather_clip_rate,
                 "model_input_ood": result.model_input_ood,
                 "checksum": result.checksum,
             }
