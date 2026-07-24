@@ -374,7 +374,14 @@ def score_snapshot(
       AND target.tick_id = source.tick_id
       AND target.zone_id = source.zone_id
       AND target.interval_start = source.interval_start
-    WHEN NOT MATCHED THEN INSERT ROW;
+    WHEN NOT MATCHED THEN INSERT (
+      scenario_id, zone_id, interval_start, requests, is_simulated,
+      simulation_run_id, tick_id, generator_version
+    ) VALUES (
+      source.scenario_id, source.zone_id, source.interval_start, source.requests,
+      source.is_simulated, source.simulation_run_id, source.tick_id,
+      source.generator_version
+    );
         """
         forecast_anchor = "@simulation_time"
         forecast_filter = """
@@ -498,7 +505,17 @@ def score_snapshot(
     ON target.prediction_run_id = source.prediction_run_id
       AND target.zone_id = source.zone_id
       AND target.forecast_at = source.forecast_at
-    WHEN NOT MATCHED THEN INSERT ROW;
+    WHEN NOT MATCHED THEN INSERT (
+      prediction_run_id, generated_at, scenario_id, snapshot_id, zone_id,
+      forecast_at, predicted_requests, lower_bound, upper_bound, model_version,
+      status, simulation_run_id, tick_id, generator_version
+    ) VALUES (
+      source.prediction_run_id, source.generated_at, source.scenario_id,
+      source.snapshot_id, source.zone_id, source.forecast_at,
+      source.predicted_requests, source.lower_bound, source.upper_bound,
+      source.model_version, source.status, source.simulation_run_id,
+      source.tick_id, source.generator_version
+    );
 
     CREATE TEMP TABLE action_features AS
     SELECT
@@ -590,7 +607,21 @@ def score_snapshot(
       AND target.action_type = source.action_type
       AND target.pause_start_delay_minutes = source.pause_start_delay_minutes
       AND target.pause_duration_minutes = source.pause_duration_minutes
-    WHEN NOT MATCHED THEN INSERT ROW;
+    WHEN NOT MATCHED THEN INSERT (
+      prediction_run_id, generated_at, model_version, scenario_id, snapshot_id,
+      driver_id_hash, zone_id, continuous_exposure_minutes, action_type,
+      pause_start_delay_minutes, pause_duration_minutes, risk_probability,
+      baseline_risk_probability, top_factors_json, is_simulated,
+      simulation_run_id, tick_id, generator_version
+    ) VALUES (
+      source.prediction_run_id, source.generated_at, source.model_version,
+      source.scenario_id, source.snapshot_id, source.driver_id_hash,
+      source.zone_id, source.continuous_exposure_minutes, source.action_type,
+      source.pause_start_delay_minutes, source.pause_duration_minutes,
+      source.risk_probability, source.baseline_risk_probability,
+      source.top_factors_json, source.is_simulated, source.simulation_run_id,
+      source.tick_id, source.generator_version
+    );
     {tick_status_sql}
     """
     parameters = [

@@ -1816,9 +1816,21 @@ update before Phase 5 research or execution.
 
 ### Phase 5 — Cloud Run Job and Optional Scheduler
 
-**Status:** ⏳ PLANNED
+**Status:** 🧪 TESTING
 **Dependencies:** Phase 4 ✅ VERIFIED
 **Estimate:** 0.5 day
+
+Inter-phase UPDATE PROCESS completed on 24-07-2026. Phase 4 confirmation was
+reconciled, live provider inventory was read back, the paused legacy scheduler
+was preserved, and Phase 5 research/execute authority was received. Research is
+recorded in `phase5_cloud_run_scheduler_RESEARCH_24-07-26.md`.
+
+Research corrected one material IAM assumption: publisher load staging tables
+cannot live in the authoritative dataset without dataset-level create
+permission. Phase 5 therefore uses the dedicated one-hour-expiry
+`heatsafe_sim_staging` dataset, exact table IAM in `heatsafe_data`, and an
+exact-resource IAM Condition scoped to the prediction model. Scheduler remains
+default-off and may only be enabled after measured tick p95 is `<=45s`.
 
 #### Stage 0: Pre-Phase Research
 
@@ -1897,6 +1909,27 @@ gcloud scheduler jobs run heatsafe-simulation-every-minute \
 - Scheduler is explicitly opt-in and operationally reversible.
 - Cleanup pauses Scheduler first, waits for active executions, then deletes only the new scheduler/job/binding while preserving image and BigQuery evidence.
 - User confirms recurring execution before Phase 6.
+
+#### Execution Result — 24-07-2026
+
+Implementation and provider execution are complete; evidence is recorded in
+`phase5_cloud_run_scheduler_REPORT_24-07-26.md`.
+
+- Final pinned image:
+  `sha256:f30511403e41d386d499ccb0fbc2085c7f22721798a212318f0ebedcb878280c`.
+- Both jobs, scoped IAM, expiring staging dataset, and the optional Scheduler
+  are deployed.
+- Manual resume, lineage, IAM readback, overlap fencing, and Scheduler OAuth
+  dispatch pass.
+- Three successful tick container durations are `49.455s`, `87.044s`, and
+  `96.568s`; observed p95 is `96.568s`, so the `<=45s` enablement gate fails.
+- `heatsafe-simulation-every-minute` remains `PAUSED`; the legacy
+  `heatsafe-live-ingest-15m` scheduler remains `PAUSED` and untouched.
+- Full local suite: 140 tests pass.
+
+Phase 5 stays `🧪 TESTING`. It must not transition to `✅ VERIFIED` or unlock
+Phase 6 until latency is brought under the accepted gate and the user confirms
+recurring execution.
 
 ### Phase 6 — End-to-End Replay, UI Proof, and Closeout
 

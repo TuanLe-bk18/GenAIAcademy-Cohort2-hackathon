@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import json
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 
 from heatsafe.simulation.cli import main
 from heatsafe.simulation.repository import InMemorySimulationRepository
@@ -81,6 +83,44 @@ class SimulationCliTests(unittest.TestCase):
         self.assertEqual(
             self.repository.status("heatwave").last_completed_tick_index, 0
         )
+
+    def test_completed_run_is_a_terminal_successful_noop(self):
+        self.call("start")
+        run = self.repository.status("heatwave")
+        self.repository.runs[run.run_id] = replace(run, status="COMPLETED")
+        code, output = self.call("tick")
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["outcome"], "NO_OP_TERMINAL")
+        self.assertTrue(payload["terminal_signal"])
+        self.assertEqual(payload["event"], "simulation_tick_terminal")
+
+    def test_fresh_lease_overlap_is_a_bounded_successful_noop(self):
+        self.call("start")
+        run = self.repository.status("heatwave")
+        tick = next(
+            tick
+            for tick in self.repository.ticks.values()
+            if tick.run_id == run.run_id and tick.tick_index == 0
+        )
+        self.repository.acquire_tick_lease(run.run_id, tick.tick_id, "other")
+        code, output = self.call("tick")
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["outcome"], "NO_OP_LEASE_HELD")
+        self.assertEqual(payload["event"], "simulation_tick_overlap")
+
+    def test_success_log_contains_scheduler_lineage_and_duration(self):
+        self.call("start")
+        code, output = self.call("tick")
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["event"], "simulation_tick_completed")
+        self.assertIn("simulation_run_id", payload)
+        self.assertIn("tick_id", payload)
+        self.assertIn("snapshot_id", payload)
+        self.assertIn("checksum", payload)
+        self.assertIn("duration_ms", payload)
 
 
 if __name__ == "__main__":

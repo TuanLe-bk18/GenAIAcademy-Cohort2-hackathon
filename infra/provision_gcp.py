@@ -406,6 +406,8 @@ def _ensure_table(
     schema: list[bigquery.SchemaField],
     partition_field: str | None,
     clustering: list[str] | None,
+    *,
+    preserve_existing_layout: bool = False,
 ) -> None:
     if not _table_exists(client, table_id):
         table = bigquery.Table(table_id, schema=schema)
@@ -440,14 +442,14 @@ def _ensure_table(
         raise RuntimeError(f"{table_id} schema conflict: {'; '.join(conflicts)}")
     expected_partition = (partition_field, "DAY") if partition_field else None
     actual_partition = _partition_signature(table)
-    if actual_partition != expected_partition:
+    if actual_partition != expected_partition and not preserve_existing_layout:
         raise RuntimeError(
             f"{table_id} partition conflict: "
             f"existing={actual_partition} desired={expected_partition}"
         )
     actual_clustering = list(table.clustering_fields or [])
     expected_clustering = list(clustering or [])
-    if actual_clustering != expected_clustering:
+    if actual_clustering != expected_clustering and not preserve_existing_layout:
         raise RuntimeError(
             f"{table_id} clustering conflict: "
             f"existing={actual_clustering} desired={expected_clustering}"
@@ -477,6 +479,7 @@ def ensure_bigquery(
     settings: Settings,
     *,
     include_views: bool = True,
+    preserve_existing_layout: bool = False,
 ) -> bigquery.Client:
     client = bigquery.Client(project=settings.project_id)
     dataset_ref = settings.dataset_path
@@ -554,6 +557,7 @@ def ensure_bigquery(
         _ensure_table(
             client, f"{dataset_ref}.{name}", schema,
             partition_field, clustered.get(name),
+            preserve_existing_layout=preserve_existing_layout,
         )
 
     view_specs = {
@@ -726,6 +730,14 @@ def main() -> None:
         help="Provision and read back tables only; never access Cloud Storage.",
     )
     parser.add_argument(
+        "--schema-only-current",
+        action="store_true",
+        help=(
+            "Explicitly provision the configured dataset additively; never access "
+            "Cloud Storage or seed data."
+        ),
+    )
+    parser.add_argument(
         "--dataset",
         help="Explicit disposable dataset ID for --schema-only.",
     )
@@ -736,6 +748,20 @@ def main() -> None:
     )
     args = parser.parse_args()
     settings = Settings.from_env()
+    if args.schema_only and args.schema_only_current:
+        parser.error("--schema-only and --schema-only-current are mutually exclusive")
+    if args.schema_only_current:
+        if args.seed_demo or args.dataset or args.cleanup_schema_only:
+            parser.error(
+                "--schema-only-current cannot be combined with --seed-demo, "
+                "--dataset, or --cleanup-schema-only"
+            )
+        ensure_bigquery(settings, preserve_existing_layout=True)
+        print(
+            f"Provisioned {len(table_schemas())} configured tables additively "
+            f"in {settings.dataset_path}; existing physical layouts preserved"
+        )
+        return
     if args.schema_only:
         if args.seed_demo:
             parser.error("--schema-only cannot be combined with --seed-demo")

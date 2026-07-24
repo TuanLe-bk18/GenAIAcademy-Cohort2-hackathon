@@ -27,6 +27,10 @@ class SettingsContractTests(unittest.TestCase):
         self.assertEqual(settings.simulation_scenario_version, "hanoi_heatwave_v1")
         self.assertEqual(settings.simulation_tick_minutes, 15)
         self.assertEqual(settings.simulation_lease_seconds, 360)
+        self.assertEqual(
+            settings.simulation_staging_dataset_path,
+            "cohort2track2.heatsafe_sim_staging",
+        )
 
     def test_external_identifiers_fail_closed(self):
         invalid = {
@@ -55,6 +59,9 @@ class SettingsContractTests(unittest.TestCase):
             ],
             "HEATSAFE_SIMULATION_GENERATOR_VERSION": [
                 "../stateful-replay-v1", "unknown-v1", "Stateful-v1",
+            ],
+            "HEATSAFE_SIMULATION_STAGING_DATASET": [
+                "", "Data", "1data", "data-set", "../staging",
             ],
         }
         for variable, values in invalid.items():
@@ -217,6 +224,45 @@ class BigQuerySchemaContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "cannot add REQUIRED"):
             _ensure_table(Client(), "p.d.t", desired, None, None)
 
+    def test_additive_current_migration_preserves_existing_physical_layout(self):
+        desired = [
+            bigquery.SchemaField("scenario_id", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("tick_id", "STRING", mode="NULLABLE"),
+        ]
+
+        class Client:
+            def __init__(self):
+                self.table = SimpleNamespace(
+                    schema=[
+                        bigquery.SchemaField(
+                            "scenario_id", "STRING", mode="NULLABLE"
+                        )
+                    ],
+                    time_partitioning=None,
+                    clustering_fields=["zone_id"],
+                    labels={},
+                )
+                self.updated_fields = []
+
+            def get_table(self, _table_id):
+                return self.table
+
+            def update_table(self, _table, fields):
+                self.updated_fields = fields
+
+        client = Client()
+        _ensure_table(
+            client,
+            "p.d.t",
+            desired,
+            None,
+            ["scenario_id", "zone_id"],
+            preserve_existing_layout=True,
+        )
+        self.assertEqual(client.table.clustering_fields, ["zone_id"])
+        self.assertIn("schema", client.updated_fields)
+        self.assertIn("tick_id", {field.name for field in client.table.schema})
+
 
 class MergePolicyTests(unittest.TestCase):
     class Done:
@@ -336,6 +382,27 @@ class SchemaOnlyCliTests(unittest.TestCase):
         ensure_bucket.assert_not_called()
         ensure_bigquery.assert_called_once()
         readback.assert_called_once()
+
+    def test_schema_only_current_is_explicit_and_never_calls_bucket(self):
+        from infra import provision_gcp
+
+        fake_client = object()
+        argv = ["provision_gcp.py", "--schema-only-current"]
+        with (
+            patch.object(sys, "argv", argv),
+            patch.object(provision_gcp, "ensure_bucket") as ensure_bucket,
+            patch.object(
+                provision_gcp, "ensure_bigquery", return_value=fake_client
+            ) as ensure_bigquery,
+            patch.object(provision_gcp, "print_schema_readback") as readback,
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            provision_gcp.main()
+        ensure_bucket.assert_not_called()
+        ensure_bigquery.assert_called_once_with(
+            Settings.from_env(), preserve_existing_layout=True
+        )
+        readback.assert_not_called()
 
 
 if __name__ == "__main__":

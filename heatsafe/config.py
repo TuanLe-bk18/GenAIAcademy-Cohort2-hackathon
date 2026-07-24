@@ -81,6 +81,7 @@ class Settings:
     simulation_tick_minutes: int = 15
     simulation_lease_seconds: int = 360
     simulation_generator_version: str = "stateful-replay-v1"
+    simulation_staging_dataset_id: str = "heatsafe_sim_staging"
 
     def __post_init__(self) -> None:
         _require_match("GOOGLE_CLOUD_PROJECT", self.project_id, _PROJECT_ID_RE)
@@ -124,6 +125,16 @@ class Settings:
             self.simulation_generator_version,
             _SIMULATION_GENERATOR_VERSIONS,
         )
+        _require_match(
+            "HEATSAFE_SIMULATION_STAGING_DATASET",
+            self.simulation_staging_dataset_id,
+            _DATASET_ID_RE,
+        )
+        if self.simulation_staging_dataset_id == self.dataset_id:
+            raise ValueError(
+                "HEATSAFE_SIMULATION_STAGING_DATASET must be separate from "
+                "HEATSAFE_DATASET"
+            )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -172,8 +183,15 @@ class Settings:
             simulation_generator_version=os.getenv(
                 "HEATSAFE_SIMULATION_GENERATOR_VERSION", "stateful-replay-v1"
             ),
+            simulation_staging_dataset_id=os.getenv(
+                "HEATSAFE_SIMULATION_STAGING_DATASET", "heatsafe_sim_staging"
+            ),
         )
 
     @property
     def dataset_path(self) -> str:
         return f"{self.project_id}.{self.dataset_id}"
+
+    @property
+    def simulation_staging_dataset_path(self) -> str:
+        return f"{self.project_id}.{self.simulation_staging_dataset_id}"

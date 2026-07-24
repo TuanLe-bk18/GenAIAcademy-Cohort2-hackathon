@@ -605,12 +605,14 @@ class BigQuerySimulationRepository(InMemorySimulationRepository):
         client: Any,
         *,
         dataset: str,
+        staging_dataset: str | None = None,
         now: Callable[[], datetime] = _utc_now,
         lease_seconds: int = 360,
     ):
         super().__init__(now=now, lease_seconds=lease_seconds)
         self.client = client
         self.dataset = dataset
+        self.staging_dataset = staging_dataset or dataset
         self._controls_loaded = False
         self._rejected_control_receipts: tuple[dict[str, object], ...] = ()
 
@@ -1044,7 +1046,7 @@ COMMIT TRANSACTION;
             "consumption": "simulation_control_consumptions",
         }
         target_table = target_tables[kind]
-        table_id = f"{self.dataset}.__simulation_stage_{kind}_{tick_id}"
+        table_id = f"{self.staging_dataset}.__simulation_stage_{kind}_{tick_id}"
         if not rows:
             return table_id
         from google.cloud import bigquery

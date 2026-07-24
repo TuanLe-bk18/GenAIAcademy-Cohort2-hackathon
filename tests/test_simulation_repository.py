@@ -180,7 +180,10 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
     def test_fenced_transaction_uses_byte_cap_and_snapshot_ready_last(self):
         client = self.Client()
         repository = BigQuerySimulationRepository(
-            client, dataset="project.dataset", now=lambda: datetime(2026, 5, 26, tzinfo=UTC)
+            client,
+            dataset="project.dataset",
+            staging_dataset="project.staging",
+            now=lambda: datetime(2026, 5, 26, tzinfo=UTC),
         )
         run = repository.start(
             scenario_id="heatwave", scenario_version="hanoi_heatwave_v1", seed=42
@@ -201,6 +204,9 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         self.assertLess(client.sql.index("last_published_tick_index"), client.sql.index("SET status = 'SNAPSHOT_READY'"))
         self.assertEqual(len(client.staging_tables), 7)
         self.assertTrue(all("__simulation_stage_" in table for table in client.staging_tables))
+        self.assertTrue(
+            all(table.startswith("project.staging.") for table in client.staging_tables)
+        )
         self.assertTrue(all(not isinstance(value, datetime) for row in client.staged_rows for value in row.values()))
         self.assertLess(client.sql.rfind("SNAPSHOT_READY"), client.sql.rfind("COMMIT TRANSACTION"))
         assert client.config is not None

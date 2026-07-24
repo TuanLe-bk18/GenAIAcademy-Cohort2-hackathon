@@ -63,6 +63,11 @@ class SimulationScoringTests(unittest.TestCase):
         self.assertIn("'MODEL_INPUT_OOD'", sql)
         self.assertNotIn("AND NOT features.feature_ood", sql)
         self.assertIn("MERGE `cohort2track2.phase4_scoring_unit.driver_risk_predictions`", sql)
+        self.assertIn(
+            "WHEN NOT MATCHED THEN INSERT (\n      scenario_id, zone_id, interval_start",
+            sql,
+        )
+        self.assertNotIn("WHEN NOT MATCHED THEN INSERT ROW", sql)
         self.assertIn("SET status = 'SCORED'", sql)
         self.assertEqual(client.configs[0].maximum_bytes_billed, 300_000_000)
 

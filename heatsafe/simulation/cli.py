@@ -5,12 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from dataclasses import asdict, is_dataclass
 from typing import Any, Callable, cast
 
 from heatsafe.config import Settings
 
-from .repository import BigQuerySimulationRepository, InMemorySimulationRepository, SimulationRepositoryError
+from .repository import (
+    BigQuerySimulationRepository,
+    InMemorySimulationRepository,
+    LeaseConflict,
+    SimulationRepositoryError,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +46,7 @@ def create_repository(settings: Settings, *, memory: bool):
     from google.cloud import bigquery
     return BigQuerySimulationRepository(
         bigquery.Client(project=settings.project_id), dataset=settings.dataset_path,
+        staging_dataset=settings.simulation_staging_dataset_path,
         lease_seconds=settings.simulation_lease_seconds,
     )
 
@@ -64,6 +71,27 @@ def _json(value: object) -> str:
     return json.dumps(value, default=str, sort_keys=True)
 
 
+def _execution_context() -> dict[str, object]:
+    return {
+        "cloud_run_job": os.getenv("CLOUD_RUN_JOB"),
+        "cloud_run_execution": os.getenv("CLOUD_RUN_EXECUTION"),
+        "task_index": os.getenv("CLOUD_RUN_TASK_INDEX"),
+        "task_attempt": os.getenv("CLOUD_RUN_TASK_ATTEMPT"),
+    }
+
+
+def _emit(event: str, *, started: float | None = None, **fields: object) -> None:
+    payload = {
+        "severity": "INFO",
+        "event": event,
+        **_execution_context(),
+        **fields,
+    }
+    if started is not None:
+        payload["duration_ms"] = round((time.monotonic() - started) * 1_000)
+    print(_json(payload))
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -71,6 +99,7 @@ def main(
     scorer_factory: Callable | None = None,
     control_writer_factory: Callable | None = None,
 ) -> int:
+    started = time.monotonic()
     args = build_parser().parse_args(argv)
     settings = Settings.from_env()
     if args.command == "validate-scenario":
@@ -144,6 +173,16 @@ def main(
         run = repository.status(args.scenario)
         if run is None:
             raise SimulationRepositoryError("start a simulation before requesting a tick")
+        if run.status == "COMPLETED":
+            _emit(
+                "simulation_tick_terminal",
+                started=started,
+                simulation_run_id=run.run_id,
+                status="COMPLETED",
+                outcome="NO_OP_TERMINAL",
+                terminal_signal=True,
+            )
+            return 0
         tick_id = args.tick_id
         if tick_id is None:
             if run.pending_score_tick_id is not None:
@@ -158,15 +197,34 @@ def main(
                     for tick in repository.ticks.values()
                     if tick.run_id == run.run_id and tick.tick_index == index
                 )
-        lease = repository.acquire_tick_lease(run.run_id, tick_id, "cli")
+        lease_owner = (
+            os.getenv("CLOUD_RUN_EXECUTION")
+            or os.getenv("HEATSAFE_SIMULATION_EXECUTION_ID")
+            or "cli"
+        )
+        try:
+            lease = repository.acquire_tick_lease(run.run_id, tick_id, lease_owner)
+        except LeaseConflict:
+            _emit(
+                "simulation_tick_overlap",
+                started=started,
+                simulation_run_id=run.run_id,
+                tick_id=tick_id,
+                status="RUNNING",
+                outcome="NO_OP_LEASE_HELD",
+            )
+            return 0
         publication = repository.publish_tick(run.run_id, tick_id, lease.fencing_token)
         if repository.ticks[tick_id].status == "SUCCEEDED":
-            print(_json({
-                "tick_id": tick_id,
-                "snapshot_id": publication.tick.snapshot_id,
-                "status": "SUCCEEDED",
-                "outcome": "NO_OP_ALREADY_SUCCEEDED",
-            }))
+            _emit(
+                "simulation_tick_noop",
+                started=started,
+                simulation_run_id=run.run_id,
+                tick_id=tick_id,
+                snapshot_id=publication.tick.snapshot_id,
+                status="SUCCEEDED",
+                outcome="NO_OP_ALREADY_SUCCEEDED",
+            )
             return 0
         scorer_builder = scorer_factory or create_scorer
         scorer = scorer_builder(settings, memory=args.memory)
@@ -182,14 +240,18 @@ def main(
             return 2
         repository.mark_scored(run.run_id, tick_id)
         completed = repository.finalize_score(run.run_id, tick_id, succeeded=True)
-        print(_json({
-            "tick_id": publication.tick.tick_id,
-            "snapshot_id": publication.tick.snapshot_id,
-            "prediction_run_id": scoring.prediction_run_id,
-            "status": repository.ticks[tick_id].status,
-            "checksum": publication.result.checksum,
-            "last_completed_tick_index": completed.last_completed_tick_index,
-        }))
+        _emit(
+            "simulation_tick_completed",
+            started=started,
+            simulation_run_id=run.run_id,
+            tick_id=publication.tick.tick_id,
+            snapshot_id=publication.tick.snapshot_id,
+            prediction_run_id=scoring.prediction_run_id,
+            status=repository.ticks[tick_id].status,
+            checksum=publication.result.checksum,
+            last_completed_tick_index=completed.last_completed_tick_index,
+            terminal_signal=completed.status == "COMPLETED",
+        )
         return 0
     except SimulationRepositoryError as exc:
         parser_error = {"error": str(exc)}
