@@ -1596,6 +1596,9 @@ Implemented within the approved local/fake-client boundary:
 - Durable BigQuery lifecycle SQL: run/coordinator creation, all 96 precreated
   tick identities, status reload for a later CLI process, pause/resume,
   conditional lease read-back assertion, and separate score-finalization cursor.
+- `scripts/probe_phase3_bigquery.py` is dry-run by default and refuses any
+  dataset not prefixed `heatsafe_phase3_probe_`; its explicit `--execute` path
+  provisions then deletes only that disposable dataset.
 - Automated evidence: `13` targeted repository/CLI tests and the full `106`
   test suite pass; compile and dependency checks pass.
 
