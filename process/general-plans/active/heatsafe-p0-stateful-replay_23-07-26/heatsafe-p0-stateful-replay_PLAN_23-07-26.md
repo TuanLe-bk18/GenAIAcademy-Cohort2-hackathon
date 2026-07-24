@@ -1,7 +1,7 @@
 # HeatSafe P0 Stateful Accelerated Replay Implementation Plan
 
 **Date**: 23-07-26
-**Status**: ✅ VALIDATED · ✅ PHASE 1 VERIFIED · 🔬 PHASE 2 STAGE 0 AUTHORIZED
+**Status**: ✅ VALIDATED · ✅ PHASE 1 VERIFIED · ✅ PHASE 2 VERIFIED — USER CONFIRMED 24-07-2026
 **Complexity**: COMPLEX — standard complex, one authoritative execution stream
 **Execution model**: Sequential phase gates; no phase advances until its proof boundary is green
 
@@ -1095,7 +1095,7 @@ Phase 1 uses **Láng's measured 41.1°C daily maximum as a calibration anchor + 
 
 ### Phase 2 — Local Deterministic Engine
 
-**Status:** 🔬 STAGE 0 RESEARCH AUTHORIZED — implementation awaits parameter review
+**Status:** ✅ VERIFIED — automated/manual evidence green and user-confirmed 24-07-2026
 **Dependencies:** Phase 1 ✅ VERIFIED
 **Estimate:** 1–1.5 days
 
@@ -1107,6 +1107,198 @@ Phase 1 uses **Láng's measured 41.1°C daily maximum as a calibration anchor + 
 4. Reconcile the incomplete static aggregates into a coherent initial fleet: derive the population from `active_drivers`, preserve cumulative exposure cohorts, and document how unavailable/online drivers are added.
 5. Freeze the current scoring envelope and define raw-state-to-scoring projection with explicit clipping/OOD flags and acceptance thresholds.
 6. Present the parameter table and stop for approval.
+
+#### Phase 2 Stage 0 Research Findings — 24-07-2026
+
+**Research status:** COMPLETE. These findings freeze the proposed P0 simulation contract but do not authorize implementation.
+
+##### R1. Evidence boundary
+
+Phase 2 deliberately separates three evidence classes:
+
+| Class | Meaning | P0 use |
+|---|---|---|
+| Repository contract | Directly checked in current source, snapshot, model generator, or accepted plan | May be treated as authoritative for compatibility |
+| External structural evidence | Public evidence supports the shape of a process, but the underlying records are not imported/calibrated here | May justify lifecycle/model form, never a Hanoi numerical claim |
+| Engineering prior | A transparent, bounded demo assumption selected for coherent behavior | Must be named in code/config and remain replaceable |
+
+Checked repository facts:
+
+- `data/demo_snapshot.json` is a single 13:00 aggregate anchor with 3,115 active drivers and 2,741 forecast requests per 30 minutes. It contains no driver histories, shift records, order events, cancellations, travel times, or empirical distributions.
+- The existing intraday demand heuristic has morning, lunch, and evening peaks and deterministic low-amplitude waves. Phase 2 retains that shape instead of inventing a second demand curve.
+- `safepause.py` currently assumes one trip per active driver per 30 minutes for its aggregate optimizer, evaluates 10–30 minute pauses, and uses 5-minute internal steps. Those are compatibility inputs, not observed trip telemetry.
+- `infra/ml_pipeline.py` creates synthetic model training examples. Therefore its feature ranges are compatibility envelopes, not physiological or operational truth.
+
+External evidence supports only the following structural choices:
+
+- Real last-mile data commonly models accept/finish events and courier/task lifecycles; LaDe is a relevant public event-oriented reference, but is not Hanoi calibration data: [LaDe dataset](https://github.com/wenhaomin/LaDe).
+- A Hanoi study based on 50,767 ride-hailing bookings reports spatial/time and congestion heterogeneity. It supports zone/time-dependent demand and travel, not the numerical multipliers below: [Journal of Transport Geography paper](https://doi.org/10.1016/j.jtrangeo.2025.104422).
+- Service-demand counts are often over-dispersed relative to Poisson; a Gamma-Poisson/negative-binomial form represents that without claiming a fitted Hanoi dispersion: [over-dispersed service-demand method](https://pmc.ncbi.nlm.nih.gov/articles/PMC6413888/).
+- NIOSH recommends access to cool recovery areas, more frequent rest, hydration, and acclimatization practices. It supports gradual exposure/recovery state, but the simulator is not a medical model and its numerical recovery rates remain engineering priors: [NIOSH heat-stress recommendations](https://www.cdc.gov/niosh/heat-stress/recommendations/).
+
+No public dataset found in Stage 0 jointly provides Hanoi motorcycle ride-hailing demand, driver status, heat exposure, SafePause controls, and matching outcomes at the required granularity. P0 therefore uses the checked-in aggregate as its calibration anchor and labels all unsourced distributions below as engineering priors. Importing/fitting Grab-Posisi, LaDe, or proprietary trip telemetry remains post-P0 work.
+
+##### R2. Static aggregate reconciliation
+
+The current display fields are not a partition:
+
+```text
+active_drivers        = 3,115
+fresh_drivers (raw)   = 1,000
+exposed_2h            =   669
+exposed_4h            =   198  # cumulative subset of exposed_2h
+unclassified active   = 1,446  # active - raw fresh - exposed_2h
+```
+
+The simulation contract is:
+
+- `active = IDLE + TO_PICKUP + ON_TRIP`.
+- `online = active + TO_COOLSTOP + PAUSED`.
+- `exposed_4h` is a cumulative subset of `exposed_2h`.
+- `fresh = active - exposed_2h`; the raw snapshot's `fresh_drivers` is retained only as a legacy source value and never used as a partition count.
+- At the 13:00 calibration anchor this yields `fresh=2,446`, `exposed_2h=669`, and `exposed_4h=198`.
+- At an arbitrary replay start, the active population is selected from the deterministic shift schedule. The per-zone `exposed_2h/active` and `exposed_4h/active` anchor ratios initialize cumulative cohorts, rounded with largest-remainder allocation so counts remain exact and nested. Subsequent ticks derive cohorts from each driver's continuous-exposure state.
+- Before a trusted control is applied, no driver starts in `TO_COOLSTOP` or `PAUSED`. These statuses are created only through an intervention lifecycle; they are not invented to make `online` larger.
+
+##### R3. Frozen fleet and shift parameters
+
+All numerical values in this subsection are **engineering priors** unless marked “snapshot anchor”.
+
+| Parameter | Frozen P0 value | Reason / acceptance |
+|---|---|---|
+| Per-zone roster | `2.00 × active_drivers` at the 13:00 anchor; exactly 6,230 citywide | Supports an average 8.66 scheduled hours per rostered driver under the target curve without treating the displayed active count as the whole registered fleet |
+| Active-supply target | Piecewise-linear multipliers over each zone's 13:00 anchor: `00=.25, 04=.20, 06=.50, 08=1.10, 10=.90, 13=1.00, 15=.85, 18=1.20, 20=.95, 22=.50, 24=.25` | Morning/evening peaks with an exact 13:00 compatibility anchor |
+| Shift allocator | Materialize all 96 15-minute availability slots at run start. Retain the prior active set first, then enter/exit drivers by per-entity hash and longest-rest/longest-service priority until the exact zone target is met. Prefer minimum 60 minutes online and 30 minutes offline; the exact target wins when these preferences conflict. | Produces contiguous and occasional split shifts, exact target counts, and no independent per-minute online coin flips |
+| Initial active statuses | `IDLE=.60`, `TO_PICKUP=.20`, `ON_TRIP=.20`, exact by largest remainder | Allows an in-flight start without invalid or duplicated orders |
+| Initial exposure cohorts | Snapshot-anchor per-zone ratios; `exposed_4h ⊆ exposed_2h`; exposure minutes are deterministically spread within `[0,119]`, `[120,239]`, and `[240,360]` | Preserves cumulative cohorts while making individual state explicit |
+| Acclimatization tag | `LOW=.20`, `MEDIUM=.60`, `HIGH=.20` | Scenario sensitivity tag only; never displayed as a diagnosis |
+| Start location | Deterministic jitter within 1.5 km of the zone centroid, clipped to the scenario bounding box | No false road-level precision |
+| Shift boundary | A driver finishes an accepted trip before going offline; a SafePause still active at shift end closes as an explicit partial pause and recovery continues offline; no new work is accepted after shift end | Prevents impossible order abandonment while preserving truthful partial-rest evidence |
+
+Schedule assignment is a deterministic constrained allocation by zone and driver hash. The target multiplier table is authoritative. The allocator materializes the complete schedule before the first state transition and a larger than 3% deviation is an invariant failure, not silent random drift.
+
+Execution-entry correction: the Stage 0 nominal template percentages could not
+simultaneously reproduce the frozen 06:00, 08:00, 13:00, and 18:00 targets
+within 3%. They were replaced before source implementation by the deterministic
+slot allocator above. The roster, target curve, minimum-duration preferences,
+and no-minute-coin-flip intent are unchanged.
+
+##### R4. Frozen demand and order parameters
+
+Expected zone demand per 15 minutes is:
+
+```text
+lambda15(z,t) =
+  forecast_requests_30m(z) / 2
+  × intraday_factor(t) / intraday_factor(13:00)
+  × weather_factor(z,t) / weather_factor(z,13:00)
+  × city_shock(t)
+  × zone_shock(z,t)
+```
+
+`forecast_requests_30m/2` is the snapshot anchor. The remaining numerical settings are engineering priors:
+
+| Parameter | Frozen P0 value |
+|---|---|
+| Intraday curve | Reuse `_intraday_demand_factor`; no second demand heuristic |
+| City shock | AR(1), `phi=.85`, innovation SD `.04`, clamp `[.85,1.20]` |
+| Zone shock | Independent per-zone AR(1), `phi=.65`, innovation SD `.03`, clamp `[.90,1.10]` |
+| Heat demand factor | `1 + .06 × clamp((heat_index_c - 35) / 18, 0, 1)` |
+| Rain demand factor | `1 + .15 × clamp(precipitation_mm / 5, 0, 1)`; zero on the selected fixture |
+| Cloud factor | No direct demand multiplier in P0 |
+| Count distribution | Gamma-Poisson/negative-binomial with dispersion `k=40`; generate at one-minute resolution from `lambda15/15` |
+| Request TTL | 8 minutes; then terminal `UNFULFILLED` |
+| Matching | Same-zone `IDLE` drivers first; stable distance then driver-ID tie-break |
+| Acceptance | Base `.90`, minus `.10` when workload intensity exceeds `1.8`, clamp `[.70,.95]` |
+| Pickup time | Triangular `2/5/10` minutes |
+| Trip distance | Lognormal median `4.0 km`, log-sigma `.55`, clamp `[.8,18] km` |
+| Effective speed | `26 km/h` overnight, `22 km/h` off-peak, `16 km/h` commute peaks; linear shoulder interpolation |
+| Trip duration | `ceil(60 × distance/speed)`, clamp `[6,45]` minutes |
+| Destination | 65% same zone; otherwise inverse-centroid-distance weighted |
+| Cancellation | 4% before match over the TTL and 2% after match/before pickup; no synthetic mid-trip cancellation |
+| Economics | On completion only: snapshot zone-average driver earnings and platform contribution multiplied by a deterministic `[.92,1.08]` factor; fare is their non-negative sum |
+
+The small-/large-mean request sampler is part of the deterministic contract: Gamma sampling uses a bounded Marsaglia-Tsang implementation; Poisson uses inversion for mean `<30` and bounded transformed rejection otherwise. It uses the request stream keyed by scenario/seed/tick/zone, permits at most 128 rejection attempts, and raises a simulation error rather than falling back to a non-deterministic sampler.
+
+The lifecycle conservation rules are:
+
+```text
+all-time requested = open_unmatched + matched + pre-match cancelled + unfulfilled
+tick open_start + tick requested =
+  tick matched + tick pre-match cancelled + tick unfulfilled + tick open_end
+matched = awaiting_pickup + on_trip + completed + post-match cancelled
+```
+
+Every terminal order has exactly one terminal reason and every accepted non-terminal order has exactly one driver.
+
+##### R5. Frozen driver, heat, and intervention transitions
+
+Valid transitions are:
+
+```text
+OFFLINE     -> IDLE
+IDLE        -> TO_PICKUP | TO_COOLSTOP | OFFLINE
+TO_PICKUP   -> ON_TRIP | IDLE
+ON_TRIP     -> IDLE
+TO_COOLSTOP -> PAUSED | IDLE
+PAUSED      -> IDLE | OFFLINE
+```
+
+Additional engineering-prior rules:
+
+- A driver can own at most one non-terminal order and one non-terminal intervention; order work and pause work never overlap.
+- Exposure minutes increment in `IDLE`, `TO_PICKUP`, `ON_TRIP`, and `TO_COOLSTOP`; they decay by 3 minutes per minute in `PAUSED` and by 1 minute per minute in `OFFLINE`, floored at zero. A pause never instantaneously erases exposure.
+- Hydration gap increments while exposed. Five consecutive `PAUSED` minutes reset the gap to zero; `OFFLINE` decrements it by one minute per minute.
+- `rest_minutes_120m` counts actual `PAUSED` minutes in a rolling 120-minute window, not assigned pause duration.
+- Heat dose is raw operational state with 120-minute exponential half-life. Per-minute input is `max(0, heat_index_c-27) × route_heat_load × acclimatization_factor / 60`; pause/offline input is zero. Acclimatization factors are `LOW=1.15`, `MEDIUM=1.00`, `HIGH=.90`.
+- Route-load status multipliers are `IDLE=.90`, `TO_PICKUP=1.10`, `ON_TRIP=1.25`, `TO_COOLSTOP=1.00`, `PAUSED=.20`, `OFFLINE=0`, multiplied by a stable per-driver/zone base in `[.8,1.4]`.
+- Workload intensity is derived from rolling trips, distance, and current work status and retained raw in `[0,3.5]`.
+- A trusted SafePause control may request 15 or 30 minutes with a maximum start delay of 45 minutes. `IDLE` drivers travel to the CoolStop immediately; busy drivers finish their current order first. CoolStop travel is 2–10 minutes. Shift end closes an unfinished tracked pause as `SHIFT_ENDED_PARTIAL_PAUSE`; gradual offline recovery continues and the completed rest is never inflated to the planned duration.
+- Without a trusted control, the engine produces no intervention. The simulator never diagnoses a driver or claims that a particular pause is medically sufficient.
+
+The one-minute update order frozen in the Implementation list is normative. A transition generated later in that order cannot be retroactively observed by an earlier step in the same minute.
+
+##### R6. Raw-to-model scoring projection and OOD gate
+
+Only `IDLE`, `TO_PICKUP`, and `ON_TRIP` drivers are scoring-eligible. Operational raw values are never overwritten. A separate projection supplies these compatibility bounds derived exactly from the current synthetic model generator:
+
+| Numeric feature | Model projection interval |
+|---|---:|
+| `heat_index_c` | `[33.05, 50.55]` |
+| `humidity_percent` | `[46, 68]` |
+| `continuous_exposure_minutes` | `[30, 360]` |
+| `trips_60m` | `[1, 5]` |
+| `distance_km_60m` | `[3.0, 20.9]` |
+| `rest_minutes_120m` | `[0, 45]` |
+| `hydration_gap_minutes` | `[15, 180]` |
+| `route_heat_load` | `[.60, 3.09]` |
+| `workload_intensity` | `[.50, 2.69]` |
+
+Projection output contains `raw_features`, `model_features`, sorted `clipped_fields`, `ood_count`, and `ood_reasons`. Non-finite values and negative duration/count/distance values are hard invariant failures, not clips.
+
+The 41.1°C Láng fixture reaches a derived heat index above the current model's synthetic training envelope. This is expected and must remain visible:
+
+- Weather-field clips are counted and reported separately from behavior-field clips.
+- Per tick, each non-weather feature may clip at most 10% of eligible drivers.
+- Per tick, all clipped numeric feature cells combined may not exceed 25%.
+- Across a full-day replay, combined clipping may not exceed 20%.
+- Exceeding a threshold marks the tick/run `MODEL_INPUT_OOD`. The pure Phase 2 runner may complete so evidence can be inspected, but Phase 4 must fail closed to monitoring-only and must not emit trusted intervention recommendations.
+
+These thresholds are operational compatibility gates, not evidence that a clipped prediction is medically valid.
+
+##### R7. Phase 2 acceptance envelope
+
+Implementation must prove all existing Phase 2 tests plus:
+
+- At 13:00, every zone's target active count is within 2% of the snapshot anchor; at every frozen supply breakpoint it is within 3% of the target curve.
+- Same seed/input produces the same canonical per-tick and final checksums across process/hash-order changes.
+- A different seed changes request/order details while full-day city request total remains within 10% and each hourly city mean remains within 15% of the expected curve.
+- Cohort nesting, fleet/status counts, order conservation, and exclusive order/intervention ownership hold on every minute, not only at 15-minute output ticks.
+- Raw feature values, projection values, clipped fields, and OOD rates are included in the manual evidence summary.
+- The hourly summary prints active/online/offline supply, requests/matches/completions/cancellations/unfulfilled, exposure cohorts, interventions, raw feature extrema, and clipping rates.
+
+**Stage 0 stop gate:** satisfied by the user's explicit
+`goal: COMPLETE PHASE 2 FULLY` authorization on 24-07-2026.
 
 #### Implementation
 
@@ -1164,6 +1356,105 @@ Run two local in-memory replays with the same seed and compare final checksum; r
 - Determinism and invariant tests are green.
 - Full-day in-memory replay completes.
 - User accepts the printed hourly demand/supply/exposure summary.
+
+#### Phase 2 Execution Evidence — 24-07-2026
+
+**Execution boundary:** pure local Python engine only. No BigQuery mutation,
+Cloud Run Job, Scheduler, IAM, deployment, persistence switch, or public UI
+behavior was changed.
+
+Implemented:
+
+- Frozen immutable driver, order, intervention, weather, scoring, zone, state,
+  and tick models plus explicit driver/order transition matrices.
+- SHA-256 per-entity random streams, bounded Gamma/Poisson sampling,
+  cross-process canonical checksums, and sorted-entity determinism.
+- Exact 6,230-driver synthetic roster with pre-materialized 96-slot schedules,
+  nested exposure cohorts, stable locations/acclimatization, and valid in-flight
+  initial orders.
+- Existing intraday demand shape plus correlated bounded city/zone shocks,
+  weather multipliers, negative-binomial request counts, matching, pickup,
+  trip, cancel, unfulfilled, destination, and economics lifecycles.
+- One-minute driver/order/intervention transitions within 15-minute public
+  ticks, including gradual exposure/recovery, rolling work/rest/economics,
+  SafePause travel/pause/completion, duplicate-control idempotency, and
+  maximum-start-delay cancellation.
+- Queue-aware request conservation:
+  `open_start + requested = matched + pre-match_cancelled + unfulfilled + open_end`.
+- Raw operational scoring features and a separate clipped model projection with
+  per-field reasons/rates and `MODEL_INPUT_OOD`.
+- Zone projections, cross-entity invariants, two-tick runner, full-day runner,
+  and hourly evidence summary.
+- Full structural, cohort, ownership, numeric, and request-flow validation runs
+  after every one-minute transition and again at each 15-minute boundary.
+
+Contract correction:
+
+- The nominal Stage 0 shift percentages could not mathematically reproduce all
+  frozen supply breakpoints within 3%. Before source implementation they were
+  replaced with a deterministic sticky slot allocator. The 2× roster, supply
+  curve, minimum-duration preferences, and no per-minute online coin flips are
+  unchanged. Full-scale evidence matches every tested breakpoint exactly.
+- The tick-boundary request equation now includes starting and ending unmatched
+  queue depth. This avoids false reconciliation when a late-tick request is
+  matched in the next tick.
+
+Automated evidence:
+
+```text
+venv/bin/python -m unittest \
+  tests.test_simulation_randomness \
+  tests.test_simulation_demand \
+  tests.test_simulation_transitions \
+  tests.test_simulation_invariants -v
+
+Ran 32 tests — OK
+
+venv/bin/python -m unittest discover -s tests -v
+
+Ran 94 tests — OK
+```
+
+The final 94-test count is recorded after all Phase 2 minute-invariant,
+zero/over/undersupply, exhaustive transition-matrix, partial-pause,
+CoolStop-semantics, summary, flow-conservation, and failure-path cases were
+added; pre-existing Streamlit/AI/SQLite/deprecation warnings remain non-failing.
+
+Execution commits:
+
+- `b7606d1 feat(simulation): implement deterministic phase 2 engine`
+- `e511b45 test(simulation): complete phase 2 evidence gates`
+
+Full-scale manual evidence, 6,230 drivers and 96 ticks:
+
+| Evidence | Result |
+|---|---|
+| Seed 42 replay A final checksum | `3b9a2391b4ef01d76d5d3c617dbf67f3135d5a0b05669855a74e3fba10f01f71` |
+| Seed 42 replay B final checksum | exact match, including all 24 hourly request aggregates |
+| Seed 43 final checksum | `d6f6abff7124d000b7298f0541c7033c6ce30343c5e8ae85fae26ae602bdb2fe` |
+| Seed 42/43 full-day requests | `118,250` / `118,270`; delta `0.017%` |
+| Maximum seed-to-seed hourly delta | `7.434%`, below the frozen `15%` bound |
+| Supply breakpoints | exact at 00:00, 04:00, 06:00, 08:00, 10:00, 13:00, 15:00, 18:00, 20:00, 22:00, and 23:45 |
+| Request-flow balance | zero for every checked zone/tick |
+| Tick checksums | 96 distinct checksums |
+| One full-scale local replay runtime | `94.21s` with invariant validation after every minute; Phase 5 owns the separate per-tick Cloud Run SLO |
+
+Model compatibility finding:
+
+- Seed 42 full-day clipped-cell rate is `27.4316%`; 94 of 96 ticks are marked
+  `MODEL_INPUT_OOD`. Seed 43 is `27.2809%`, also 94 ticks.
+- This is an expected, correctly surfaced compatibility failure against the
+  current synthetic training envelope, especially for extreme weather,
+  continuous exposure, and hydration/workload state. Raw state was not altered
+  to make the model appear valid.
+- Per the frozen gate, Phase 4 must remain monitoring-only for OOD ticks unless
+  its Stage 0 review explicitly expands/retrains and revalidates the model
+  envelope. This does not invalidate the pure engine or its deterministic state
+  transitions.
+
+User confirmation was received on 24-07-2026: `confirmed Phase 2 OK`.
+Phase 2 is `✅ VERIFIED`. The next valid transition is inter-phase
+`ENTER UPDATE PROCESS MODE` before Phase 3.
 
 ### Phase 3 — BigQuery Persistence and Snapshot Projection
 
@@ -1599,14 +1890,14 @@ Each screenshot row references a saved BigQuery result artifact and Cloud Loggin
 
 ### Engine
 
-- [ ] Add deterministic entity/event RNG and checksum utilities.
-- [ ] Add simulation clock and run/tick models.
-- [ ] Add driver state machine and initial fleet generator.
-- [ ] Add demand generator and order lifecycle.
-- [ ] Add heat exposure/rest/hydration/economics transitions.
-- [ ] Add intervention transitions.
-- [ ] Add zone aggregation and invariant validation.
-- [ ] Add same-seed/different-seed/full-day tests.
+- [x] Add deterministic entity/event RNG and checksum utilities.
+- [x] Add simulation clock and run/tick models.
+- [x] Add driver state machine and initial fleet generator.
+- [x] Add demand generator and order lifecycle.
+- [x] Add heat exposure/rest/hydration/economics transitions.
+- [x] Add intervention transitions.
+- [x] Add zone aggregation and invariant validation.
+- [x] Add same-seed/different-seed/full-day tests.
 
 ### Persistence
 
