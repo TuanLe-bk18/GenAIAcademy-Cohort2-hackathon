@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+import hashlib
 from typing import Callable, Protocol
 from uuid import uuid4
 
@@ -93,11 +94,13 @@ def _utc_now() -> datetime:
 
 
 def _tick_id(run_id: str, tick_index: int) -> str:
-    return canonical_checksum(("simulation-tick", run_id, tick_index))[:32]
+    payload = f"simulation-tick:{run_id}:{tick_index}".encode()
+    return hashlib.sha256(payload).hexdigest()[:32]
 
 
 def _snapshot_id(run_id: str, tick_index: int) -> str:
-    return canonical_checksum(("simulation-snapshot", run_id, tick_index))[:32]
+    payload = f"simulation-snapshot:{run_id}:{tick_index}".encode()
+    return hashlib.sha256(payload).hexdigest()[:32]
 
 
 def _event_time(state: SimulationState, minute: int | None) -> datetime | None:
@@ -119,6 +122,7 @@ def replay_to_tick(run: SimulationRun, tick_index: int) -> tuple[SimulationState
 def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult) -> Publication:
     """Map engine truth into lineage-complete BigQuery row dictionaries."""
     state = result.state
+    priors = {zone.zone_id: zone for zone in load_zone_priors()}
     driver_rows = tuple(
         {
             "simulation_run_id": run.run_id,
@@ -130,6 +134,8 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
             "latitude": driver.latitude,
             "longitude": driver.longitude,
             "status": driver.status.value,
+            "shift_started_at": None,
+            "shift_ends_at": None,
             "current_order_id": driver.current_order_id,
             "current_intervention_id": driver.current_intervention_id,
             "online_minutes_24h": int(driver.schedule_bits).bit_count(),
@@ -155,6 +161,9 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
             "scenario_id": run.scenario_id,
             "snapshot_id": tick.snapshot_id,
             "zone_id": zone.zone_id,
+            "name": priors[zone.zone_id].name,
+            "latitude": priors[zone.zone_id].latitude,
+            "longitude": priors[zone.zone_id].longitude,
             "observed_at": result.simulation_time,
             "weather_observed_at": result.weather.event_time,
             "operations_observed_at": result.simulation_time,
@@ -167,6 +176,11 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
             "exposed_2h": zone.exposed_2h,
             "exposed_4h": zone.exposed_4h,
             "forecast_requests_30m": zone.requests_15m * 2,
+            "avg_platform_contribution_vnd": priors[zone.zone_id].avg_platform_contribution_vnd,
+            "avg_driver_earnings_vnd": priors[zone.zone_id].avg_driver_earnings_vnd,
+            "coolstop_name": priors[zone.zone_id].coolstop_name,
+            "coolstop_latitude": priors[zone.zone_id].coolstop_latitude,
+            "coolstop_longitude": priors[zone.zone_id].coolstop_longitude,
             "online_drivers": zone.online_drivers,
             "idle_drivers": zone.idle_drivers,
             "to_pickup_drivers": zone.to_pickup_drivers,
@@ -180,6 +194,8 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
             "cancelled_15m": zone.cancelled_15m,
             "unfulfilled_15m": zone.unfulfilled_15m,
             "fulfillment_rate": zone.fulfillment_rate,
+            "median_wait_minutes": None,
+            "p90_wait_minutes": None,
             "simulation_run_id": run.run_id,
             "tick_id": tick.tick_id,
             "generator_version": state.generator_version,
@@ -205,6 +221,17 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
             "destination_zone_id": event.zone_id,
             "zone_id": event.zone_id,
             "requested_at": _event_time(state, event.event_minute),
+            "accepted_at": None,
+            "pickup_at": None,
+            "dropoff_at": None,
+            "cancelled_at": None,
+            "distance_km": None,
+            "estimated_duration_minutes": None,
+            "actual_duration_minutes": None,
+            "wait_minutes": None,
+            "fare_vnd": None,
+            "driver_pay_vnd": None,
+            "platform_contribution_vnd": None,
             "generator_version": state.generator_version,
             "is_simulated": True,
         }
@@ -359,9 +386,152 @@ class BigQuerySimulationRepository(InMemorySimulationRepository):
         self.client = client
         self.dataset = dataset
 
+    def start(self, *, scenario_id: str, scenario_version: str, seed: int) -> SimulationRun:
+        run = super().start(
+            scenario_id=scenario_id, scenario_version=scenario_version, seed=seed
+        )
+        self._query(
+            f"""
+BEGIN TRANSACTION;
+ASSERT (SELECT COUNT(*) FROM `{self.dataset}.simulation_runs`
+  WHERE scenario_id = @scenario_id AND status IN ('RUNNING', 'PAUSED')) = 0;
+MERGE `{self.dataset}.simulation_scenario_locks` target
+USING (SELECT @scenario_id scenario_id) source ON target.scenario_id = source.scenario_id
+WHEN MATCHED THEN UPDATE SET active_simulation_run_id = @run_id,
+  generation = target.generation + 1, updated_at = CURRENT_TIMESTAMP()
+WHEN NOT MATCHED THEN INSERT (scenario_id, active_simulation_run_id, generation, updated_at)
+  VALUES (@scenario_id, @run_id, 1, CURRENT_TIMESTAMP());
+INSERT INTO `{self.dataset}.simulation_runs`
+  (simulation_run_id, scenario_id, scenario_version, seed, status,
+   simulation_start_at, simulation_end_at, next_simulation_at, tick_minutes,
+   speed_multiplier, config_json, created_at, updated_at, is_simulated)
+VALUES (@run_id, @scenario_id, @scenario_version, @seed, 'RUNNING', @start_time,
+  TIMESTAMP_ADD(@start_time, INTERVAL 24 HOUR), @start_time, 15, 1.0,
+  JSON '{{}}', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), TRUE);
+INSERT INTO `{self.dataset}.simulation_ticks`
+  (simulation_run_id, scenario_id, tick_id, tick_index, simulation_time,
+   snapshot_id, status, generator_version, is_simulated)
+SELECT @run_id, @scenario_id,
+  TO_HEX(SHA256(CONCAT('simulation-tick:', @run_id, ':', CAST(index AS STRING)))),
+  index, TIMESTAMP_ADD(@start_time, INTERVAL 15 * index MINUTE),
+  TO_HEX(SHA256(CONCAT('simulation-snapshot:', @run_id, ':', CAST(index AS STRING)))),
+  'PENDING', @generator_version, TRUE
+FROM UNNEST(GENERATE_ARRAY(0, 95)) index;
+COMMIT TRANSACTION;
+""",
+            {
+                "run_id": run.run_id,
+                "scenario_id": scenario_id,
+                "scenario_version": scenario_version,
+                "seed": seed,
+                "start_time": run.start_time,
+                "generator_version": "stateful-replay-v1",
+            },
+        )
+        return run
+
+    def status(self, scenario_id: str) -> SimulationRun | None:
+        cached = super().status(scenario_id)
+        if cached is not None:
+            return cached
+        rows = self._query(
+            f"""SELECT simulation_run_id, scenario_id, scenario_version, seed, status,
+                       simulation_start_at, last_published_tick_index,
+                       last_completed_tick_index, pending_score_tick_id
+                FROM `{self.dataset}.simulation_runs`
+                WHERE scenario_id = @scenario_id
+                ORDER BY created_at DESC LIMIT 1""",
+            {"scenario_id": scenario_id},
+        )
+        if not rows:
+            return None
+        row = dict(rows[0])
+        run = SimulationRun(
+            row["simulation_run_id"], row["scenario_id"], row["scenario_version"],
+            int(row["seed"]), row["status"], row["simulation_start_at"],
+            row.get("last_published_tick_index"), row.get("last_completed_tick_index"),
+            row.get("pending_score_tick_id"),
+        )
+        self.runs[run.run_id] = run
+        self.scenario_runs[scenario_id] = run.run_id
+        self._load_ticks(run)
+        return run
+
+    def pause(self, scenario_id: str) -> SimulationRun:
+        run = self._require_run_for_scenario(scenario_id)
+        self._query(
+            f"""UPDATE `{self.dataset}.simulation_runs` SET status = 'PAUSED',
+                   updated_at = CURRENT_TIMESTAMP()
+                WHERE simulation_run_id = @run_id AND status = 'RUNNING'""",
+            {"run_id": run.run_id},
+        )
+        return super().pause(scenario_id)
+
+    def resume(self, scenario_id: str) -> SimulationRun:
+        run = self._require_run_for_scenario(scenario_id)
+        self._query(
+            f"""UPDATE `{self.dataset}.simulation_runs` SET status = 'RUNNING',
+                   updated_at = CURRENT_TIMESTAMP()
+                WHERE simulation_run_id = @run_id AND status = 'PAUSED'""",
+            {"run_id": run.run_id},
+        )
+        return super().resume(scenario_id)
+
+    def acquire_tick_lease(self, run_id: str, tick_id: str, owner: str) -> TickLease:
+        lease = super().acquire_tick_lease(run_id, tick_id, owner)
+        if lease.fencing_token == "already-published":
+            return lease
+        self._query(
+            f"""
+UPDATE `{self.dataset}.simulation_ticks`
+SET status = 'LEASED', lease_owner = @lease_owner,
+    lease_expires_at = @lease_expires_at, started_at = CURRENT_TIMESTAMP()
+WHERE simulation_run_id = @run_id AND tick_id = @tick_id
+  AND (status = 'PENDING' OR lease_expires_at <= CURRENT_TIMESTAMP());
+ASSERT (SELECT COUNT(*) FROM `{self.dataset}.simulation_ticks`
+  WHERE simulation_run_id = @run_id AND tick_id = @tick_id
+    AND status = 'LEASED' AND lease_owner = @lease_owner
+    AND lease_expires_at > CURRENT_TIMESTAMP()) = 1;
+""",
+            {
+                "run_id": run_id,
+                "tick_id": tick_id,
+                "lease_owner": lease.fencing_token,
+                "lease_expires_at": lease.expires_at,
+            },
+        )
+        return lease
+
+    def finalize_score(self, run_id: str, tick_id: str, *, succeeded: bool) -> SimulationRun:
+        run = self._require_run(run_id)
+        tick = self._require_tick(run_id, tick_id)
+        if tick.status != "SUCCEEDED":
+            self._query(
+                f"""
+BEGIN TRANSACTION;
+UPDATE `{self.dataset}.simulation_ticks`
+SET status = IF(@succeeded, 'SUCCEEDED', 'SCORE_FAILED'),
+    finished_at = CURRENT_TIMESTAMP()
+WHERE simulation_run_id = @run_id AND tick_id = @tick_id
+  AND status = 'SNAPSHOT_READY';
+UPDATE `{self.dataset}.simulation_runs`
+SET last_completed_tick_index = IF(@succeeded, @tick_index, last_completed_tick_index),
+    pending_score_tick_id = IF(@succeeded, NULL, pending_score_tick_id),
+    status = IF(@succeeded AND @tick_index = 95, 'COMPLETED', status),
+    updated_at = CURRENT_TIMESTAMP()
+WHERE simulation_run_id = @run_id AND pending_score_tick_id = @tick_id;
+COMMIT TRANSACTION;
+""",
+                {"run_id": run_id, "tick_id": tick_id, "tick_index": tick.tick_index, "succeeded": succeeded},
+            )
+        return super().finalize_score(run_id, tick_id, succeeded=succeeded)
+
     def publish_tick(self, run_id: str, tick_id: str, owner: str) -> Publication:
         publication = super().publish_tick(run_id, tick_id, owner)
         tick = publication.tick
+        driver_stage = self._stage_rows("driver", tick.tick_id, publication.driver_rows)
+        zone_stage = self._stage_rows("zone", tick.tick_id, publication.zone_rows)
+        order_stage = self._stage_rows("order", tick.tick_id, publication.order_rows)
         script = f"""
 BEGIN TRANSACTION;
 -- Fence publication with the exact current token and unexpired lease.
@@ -371,16 +541,19 @@ ASSERT (SELECT COUNT(*) FROM `{self.dataset}.simulation_ticks`
     AND lease_expires_at > CURRENT_TIMESTAMP()) = 1;
 -- Staging rows are loaded before this query and expire automatically.
 MERGE `{self.dataset}.driver_simulation_state` target
-USING `{self.dataset}.__simulation_stage_driver` source
+USING `{driver_stage}` source
 ON target.simulation_run_id = source.simulation_run_id
  AND target.driver_id_hash = source.driver_id_hash
 WHEN MATCHED THEN UPDATE SET last_tick_id = source.last_tick_id, updated_at = source.updated_at
 WHEN NOT MATCHED THEN INSERT ROW;
 MERGE `{self.dataset}.zone_snapshots_current` target
-USING `{self.dataset}.__simulation_stage_zone` source
+USING `{zone_stage}` source
 ON target.scenario_id = source.scenario_id AND target.zone_id = source.zone_id
 WHEN MATCHED THEN UPDATE SET snapshot_id = source.snapshot_id, tick_id = source.tick_id,
   simulation_run_id = source.simulation_run_id, observed_at = source.observed_at
+WHEN NOT MATCHED THEN INSERT ROW;
+MERGE `{self.dataset}.order_events` target
+USING `{order_stage}` source ON target.event_id = source.event_id
 WHEN NOT MATCHED THEN INSERT ROW;
 UPDATE `{self.dataset}.simulation_ticks`
 SET status = 'SNAPSHOT_READY', output_checksum = @output_checksum
@@ -390,12 +563,56 @@ COMMIT TRANSACTION;
         self._query(script, {"run_id": run_id, "tick_id": tick_id, "lease_owner": tick.lease_owner, "output_checksum": tick.output_checksum})
         return publication
 
-    def _query(self, sql: str, params: dict[str, object]) -> None:
+    def _stage_rows(
+        self, kind: str, tick_id: str, rows: tuple[dict[str, object], ...]
+    ) -> str:
+        """Load a per-tick staging table with one-hour expiry before publication."""
+        table_id = f"{self.dataset}.__simulation_stage_{kind}_{tick_id}"
+        if not rows:
+            return table_id
         from google.cloud import bigquery
 
+        config = bigquery.LoadJobConfig(
+            autodetect=True,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            labels={"app": "heatsafe", "component": "simulation_staging"},
+        )
+        self.client.load_table_from_json(list(rows), table_id, job_config=config).result()
+        table = self.client.get_table(table_id)
+        table.expires = self.now() + timedelta(hours=1)
+        self.client.update_table(table, ["expires"])
+        return table_id
+
+    def _load_ticks(self, run: SimulationRun) -> None:
+        rows = self._query(
+            f"""SELECT simulation_run_id, scenario_id, tick_id, tick_index,
+                       simulation_time, snapshot_id, status, lease_owner,
+                       lease_expires_at, input_checksum, output_checksum
+                FROM `{self.dataset}.simulation_ticks`
+                WHERE simulation_run_id = @run_id ORDER BY tick_index""",
+            {"run_id": run.run_id},
+        )
+        for raw in rows:
+            row = dict(raw)
+            tick = PersistedTick(**row)
+            self.ticks[tick.tick_id] = tick
+
+    def _query(self, sql: str, params: dict[str, object]) -> list[object]:
+        from google.cloud import bigquery
+
+        def parameter(name: str, value: object):
+            kind = "BOOL" if isinstance(value, bool) else "INT64" if isinstance(value, int) else "TIMESTAMP" if isinstance(value, datetime) else "STRING"
+            return bigquery.ScalarQueryParameter(name, kind, value)
+
         configuration = bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter(name, "STRING", value) for name, value in params.items()],
+            query_parameters=[parameter(name, value) for name, value in params.items()],
             maximum_bytes_billed=MAXIMUM_BYTES_BILLED,
             labels={"app": "heatsafe", "component": "simulation_publisher"},
         )
-        self.client.query(sql, job_config=configuration).result()
+        result = self.client.query(sql, job_config=configuration).result()
+        if result is None:
+            return []
+        try:
+            return list(result)
+        except TypeError:
+            return []

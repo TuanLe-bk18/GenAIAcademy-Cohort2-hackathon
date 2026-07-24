@@ -10,6 +10,7 @@ from heatsafe.simulation.repository import (
     RunConflict,
     SimulationRepositoryError,
 )
+from infra.provision_gcp import table_schemas
 
 
 class SimulationRepositoryTests(unittest.TestCase):
@@ -76,6 +77,16 @@ class SimulationRepositoryTests(unittest.TestCase):
         self.assertTrue(publication.order_rows)
         self.assertTrue(all(row["simulation_run_id"] == self.run.run_id for row in publication.driver_rows))
         self.assertTrue(all(row["tick_id"] == self.first_tick.tick_id for row in publication.zone_rows))
+        schemas = table_schemas()
+        for table_name, rows in {
+            "driver_simulation_state": publication.driver_rows,
+            "zone_snapshots_current": publication.zone_rows,
+            "order_events": publication.order_rows,
+        }.items():
+            required = {
+                field.name for field in schemas[table_name] if field.mode == "REQUIRED"
+            }
+            self.assertTrue(required <= set(rows[0]), table_name)
         current = self.repository.status("heatwave")
         self.assertEqual(current.last_published_tick_index, 0)
         self.assertEqual(current.pending_score_tick_id, self.first_tick.tick_id)
@@ -130,11 +141,24 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         def __init__(self):
             self.sql = ""
             self.config = None
+            self.queries = []
+            self.staging_tables = []
 
         def query(self, sql, job_config):
             self.sql = sql
             self.config = job_config
+            self.queries.append(sql)
             return BigQueryPublisherShapeTests.Done()
+
+        def load_table_from_json(self, _rows, table_id, **_kwargs):
+            self.staging_tables.append(table_id)
+            return BigQueryPublisherShapeTests.Done()
+
+        def get_table(self, _table_id):
+            return type("Table", (), {})()
+
+        def update_table(self, *_args):
+            return None
 
     def test_fenced_transaction_uses_byte_cap_and_snapshot_ready_last(self):
         client = self.Client()
@@ -150,8 +174,30 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         self.assertIn("BEGIN TRANSACTION", client.sql)
         self.assertIn("lease_owner = @lease_owner", client.sql)
         self.assertIn("SNAPSHOT_READY", client.sql)
+        self.assertIn("order_events", client.sql)
+        self.assertEqual(len(client.staging_tables), 3)
+        self.assertTrue(all("__simulation_stage_" in table for table in client.staging_tables))
         self.assertLess(client.sql.rfind("SNAPSHOT_READY"), client.sql.rfind("COMMIT TRANSACTION"))
         self.assertEqual(client.config.maximum_bytes_billed, 250_000_000)
+
+    def test_run_lifecycle_uses_precreation_conditional_lease_and_separate_score_cursor(self):
+        client = self.Client()
+        repository = BigQuerySimulationRepository(
+            client, dataset="project.dataset", now=lambda: datetime(2026, 5, 26, tzinfo=UTC)
+        )
+        run = repository.start(
+            scenario_id="heatwave", scenario_version="hanoi_heatwave_v1", seed=42
+        )
+        tick = next(tick for tick in repository.ticks.values() if tick.run_id == run.run_id and tick.tick_index == 0)
+        lease = repository.acquire_tick_lease(run.run_id, tick.tick_id, "client")
+        repository.publish_tick(run.run_id, tick.tick_id, lease.fencing_token)
+        repository.finalize_score(run.run_id, tick.tick_id, succeeded=True)
+        all_sql = "\n".join(client.queries)
+        self.assertIn("GENERATE_ARRAY(0, 95)", all_sql)
+        self.assertIn("active_simulation_run_id", all_sql)
+        self.assertIn("lease_owner = @lease_owner", all_sql)
+        self.assertIn("pending_score_tick_id", all_sql)
+        self.assertIn("last_completed_tick_index", all_sql)
 
 
 if __name__ == "__main__":

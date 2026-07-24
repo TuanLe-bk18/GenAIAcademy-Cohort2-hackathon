@@ -13,8 +13,13 @@ the mandatory disposable BigQuery Hybrid gate has not run.
   does not advance the completed cursor until a separate score success.
 - The CLI routes `validate-scenario`, `start`, `tick`, `status`, `pause`, and
   `resume` through the repository boundary.
+- The BigQuery adapter now generates durable lifecycle SQL (run + 96 ticks,
+  status reload, pause/resume, conditional lease, score finalization) and loads
+  per-tick driver/zone/order staging tables with one-hour expiration before the
+  fenced publication transaction.
 - `venv/bin/python -m unittest discover -s tests -v` passed 106 tests;
-  compile and dependency checks passed.
+  compile and dependency checks passed. The focused repository/CLI suite now
+  has 14 tests, including lifecycle and required-schema projection assertions.
 
 ## What is not proven
 
