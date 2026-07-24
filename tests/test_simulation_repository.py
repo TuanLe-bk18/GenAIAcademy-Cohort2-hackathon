@@ -82,6 +82,10 @@ class SimulationRepositoryTests(unittest.TestCase):
             "driver_simulation_state": publication.driver_rows,
             "zone_snapshots_current": publication.zone_rows,
             "order_events": publication.order_rows,
+            "weather_observations": publication.weather_rows,
+            "zone_operations": publication.operation_rows,
+            "demand_history": publication.demand_rows,
+            "driver_state_history": publication.driver_history_rows,
         }.items():
             required = {
                 field.name for field in schemas[table_name] if field.mode == "REQUIRED"
@@ -175,7 +179,11 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         self.assertIn("lease_owner = @lease_owner", client.sql)
         self.assertIn("SNAPSHOT_READY", client.sql)
         self.assertIn("order_events", client.sql)
-        self.assertEqual(len(client.staging_tables), 3)
+        self.assertIn("weather_observations", client.sql)
+        self.assertIn("zone_operations", client.sql)
+        self.assertIn("demand_history", client.sql)
+        self.assertIn("driver_state_history", client.sql)
+        self.assertEqual(len(client.staging_tables), 7)
         self.assertTrue(all("__simulation_stage_" in table for table in client.staging_tables))
         self.assertLess(client.sql.rfind("SNAPSHOT_READY"), client.sql.rfind("COMMIT TRANSACTION"))
         self.assertEqual(client.config.maximum_bytes_billed, 250_000_000)

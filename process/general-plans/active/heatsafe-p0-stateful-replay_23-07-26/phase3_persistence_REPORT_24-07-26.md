@@ -17,6 +17,10 @@ the mandatory disposable BigQuery Hybrid gate has not run.
   status reload, pause/resume, conditional lease, score finalization) and loads
   per-tick driver/zone/order staging tables with one-hour expiration before the
   fenced publication transaction.
+- The fenced transaction now projects weather observations, zone operations,
+  demand history, driver-state history, order events, current driver state, and
+  the current zone snapshot; tests assert required-field coverage for all seven
+  projected table schemas.
 - `venv/bin/python -m unittest discover -s tests -v` passed 106 tests;
   compile and dependency checks passed. The focused repository/CLI suite now
   has 14 tests, including lifecycle and required-schema projection assertions.

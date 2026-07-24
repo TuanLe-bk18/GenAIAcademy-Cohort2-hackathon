@@ -1592,7 +1592,8 @@ Implemented within the approved local/fake-client boundary:
   `pause`, and `resume` adapters. The CLI contains no SQL or control authority.
 - BigQuery publication SQL shape: byte cap, labels, in-transaction lease
   assertion, one-hour expiring per-tick driver/zone/order staging tables,
-  current-state/snapshot/order MERGEs, and `SNAPSHOT_READY` before commit.
+  weather/operations/demand/driver-history/order/current-state/current-snapshot
+  MERGEs, and `SNAPSHOT_READY` before commit.
 - Durable BigQuery lifecycle SQL: run/coordinator creation, all 96 precreated
   tick identities, status reload for a later CLI process, pause/resume,
   conditional lease read-back assertion, and separate score-finalization cursor.

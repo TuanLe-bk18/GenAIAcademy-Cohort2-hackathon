@@ -77,6 +77,10 @@ class Publication:
     driver_rows: tuple[dict[str, object], ...]
     zone_rows: tuple[dict[str, object], ...]
     order_rows: tuple[dict[str, object], ...]
+    weather_rows: tuple[dict[str, object], ...]
+    operation_rows: tuple[dict[str, object], ...]
+    demand_rows: tuple[dict[str, object], ...]
+    driver_history_rows: tuple[dict[str, object], ...]
 
 
 class SimulationRepository(Protocol):
@@ -237,7 +241,83 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
         }
         for event in state.events
     )
-    return Publication(tick=tick, result=result, driver_rows=driver_rows, zone_rows=zone_rows, order_rows=order_rows)
+    weather_rows = tuple(
+        {
+            "scenario_id": run.scenario_id, "snapshot_id": tick.snapshot_id,
+            "zone_id": zone.zone_id, "name": priors[zone.zone_id].name,
+            "latitude": priors[zone.zone_id].latitude, "longitude": priors[zone.zone_id].longitude,
+            "temperature_c": result.weather.temperature_c,
+            "humidity_percent": result.weather.humidity_percent,
+            "heat_index_c": result.weather.heat_index_c,
+            "observed_at": result.weather.event_time, "ingested_at": _utc_now(),
+            "source": "Deterministic HeatSafe simulation", "raw_gcs_uri": "gs://heatsafe-simulated/phase3",
+            "is_simulated": True, "simulation_run_id": run.run_id, "tick_id": tick.tick_id,
+            "source_observed_at": result.weather.event_time, "source_next_observed_at": result.weather.event_time,
+            "source_interpolation_fraction": 0.0, "source_temperature_c": result.weather.temperature_c,
+            "temperature_adjustment_c": 0.0, "station_peak_anchor_c": 41.1,
+            "apparent_temperature_c": result.weather.heat_index_c,
+            "wind_speed_mps": result.weather.wind_speed_mps, "wind_gust_mps": None,
+            "precipitation_mm": result.weather.precipitation_mm,
+            "cloud_cover_pct": result.weather.cloud_cover_pct,
+            "shortwave_radiation_wm2": result.weather.shortwave_radiation_wm2,
+            "utci_c": None, "derivation_version": "stateful-replay-v1",
+            "generator_version": state.generator_version,
+        }
+        for zone in result.zones
+    )
+    operation_rows = tuple(
+        {
+            "scenario_id": run.scenario_id, "snapshot_id": tick.snapshot_id,
+            "zone_id": zone.zone_id, "observed_at": result.simulation_time,
+            "active_drivers": zone.active_drivers, "fresh_drivers": zone.fresh_drivers,
+            "exposed_2h": zone.exposed_2h, "exposed_4h": zone.exposed_4h,
+            "forecast_requests_30m": zone.requests_15m * 2,
+            "avg_platform_contribution_vnd": priors[zone.zone_id].avg_platform_contribution_vnd,
+            "avg_driver_earnings_vnd": priors[zone.zone_id].avg_driver_earnings_vnd,
+            "is_simulated": True, "simulation_run_id": run.run_id, "tick_id": tick.tick_id,
+            "online_drivers": zone.online_drivers, "idle_drivers": zone.idle_drivers,
+            "to_pickup_drivers": zone.to_pickup_drivers, "on_trip_drivers": zone.on_trip_drivers,
+            "to_coolstop_drivers": zone.to_coolstop_drivers, "paused_drivers": zone.paused_drivers,
+            "exposed_2_to_4h": zone.exposed_2_to_4h, "requests_15m": zone.requests_15m,
+            "matched_15m": zone.matched_15m, "completed_15m": zone.completed_15m,
+            "cancelled_15m": zone.cancelled_15m, "unfulfilled_15m": zone.unfulfilled_15m,
+            "median_wait_minutes": None, "p90_wait_minutes": None,
+            "fulfillment_rate": zone.fulfillment_rate, "generator_version": state.generator_version,
+        }
+        for zone in result.zones
+    )
+    demand_rows = tuple(
+        {"scenario_id": run.scenario_id, "zone_id": zone.zone_id,
+         "interval_start": result.simulation_time, "requests": zone.requests_15m,
+         "is_simulated": True, "simulation_run_id": run.run_id,
+         "tick_id": tick.tick_id, "generator_version": state.generator_version}
+        for zone in result.zones
+    )
+    driver_history_rows = tuple(
+        {"state_id": canonical_checksum((run.run_id, tick.tick_id, driver.driver_id_hash))[:32],
+         "scenario_id": run.scenario_id, "event_time": result.simulation_time,
+         "driver_id_hash": driver.driver_id_hash, "zone_id": driver.zone_id,
+         "heat_index_c": result.weather.heat_index_c, "humidity_percent": result.weather.humidity_percent,
+         "continuous_exposure_minutes": driver.continuous_exposure_minutes,
+         "trips_60m": driver.trips_60m, "distance_km_60m": driver.distance_km_60m,
+         "rest_minutes_120m": driver.rest_minutes_120m,
+         "hydration_gap_minutes": driver.hydration_gap_minutes, "route_heat_load": 0.0,
+         "workload_intensity": 0.0, "is_simulated": True, "simulation_run_id": run.run_id,
+         "tick_id": tick.tick_id, "driver_status": driver.status.value,
+         "heat_dose_120m": driver.heat_dose_120m,
+         "acclimatization_class": driver.acclimatization_class.value,
+         "current_order_id": driver.current_order_id,
+         "current_intervention_id": driver.current_intervention_id,
+         "earnings_60m_vnd": driver.earnings_60m_vnd,
+         "platform_contribution_60m_vnd": driver.platform_contribution_60m_vnd,
+         "generator_version": state.generator_version}
+        for driver in state.drivers
+    )
+    return Publication(
+        tick=tick, result=result, driver_rows=driver_rows, zone_rows=zone_rows,
+        order_rows=order_rows, weather_rows=weather_rows, operation_rows=operation_rows,
+        demand_rows=demand_rows, driver_history_rows=driver_history_rows,
+    )
 
 
 @dataclass
@@ -532,6 +612,10 @@ COMMIT TRANSACTION;
         driver_stage = self._stage_rows("driver", tick.tick_id, publication.driver_rows)
         zone_stage = self._stage_rows("zone", tick.tick_id, publication.zone_rows)
         order_stage = self._stage_rows("order", tick.tick_id, publication.order_rows)
+        weather_stage = self._stage_rows("weather", tick.tick_id, publication.weather_rows)
+        operation_stage = self._stage_rows("operation", tick.tick_id, publication.operation_rows)
+        demand_stage = self._stage_rows("demand", tick.tick_id, publication.demand_rows)
+        history_stage = self._stage_rows("history", tick.tick_id, publication.driver_history_rows)
         script = f"""
 BEGIN TRANSACTION;
 -- Fence publication with the exact current token and unexpired lease.
@@ -554,6 +638,24 @@ WHEN MATCHED THEN UPDATE SET snapshot_id = source.snapshot_id, tick_id = source.
 WHEN NOT MATCHED THEN INSERT ROW;
 MERGE `{self.dataset}.order_events` target
 USING `{order_stage}` source ON target.event_id = source.event_id
+WHEN NOT MATCHED THEN INSERT ROW;
+MERGE `{self.dataset}.weather_observations` target
+USING `{weather_stage}` source
+ON target.simulation_run_id = source.simulation_run_id AND target.tick_id = source.tick_id
+ AND target.zone_id = source.zone_id
+WHEN NOT MATCHED THEN INSERT ROW;
+MERGE `{self.dataset}.zone_operations` target
+USING `{operation_stage}` source
+ON target.simulation_run_id = source.simulation_run_id AND target.tick_id = source.tick_id
+ AND target.zone_id = source.zone_id
+WHEN NOT MATCHED THEN INSERT ROW;
+MERGE `{self.dataset}.demand_history` target
+USING `{demand_stage}` source
+ON target.simulation_run_id = source.simulation_run_id AND target.tick_id = source.tick_id
+ AND target.zone_id = source.zone_id
+WHEN NOT MATCHED THEN INSERT ROW;
+MERGE `{self.dataset}.driver_state_history` target
+USING `{history_stage}` source ON target.state_id = source.state_id
 WHEN NOT MATCHED THEN INSERT ROW;
 UPDATE `{self.dataset}.simulation_ticks`
 SET status = 'SNAPSHOT_READY', output_checksum = @output_checksum
