@@ -22,6 +22,16 @@ class SimulationCliTests(unittest.TestCase):
             result = main([*argv, "--memory"], repository_factory=self.factory)
         return result, output.getvalue()
 
+    def call_with_scorer(self, scorer_factory, *argv):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = main(
+                [*argv, "--memory"],
+                repository_factory=self.factory,
+                scorer_factory=scorer_factory,
+            )
+        return result, output.getvalue()
+
     def test_validate_scenario_is_local_and_deterministic(self):
         code, output = self.call("validate-scenario")
         self.assertEqual(code, 0)
@@ -34,7 +44,8 @@ class SimulationCliTests(unittest.TestCase):
         self.assertEqual(self.call("resume")[0], 0)
         code, output = self.call("tick")
         self.assertEqual(code, 0)
-        self.assertIn("SNAPSHOT_READY", output)
+        self.assertIn("SUCCEEDED", output)
+        self.assertIn("prediction_run_id", output)
 
     def test_tick_without_start_fails_closed(self):
         code, output = self.call("tick")
@@ -44,14 +55,32 @@ class SimulationCliTests(unittest.TestCase):
     def test_tick_selects_the_next_index_after_a_score_finalization(self):
         self.call("start")
         self.call("tick")
-        run = self.repository.status("heatwave")
-        self.repository.finalize_score(
-            run.run_id, run.pending_score_tick_id, succeeded=True
-        )
         code, output = self.call("tick")
         self.assertEqual(code, 0)
         self.assertNotIn('"tick_id": null', output)
         self.assertEqual(self.repository.status("heatwave").last_published_tick_index, 1)
+
+    def test_score_failure_stays_pending_and_exact_retry_succeeds(self):
+        class FailingScorer:
+            def score(self, _run, _publication):
+                raise RuntimeError("model unavailable")
+
+        self.call("start")
+        code, output = self.call_with_scorer(
+            lambda _settings, *, memory: FailingScorer(), "tick"
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("SCORE_FAILED", output)
+        failed_run = self.repository.status("heatwave")
+        failed_tick_id = failed_run.pending_score_tick_id
+        self.assertIsNotNone(failed_tick_id)
+        self.assertEqual(self.repository.ticks[failed_tick_id].status, "SCORE_FAILED")
+        code, output = self.call("tick")
+        self.assertEqual(code, 0)
+        self.assertIn("SUCCEEDED", output)
+        self.assertEqual(
+            self.repository.status("heatwave").last_completed_tick_index, 0
+        )
 
 
 if __name__ == "__main__":

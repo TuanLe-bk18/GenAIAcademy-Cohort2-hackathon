@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from .currency import USD_TO_VND
 from .models import (
@@ -264,11 +264,12 @@ def _build_candidate(
             ",".join(item.driver_id_hash for item in decisions),
         )
     )
+    created_at = datetime.now(UTC)
     return SafePauseProposal(
         proposal_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"heatsafe:ai:{fingerprint}")),
         zone_id=zone.zone_id,
         zone_name=zone.name,
-        created_at=datetime.now(UTC),
+        created_at=created_at,
         source_snapshot_at=zone.observed_at,
         eligible_drivers=len(eligible_ids),
         high_priority_drivers=high_selected,
@@ -320,6 +321,11 @@ def _build_candidate(
             ),
             default=0,
         ),
+        scenario_id=zone.scenario_id,
+        source_snapshot_id=zone.snapshot_id,
+        simulation_run_id=zone.simulation_run_id,
+        source_tick_id=zone.tick_id,
+        expires_at=created_at + timedelta(minutes=15),
     )
 
 

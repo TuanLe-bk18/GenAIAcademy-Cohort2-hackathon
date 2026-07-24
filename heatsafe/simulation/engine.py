@@ -573,6 +573,8 @@ def _apply_controls(
         duration = control.pause_duration_minutes
         if duration not in {15, 30} or not 0 <= control.max_start_delay_minutes <= 45:
             raise ValueError("control violates the P0 SafePause policy")
+        baseline_by_driver = dict(control.baseline_risk_by_driver)
+        action_by_driver = dict(control.action_risk_by_driver)
         for driver_id in sorted(set(control.driver_ids)):
             driver = drivers.get(driver_id)
             if driver is None or driver.current_intervention_id is not None:
@@ -588,6 +590,10 @@ def _apply_controls(
                 assigned_minute=minute,
                 planned_duration_minutes=duration,
                 max_start_delay_minutes=control.max_start_delay_minutes,
+                proposal_id=control.proposal_id,
+                pause_start_delay_minutes=control.pause_start_delay_minutes,
+                baseline_risk_probability=baseline_by_driver.get(driver_id),
+                action_risk_probability=action_by_driver.get(driver_id),
             )
             if driver.status == DriverStatus.OFFLINE:
                 interventions[intervention_id] = replace(

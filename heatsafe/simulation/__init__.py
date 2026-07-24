@@ -47,6 +47,19 @@ from .repository import (
     SimulationRun,
     TickLease,
 )
+from .control import (
+    BigQueryControlWriter,
+    ControlValidationError,
+    QueuedControl,
+    canonical_proposal_checksum,
+    validate_control_payload,
+)
+from .scoring import (
+    BigQuerySnapshotScorer,
+    DeterministicSnapshotScorer,
+    ScoringOutcome,
+    SnapshotPrediction,
+)
 from .transitions import (
     SimulationInvariantError,
     project_scoring,
@@ -59,7 +72,11 @@ from .transitions import (
 __all__ = [
     "AcclimatizationClass",
     "BigQuerySimulationRepository",
+    "BigQueryControlWriter",
+    "BigQuerySnapshotScorer",
+    "ControlValidationError",
     "DeterministicRandom",
+    "DeterministicSnapshotScorer",
     "DriverState",
     "DriverStatus",
     "InterventionState",
@@ -71,13 +88,16 @@ __all__ = [
     "OrderState",
     "OrderStatus",
     "PauseControl",
+    "QueuedControl",
     "ScenarioFixture",
     "ScenarioValidationError",
     "ScoringProjection",
+    "ScoringOutcome",
     "SimulationInvariantError",
     "SimulationRepositoryError",
     "SimulationRun",
     "SimulationState",
+    "SnapshotPrediction",
     "TickResult",
     "TickLease",
     "PersistedTick",
@@ -87,6 +107,7 @@ __all__ = [
     "advance_minute",
     "advance_tick",
     "canonical_checksum",
+    "canonical_proposal_checksum",
     "canonical_json",
     "hourly_summary",
     "initialize_state",
@@ -99,5 +120,6 @@ __all__ = [
     "run_full_day",
     "stable_int",
     "validate_state",
+    "validate_control_payload",
     "weather_at",
 ]

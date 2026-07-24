@@ -1458,7 +1458,7 @@ Phase 2 is `✅ VERIFIED`. The next valid transition is inter-phase
 
 ### Phase 3 — BigQuery Persistence and Snapshot Projection
 
-**Status:** 🧪 TESTING — disposable BigQuery Hybrid evidence captured; awaiting user acceptance
+**Status:** ✅ VERIFIED — automated/disposable-cloud proof green and user-confirmed 24-07-2026
 **Dependencies:** Phase 2 ✅ VERIFIED
 **Estimate:** 1 day
 
@@ -1609,7 +1609,7 @@ Review boundary:
 - The isolated provider probe has now proved a real concurrent lease winner,
   durable cross-process reload/retry, injected transaction rollback preserving
   `RUNNING`, separate score finalization, and cursor/tick read-back. Publisher
-  and probe count queries enforce a 250 MB billing cap; staging tables have a
+  and Phase 3 probe count queries enforce a 250 MB billing cap; staging tables have a
   one-hour expiry set before the transaction. The session does not wait an hour
   merely to observe expiry.
   No shared demo dataset was queried or mutated.
@@ -1659,9 +1659,12 @@ only its deterministic local projection cache, never a second publication.
 - No mixed snapshot is observable.
 - User confirms BigQuery evidence before Phase 4.
 
+User confirmation was received on 24-07-2026:
+`confirmed phase 3 ok`. Phase 3 is `✅ VERIFIED`.
+
 ### Phase 4 — Snapshot Scoring and Closed-Loop SafePause
 
-**Status:** ⏳ PLANNED
+**Status:** 🧪 TESTING — implementation/provider evidence green; awaiting user acceptance
 **Dependencies:** Phase 3 ✅ VERIFIED
 **Estimate:** 1 day
 
@@ -1672,6 +1675,14 @@ only its deterministic local projection cache, never a second publication.
 3. Define the `heatsafe-simulation-control` Job, `queue-control` command, proposal checksum/decision-count rule, wall-clock authorization TTL, simulation-time validity window, caps, atomic exact-lineage consumption, and public approval-disabled behavior.
 4. Define heatwave TimesFM history seeding and simulation-time anchoring while preserving the live wall-clock branch.
 5. Present the feature SQL, scoring envelope/OOD policy, retention policy, and action lifecycle mapping; stop for approval.
+
+#### Stage 0 Decision Record — 24-07-2026
+
+Research and frozen implementation decisions are recorded in
+[`phase4_scoring_control_RESEARCH_24-07-26.md`](phase4_scoring_control_RESEARCH_24-07-26.md).
+The user explicitly authorized full Phase 4 execution on 24-07-2026. Shared
+production/demo mutation, deployment, IAM, Cloud Run, and Scheduler remain out
+of scope; provider proof uses only a disposable prefixed dataset.
 
 #### Implementation
 
@@ -1751,6 +1762,41 @@ ORDER BY event_time;
 - Proposal payload/selected decisions changed after the control checksum was created.
 - Driver goes offline before pause begins.
 - Scoring fails after snapshot commit.
+
+#### Phase 4 Execution Evidence — 24-07-2026
+
+Implementation and review are recorded in
+[`phase4_scoring_control_REPORT_24-07-26.md`](phase4_scoring_control_REPORT_24-07-26.md).
+
+- Simulation scoring reads persisted current drivers with exact
+  run/tick/snapshot/time lineage, retains raw and bounded/OOD feature evidence,
+  appends deterministic TimesFM forecasts and counterfactual predictions, and
+  advances through `SCORED` to `SUCCEEDED`.
+- Score failure remains coherent/pending and exact retry succeeds without
+  republishing. The legacy/live branch retains wall-clock driver-generation
+  behavior and its regression tests.
+- Review corrected the model projection to the exact frozen Phase 2 envelope.
+  Tick 0 and tick 1 were marked `MODEL_INPUT_OOD`, retained for monitoring, and
+  excluded from trusted control; tick 2 was the first non-OOD control source.
+- Public audit remains non-authoritative. Trusted `queue-control` verifies
+  payload checksum/count, lineage, both clocks and caps without a free-form
+  actor. A new worker deterministically consumes the control and atomically
+  publishes intervention lifecycle plus one receipt.
+- Disposable TimesFM provider evidence: 20,160 context rows, ten zones, 160
+  future rows, first horizon `+15m`, two-run deviation `0.0`, 745,920 processed
+  bytes under a 250 MB cap, and automatic cleanup.
+- Disposable exact scoring/closed-loop evidence: four retained prediction
+  snapshots / 27,522 rows, four retained forecast snapshots / 640 rows, two
+  selected drivers mutated, two intervention rows, one `APPLIED` receipt,
+  control `CONSUMED`, tick 3 `SUCCEEDED`, cursors at `3`, no pending score, and
+  automatic cleanup.
+- Publisher provider measurement required a bounded 350 MB cap after the
+  complete control transaction. The combined scoring/TimesFM script uses a
+  bounded 300 MB cap after its OOD-safe version billed 230,686,720 bytes and
+  required one additional 20,971,520-byte statement; the standalone TimesFM
+  probe remains capped at 250 MB.
+- Full suite: 129 tests green; compile, dependencies, strict plan validation and
+  diff checks pass.
 
 #### Done Criteria
 

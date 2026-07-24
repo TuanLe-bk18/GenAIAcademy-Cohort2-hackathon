@@ -154,6 +154,10 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("heat_dose_120m", "FLOAT64", "NULLABLE"),
             _f("acclimatization_class", "STRING", "NULLABLE"),
             _f("generator_version", "STRING", "NULLABLE"),
+            _f("raw_features_json", "JSON", "NULLABLE"),
+            _f("clipped_fields_json", "JSON", "NULLABLE"),
+            _f("ood_reasons_json", "JSON", "NULLABLE"),
+            _f("feature_ood", "BOOL", "NULLABLE"),
         ],
         "driver_risk_predictions": [
             _f("prediction_run_id", "STRING"), _f("generated_at", "TIMESTAMP"),

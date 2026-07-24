@@ -10,15 +10,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 import hashlib
+import json
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from .engine import advance_tick, initialize_state, load_scenario, load_zone_priors
-from .models import SimulationState, TickResult
+from .models import PauseControl, SimulationState, TickResult
 from .randomness import canonical_checksum
 
 
-MAXIMUM_BYTES_BILLED = 250_000_000
+# Phase 4 adds two control/intervention statements to the fenced publisher.
+# Provider evidence measured 241,172,480 billed bytes before the old 250 MB cap
+# stopped the remaining statements, so 350 MB is the smallest rounded cap with
+# operational headroom for the complete transaction.
+MAXIMUM_BYTES_BILLED = 350_000_000
 TICK_COUNT = 96
 
 
@@ -60,6 +65,7 @@ class PersistedTick:
     lease_expires_at: datetime | None = None
     input_checksum: str | None = None
     output_checksum: str | None = None
+    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +87,8 @@ class Publication:
     operation_rows: tuple[dict[str, object], ...]
     demand_rows: tuple[dict[str, object], ...]
     driver_history_rows: tuple[dict[str, object], ...]
+    intervention_rows: tuple[dict[str, object], ...]
+    consumption_rows: tuple[dict[str, object], ...]
 
 
 class SimulationRepository(Protocol):
@@ -90,6 +98,7 @@ class SimulationRepository(Protocol):
     def resume(self, scenario_id: str) -> SimulationRun: ...
     def acquire_tick_lease(self, run_id: str, tick_id: str, owner: str) -> TickLease: ...
     def publish_tick(self, run_id: str, tick_id: str, owner: str) -> Publication: ...
+    def mark_scored(self, run_id: str, tick_id: str) -> PersistedTick: ...
     def finalize_score(self, run_id: str, tick_id: str, *, succeeded: bool) -> SimulationRun: ...
 
 
@@ -111,7 +120,12 @@ def _event_time(state: SimulationState, minute: int | None) -> datetime | None:
     return None if minute is None else state.start_time + timedelta(minutes=minute)
 
 
-def replay_to_tick(run: SimulationRun, tick_index: int) -> tuple[SimulationState, TickResult]:
+def replay_to_tick(
+    run: SimulationRun,
+    tick_index: int,
+    *,
+    controls: tuple[PauseControl, ...] = (),
+) -> tuple[SimulationState, TickResult]:
     """Rebuild the deterministic Phase 2 state without an opaque state blob."""
     if not 0 <= tick_index < TICK_COUNT:
         raise SimulationRepositoryError("tick index is outside the 96-tick replay")
@@ -119,11 +133,21 @@ def replay_to_tick(run: SimulationRun, tick_index: int) -> tuple[SimulationState
     zones = load_zone_priors()
     state = initialize_state(seed=run.seed, fixture=fixture, zones=zones)
     for _ in range(tick_index):
-        state = advance_tick(state, fixture=fixture, zones=zones).state
-    return state, advance_tick(state, fixture=fixture, zones=zones)
+        state = advance_tick(
+            state, fixture=fixture, zones=zones, controls=controls
+        ).state
+    return state, advance_tick(
+        state, fixture=fixture, zones=zones, controls=controls
+    )
 
 
-def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult) -> Publication:
+def publication_rows(
+    run: SimulationRun,
+    tick: PersistedTick,
+    result: TickResult,
+    *,
+    controls: tuple[PauseControl, ...] = (),
+) -> Publication:
     """Map engine truth into lineage-complete BigQuery row dictionaries."""
     state = result.state
     priors = {zone.zone_id: zone for zone in load_zone_priors()}
@@ -313,10 +337,73 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
          "generator_version": state.generator_version}
         for driver in state.drivers
     )
+    intervention_rows = tuple(
+        {
+            "event_id": canonical_checksum(
+                (
+                    run.run_id,
+                    tick.tick_id,
+                    intervention.intervention_id,
+                    intervention.status.value,
+                    intervention.completed_rest_minutes,
+                )
+            )[:32],
+            "simulation_run_id": run.run_id,
+            "tick_id": tick.tick_id,
+            "scenario_id": run.scenario_id,
+            "intervention_id": intervention.intervention_id,
+            "proposal_id": intervention.proposal_id,
+            "driver_id_hash": intervention.driver_id_hash,
+            "zone_id": intervention.zone_id,
+            "event_time": result.simulation_time,
+            "event_type": intervention.status.value,
+            "pause_start_delay_minutes": intervention.pause_start_delay_minutes,
+            "planned_duration_minutes": intervention.planned_duration_minutes,
+            "completed_rest_minutes": intervention.completed_rest_minutes,
+            "coolstop_name": priors[intervention.zone_id].coolstop_name,
+            "baseline_risk_probability": intervention.baseline_risk_probability,
+            "action_risk_probability": intervention.action_risk_probability,
+            "earnings_delta_vnd": None,
+            "is_simulated": True,
+            "generator_version": state.generator_version,
+        }
+        for intervention in state.interventions
+    )
+    earliest_by_control_event: dict[str, int] = {}
+    for control in controls:
+        event_id = control.control_event_id or control.control_id
+        earliest_by_control_event[event_id] = min(
+            control.requested_minute,
+            earliest_by_control_event.get(event_id, control.requested_minute),
+        )
+    due_control_events = {
+        event_id
+        for event_id, requested_minute in earliest_by_control_event.items()
+        if state.minute_index - 15 <= requested_minute < state.minute_index
+    }
+    consumption_rows = tuple(
+        {
+            "consumption_id": canonical_checksum(
+                (event_id, run.run_id, tick.tick_id)
+            )[:32],
+            "control_event_id": event_id,
+            "scenario_id": run.scenario_id,
+            "simulation_run_id": run.run_id,
+            "consumed_by_tick_id": tick.tick_id,
+            "outcome": "APPLIED",
+            "recorded_at": _utc_now(),
+            "rejection_reason": None,
+            "generator_version": state.generator_version,
+            "is_simulated": True,
+        }
+        for event_id in sorted(due_control_events)
+    )
     return Publication(
         tick=tick, result=result, driver_rows=driver_rows, zone_rows=zone_rows,
         order_rows=order_rows, weather_rows=weather_rows, operation_rows=operation_rows,
         demand_rows=demand_rows, driver_history_rows=driver_history_rows,
+        intervention_rows=intervention_rows,
+        consumption_rows=consumption_rows,
     )
 
 
@@ -330,6 +417,22 @@ class InMemorySimulationRepository:
     scenario_runs: dict[str, str] = field(default_factory=dict)
     ticks: dict[str, PersistedTick] = field(default_factory=dict)
     published: dict[str, Publication] = field(default_factory=dict)
+    controls: dict[str, PauseControl] = field(default_factory=dict)
+
+    def queue_controls(self, controls: tuple[PauseControl, ...]) -> None:
+        for control in controls:
+            existing = self.controls.get(control.control_id)
+            if existing is not None and existing != control:
+                raise SimulationRepositoryError("control identity payload changed")
+            self.controls[control.control_id] = control
+
+    def _controls_for_run(
+        self, run: SimulationRun, tick: PersistedTick | None = None
+    ) -> tuple[PauseControl, ...]:
+        return tuple(
+            self.controls[key]
+            for key in sorted(self.controls)
+        )
 
     def start(self, *, scenario_id: str, scenario_version: str, seed: int) -> SimulationRun:
         active = self.status(scenario_id)
@@ -373,7 +476,7 @@ class InMemorySimulationRepository:
             raise SimulationRepositoryError(
                 "the pending score must be finalized before a later tick can run"
             )
-        if tick.status in {"SNAPSHOT_READY", "SUCCEEDED"}:
+        if tick.status in {"SNAPSHOT_READY", "SCORED", "SCORE_FAILED", "SUCCEEDED"}:
             return TickLease(tick_id, owner, "already-published", self.now())
         now = self.now()
         if tick.lease_expires_at and tick.lease_expires_at > now and tick.lease_owner != owner:
@@ -388,14 +491,18 @@ class InMemorySimulationRepository:
     def publish_tick(self, run_id: str, tick_id: str, owner: str) -> Publication:
         run = self._require_run(run_id)
         tick = self._require_tick(run_id, tick_id)
-        if tick.status in {"SNAPSHOT_READY", "SUCCEEDED"}:
+        if tick.status in {"SNAPSHOT_READY", "SCORED", "SCORE_FAILED", "SUCCEEDED"}:
             # A restarted worker reloads ticks from durable storage but does not
             # carry the previous process's in-memory Publication cache.  Rebuild
             # the deterministic projection for the caller without issuing writes.
             publication = self.published.get(tick_id)
             if publication is None:
-                _, result = replay_to_tick(run, tick.tick_index)
-                publication = publication_rows(run, tick, result)
+                _, result = replay_to_tick(
+                    run, tick.tick_index, controls=self._controls_for_run(run, tick)
+                )
+                publication = publication_rows(
+                    run, tick, result, controls=self._controls_for_run(run, tick)
+                )
                 self.published[tick_id] = publication
             return publication
         if tick.status != "LEASED" or not tick.lease_owner or tick.lease_expires_at is None:
@@ -404,14 +511,19 @@ class InMemorySimulationRepository:
             raise LeaseConflict("tick lease expired before publication")
         if owner != tick.lease_owner:
             raise LeaseConflict("publication requires the exact fencing token")
-        state, result = replay_to_tick(run, tick.tick_index)
+        state, result = replay_to_tick(
+            run, tick.tick_index, controls=self._controls_for_run(run, tick)
+        )
         updated = replace(
             tick,
             status="SNAPSHOT_READY",
             input_checksum=canonical_checksum((run.run_id, tick.tick_index, state.minute_index)),
             output_checksum=result.checksum,
+            error_code="MODEL_INPUT_OOD" if result.model_input_ood else None,
         )
-        publication = publication_rows(run, updated, result)
+        publication = publication_rows(
+            run, updated, result, controls=self._controls_for_run(run, updated)
+        )
         self.ticks[tick_id] = updated
         self.published[tick_id] = publication
         self._replace_run(
@@ -426,8 +538,12 @@ class InMemorySimulationRepository:
         tick = self._require_tick(run_id, tick_id)
         if tick.status == "SUCCEEDED":
             return run
-        if tick.status != "SNAPSHOT_READY" or run.pending_score_tick_id != tick_id:
-            raise SimulationRepositoryError("only the pending SNAPSHOT_READY tick can be finalized")
+        if tick.status == "SCORE_FAILED" and not succeeded:
+            return run
+        if tick.status not in {"SNAPSHOT_READY", "SCORED", "SCORE_FAILED"} or run.pending_score_tick_id != tick_id:
+            raise SimulationRepositoryError(
+                "only the pending SNAPSHOT_READY/SCORED tick can be finalized"
+            )
         if not succeeded:
             self.ticks[tick_id] = replace(tick, status="SCORE_FAILED")
             return run
@@ -438,6 +554,21 @@ class InMemorySimulationRepository:
             last_completed_tick_index=tick.tick_index,
             pending_score_tick_id=None,
         )
+
+    def mark_scored(self, run_id: str, tick_id: str) -> PersistedTick:
+        run = self._require_run(run_id)
+        tick = self._require_tick(run_id, tick_id)
+        if run.pending_score_tick_id != tick_id:
+            raise SimulationRepositoryError("only the pending tick can be marked scored")
+        if tick.status == "SCORED":
+            return tick
+        if tick.status not in {"SNAPSHOT_READY", "SCORE_FAILED"}:
+            raise SimulationRepositoryError(
+                "only SNAPSHOT_READY/SCORE_FAILED can be marked scored"
+            )
+        scored = replace(tick, status="SCORED")
+        self.ticks[tick_id] = scored
+        return scored
 
     def _require_run(self, run_id: str) -> SimulationRun:
         if run_id not in self.runs:
@@ -480,6 +611,8 @@ class BigQuerySimulationRepository(InMemorySimulationRepository):
         super().__init__(now=now, lease_seconds=lease_seconds)
         self.client = client
         self.dataset = dataset
+        self._controls_loaded = False
+        self._rejected_control_receipts: tuple[dict[str, object], ...] = ()
 
     def start(self, *, scenario_id: str, scenario_version: str, seed: int) -> SimulationRun:
         run = super().start(
@@ -597,6 +730,103 @@ ASSERT (SELECT COUNT(*) FROM `{self.dataset}.simulation_ticks`
         )
         return lease
 
+    def _controls_for_run(
+        self, run: SimulationRun, tick: PersistedTick | None = None
+    ) -> tuple[PauseControl, ...]:
+        if self._controls_loaded:
+            return super()._controls_for_run(run, tick)
+        from .control import (
+            ControlValidationError,
+            canonical_proposal_checksum,
+            validate_control_payload,
+        )
+
+        rows = self._query(
+            f"""
+SELECT control.*, proposal.proposal_json, tick.tick_index,
+       tick.simulation_time AS source_simulation_time
+FROM `{self.dataset}.simulation_control_events` control
+JOIN `{self.dataset}.intervention_proposals` proposal
+  ON proposal.proposal_id = control.proposal_id
+ AND proposal.simulation_run_id = control.simulation_run_id
+ AND proposal.source_tick_id = control.source_tick_id
+ AND proposal.source_snapshot_id = control.source_snapshot_id
+JOIN `{self.dataset}.simulation_ticks` tick
+  ON tick.simulation_run_id = control.simulation_run_id
+ AND tick.tick_id = control.source_tick_id
+WHERE control.simulation_run_id = @run_id
+  AND control.status IN ('QUEUED', 'CONSUMED')
+ORDER BY control.created_at, control.control_event_id
+""",
+            {"run_id": run.run_id},
+        )
+        rejected: list[dict[str, object]] = []
+        for raw in rows:
+            row = dict(raw)
+            if row["status"] == "QUEUED" and (
+                row["authorization_expires_at"] <= self.now()
+                or (
+                    tick is not None
+                    and tick.simulation_time > row["valid_until_simulation_at"]
+                )
+            ):
+                outcome = (
+                    "EXPIRED"
+                    if row["authorization_expires_at"] <= self.now()
+                    else "REJECTED"
+                )
+                rejected.append({
+                    "consumption_id": canonical_checksum(
+                        (row["control_event_id"], run.run_id, outcome)
+                    )[:32],
+                    "control_event_id": row["control_event_id"],
+                    "scenario_id": run.scenario_id,
+                    "simulation_run_id": run.run_id,
+                    "consumed_by_tick_id": tick.tick_id if tick else None,
+                    "outcome": outcome,
+                    "recorded_at": self.now(),
+                    "rejection_reason": (
+                        "AUTHORIZATION_EXPIRED"
+                        if outcome == "EXPIRED"
+                        else "SIMULATION_WINDOW_EXPIRED"
+                    ),
+                    "generator_version": "stateful-replay-v1",
+                    "is_simulated": True,
+                })
+                continue
+            payload = row["proposal_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            validation_now = (
+                row["created_at"]
+                if row["status"] == "CONSUMED"
+                else self.now()
+            )
+            try:
+                queued = validate_control_payload(
+                    payload,
+                    scenario_id=row["scenario_id"],
+                    run_id=run.run_id,
+                    source_tick_id=row["source_tick_id"],
+                    source_snapshot_id=row["source_snapshot_id"],
+                    source_tick_index=int(row["tick_index"]),
+                    now=validation_now,
+                    simulation_time=row["source_simulation_time"],
+                    max_selected_drivers=int(row["max_selected_drivers"]),
+                )
+            except ControlValidationError as exc:
+                raise SimulationRepositoryError(
+                    f"trusted control validation failed: {exc}"
+                ) from exc
+            if queued.control_event_id != row["control_event_id"]:
+                raise SimulationRepositoryError("control identity does not match payload")
+            if canonical_proposal_checksum(payload) != row["proposal_payload_checksum"]:
+                raise SimulationRepositoryError("control proposal payload changed")
+            self.queue_controls(queued.pause_controls)
+        self._controls_loaded = True
+        self._rejected_control_receipts = tuple(rejected)
+        return super()._controls_for_run(run, tick)
+
     def finalize_score(self, run_id: str, tick_id: str, *, succeeded: bool) -> SimulationRun:
         self._require_run(run_id)
         tick = self._require_tick(run_id, tick_id)
@@ -608,10 +838,15 @@ UPDATE `{self.dataset}.simulation_ticks`
 SET status = IF(@succeeded, 'SUCCEEDED', 'SCORE_FAILED'),
     finished_at = CURRENT_TIMESTAMP()
 WHERE simulation_run_id = @run_id AND tick_id = @tick_id
-  AND status = 'SNAPSHOT_READY';
+  AND status IN ('SNAPSHOT_READY', 'SCORED', 'SCORE_FAILED');
 UPDATE `{self.dataset}.simulation_runs`
 SET last_completed_tick_index = IF(@succeeded, @tick_index, last_completed_tick_index),
     pending_score_tick_id = IF(@succeeded, NULL, pending_score_tick_id),
+    next_simulation_at = IF(
+      @succeeded,
+      TIMESTAMP_ADD(simulation_start_at, INTERVAL 15 * (@tick_index + 1) MINUTE),
+      next_simulation_at
+    ),
     status = IF(@succeeded AND @tick_index = 95, 'COMPLETED', status),
     updated_at = CURRENT_TIMESTAMP()
 WHERE simulation_run_id = @run_id AND pending_score_tick_id = @tick_id;
@@ -622,7 +857,21 @@ COMMIT TRANSACTION;
         return super().finalize_score(run_id, tick_id, succeeded=succeeded)
 
     def publish_tick(self, run_id: str, tick_id: str, owner: str) -> Publication:
+        persisted_status = self._require_tick(run_id, tick_id).status
         publication = super().publish_tick(run_id, tick_id, owner)
+        if persisted_status in {
+            "SNAPSHOT_READY", "SCORED", "SCORE_FAILED", "SUCCEEDED"
+        }:
+            return publication
+        if self._rejected_control_receipts:
+            publication = replace(
+                publication,
+                consumption_rows=(
+                    publication.consumption_rows
+                    + self._rejected_control_receipts
+                ),
+            )
+            self.published[tick_id] = publication
         tick = publication.tick
         driver_stage = self._stage_rows("driver", tick.tick_id, publication.driver_rows)
         zone_stage = self._stage_rows("zone", tick.tick_id, publication.zone_rows)
@@ -631,6 +880,53 @@ COMMIT TRANSACTION;
         operation_stage = self._stage_rows("operation", tick.tick_id, publication.operation_rows)
         demand_stage = self._stage_rows("demand", tick.tick_id, publication.demand_rows)
         history_stage = self._stage_rows("history", tick.tick_id, publication.driver_history_rows)
+        intervention_stage = self._stage_rows(
+            "intervention", tick.tick_id, publication.intervention_rows
+        )
+        consumption_stage = self._stage_rows(
+            "consumption", tick.tick_id, publication.consumption_rows
+        )
+        intervention_sql = (
+            f"""
+MERGE `{self.dataset}.driver_intervention_events` target
+USING `{intervention_stage}` source ON target.event_id = source.event_id
+WHEN NOT MATCHED THEN INSERT ROW;
+"""
+            if publication.intervention_rows
+            else ""
+        )
+        consumption_sql = (
+            f"""
+ASSERT (
+  SELECT COUNT(*) FROM `{self.dataset}.simulation_control_events` control
+  JOIN `{consumption_stage}` source
+    ON source.control_event_id = control.control_event_id
+  WHERE control.simulation_run_id = @run_id
+    AND control.status = 'QUEUED'
+    AND (
+      (source.outcome = 'APPLIED'
+       AND control.authorization_expires_at > CURRENT_TIMESTAMP()
+       AND @simulation_time BETWEEN control.valid_from_simulation_at
+                                AND control.valid_until_simulation_at)
+      OR (source.outcome = 'EXPIRED'
+          AND control.authorization_expires_at <= CURRENT_TIMESTAMP())
+      OR (source.outcome = 'REJECTED'
+          AND @simulation_time > control.valid_until_simulation_at)
+    )
+) = (SELECT COUNT(*) FROM `{consumption_stage}`);
+MERGE `{self.dataset}.simulation_control_consumptions` target
+USING `{consumption_stage}` source
+ON target.consumption_id = source.consumption_id
+WHEN NOT MATCHED THEN INSERT ROW;
+UPDATE `{self.dataset}.simulation_control_events` control
+SET status = IF(source.outcome = 'APPLIED', 'CONSUMED', source.outcome)
+FROM `{consumption_stage}` source
+WHERE control.control_event_id = source.control_event_id
+  AND control.simulation_run_id = @run_id;
+"""
+            if publication.consumption_rows
+            else ""
+        )
         script = f"""
 BEGIN TRANSACTION;
 -- Fence publication with the exact current token and unexpired lease.
@@ -644,12 +940,49 @@ USING `{driver_stage}` source
 ON target.simulation_run_id = source.simulation_run_id
  AND target.driver_id_hash = source.driver_id_hash
 WHEN MATCHED THEN UPDATE SET last_tick_id = source.last_tick_id, updated_at = source.updated_at
+  , event_time = source.event_time, zone_id = source.zone_id,
+  latitude = source.latitude, longitude = source.longitude,
+  status = source.status, current_order_id = source.current_order_id,
+  current_intervention_id = source.current_intervention_id,
+  online_minutes_24h = source.online_minutes_24h,
+  trips_60m = source.trips_60m, distance_km_60m = source.distance_km_60m,
+  workload_intensity = source.workload_intensity,
+  continuous_exposure_minutes = source.continuous_exposure_minutes,
+  heat_dose_120m = source.heat_dose_120m,
+  rest_minutes_120m = source.rest_minutes_120m,
+  hydration_gap_minutes = source.hydration_gap_minutes,
+  route_heat_load = source.route_heat_load,
+  acclimatization_class = source.acclimatization_class,
+  earnings_60m_vnd = source.earnings_60m_vnd,
+  platform_contribution_60m_vnd = source.platform_contribution_60m_vnd
 WHEN NOT MATCHED THEN INSERT ROW;
 MERGE `{self.dataset}.zone_snapshots_current` target
 USING `{zone_stage}` source
 ON target.scenario_id = source.scenario_id AND target.zone_id = source.zone_id
 WHEN MATCHED THEN UPDATE SET snapshot_id = source.snapshot_id, tick_id = source.tick_id,
-  simulation_run_id = source.simulation_run_id, observed_at = source.observed_at
+  simulation_run_id = source.simulation_run_id, observed_at = source.observed_at,
+  temperature_c = source.temperature_c,
+  humidity_percent = source.humidity_percent,
+  heat_index_c = source.heat_index_c,
+  active_drivers = source.active_drivers,
+  fresh_drivers = source.fresh_drivers,
+  exposed_2h = source.exposed_2h,
+  exposed_4h = source.exposed_4h,
+  forecast_requests_30m = source.forecast_requests_30m,
+  online_drivers = source.online_drivers,
+  idle_drivers = source.idle_drivers,
+  to_pickup_drivers = source.to_pickup_drivers,
+  on_trip_drivers = source.on_trip_drivers,
+  to_coolstop_drivers = source.to_coolstop_drivers,
+  paused_drivers = source.paused_drivers,
+  exposed_2_to_4h = source.exposed_2_to_4h,
+  requests_15m = source.requests_15m,
+  matched_15m = source.matched_15m,
+  completed_15m = source.completed_15m,
+  cancelled_15m = source.cancelled_15m,
+  unfulfilled_15m = source.unfulfilled_15m,
+  fulfillment_rate = source.fulfillment_rate,
+  refreshed_at = source.refreshed_at
 WHEN NOT MATCHED THEN INSERT ROW;
 MERGE `{self.dataset}.order_events` target
 USING `{order_stage}` source ON target.event_id = source.event_id
@@ -672,16 +1005,27 @@ WHEN NOT MATCHED THEN INSERT ROW;
 MERGE `{self.dataset}.driver_state_history` target
 USING `{history_stage}` source ON target.state_id = source.state_id
 WHEN NOT MATCHED THEN INSERT ROW;
+{intervention_sql}
+{consumption_sql}
 UPDATE `{self.dataset}.simulation_runs`
 SET last_published_tick_index = @tick_index, pending_score_tick_id = @tick_id,
     updated_at = CURRENT_TIMESTAMP()
 WHERE simulation_run_id = @run_id;
 UPDATE `{self.dataset}.simulation_ticks`
-SET status = 'SNAPSHOT_READY', output_checksum = @output_checksum
+SET status = 'SNAPSHOT_READY', output_checksum = @output_checksum,
+    error_code = @model_input_error
 WHERE simulation_run_id = @run_id AND tick_id = @tick_id;
 COMMIT TRANSACTION;
 """
-        self._query(script, {"run_id": run_id, "tick_id": tick_id, "tick_index": tick.tick_index, "lease_owner": tick.lease_owner, "output_checksum": tick.output_checksum})
+        self._query(script, {
+            "run_id": run_id, "tick_id": tick_id, "tick_index": tick.tick_index,
+            "simulation_time": tick.simulation_time,
+            "lease_owner": tick.lease_owner,
+            "output_checksum": tick.output_checksum,
+            "model_input_error": (
+                "MODEL_INPUT_OOD" if publication.result.model_input_ood else None
+            ),
+        })
         return publication
 
     def _stage_rows(
@@ -696,6 +1040,8 @@ COMMIT TRANSACTION;
             "operation": "zone_operations",
             "demand": "demand_history",
             "history": "driver_state_history",
+            "intervention": "driver_intervention_events",
+            "consumption": "simulation_control_consumptions",
         }
         target_table = target_tables[kind]
         table_id = f"{self.dataset}.__simulation_stage_{kind}_{tick_id}"
@@ -726,7 +1072,8 @@ COMMIT TRANSACTION;
         rows: list[Any] = self._query(
             f"""SELECT simulation_run_id, scenario_id, tick_id, tick_index,
                        simulation_time, snapshot_id, status, lease_owner,
-                       lease_expires_at, input_checksum, output_checksum
+                       lease_expires_at, input_checksum, output_checksum,
+                       error_code
                 FROM `{self.dataset}.simulation_ticks`
                 WHERE simulation_run_id = @run_id ORDER BY tick_index""",
             {"run_id": run.run_id},

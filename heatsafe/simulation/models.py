@@ -172,6 +172,11 @@ class PauseControl:
     requested_minute: int
     pause_duration_minutes: int
     max_start_delay_minutes: int = 45
+    control_event_id: str = ""
+    proposal_id: str = ""
+    pause_start_delay_minutes: int = 0
+    baseline_risk_by_driver: tuple[tuple[str, float], ...] = ()
+    action_risk_by_driver: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +189,10 @@ class InterventionState:
     planned_duration_minutes: int
     max_start_delay_minutes: int
     status: InterventionStatus = InterventionStatus.ASSIGNED
+    proposal_id: str = ""
+    pause_start_delay_minutes: int = 0
+    baseline_risk_probability: float | None = None
+    action_risk_probability: float | None = None
     started_minute: int | None = None
     completed_minute: int | None = None
     completed_rest_minutes: int = 0

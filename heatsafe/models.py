@@ -62,6 +62,9 @@ class ZoneSnapshot:
     source: str
     weather_is_simulated: bool
     operations_is_simulated: bool
+    simulation_run_id: str | None = None
+    tick_id: str | None = None
+    generator_version: str | None = None
 
     @property
     def is_simulated(self) -> bool:
@@ -167,11 +170,19 @@ class SafePauseProposal:
     mandatory_eligible_drivers: int = 0
     mandatory_selected_drivers: int = 0
     max_mandatory_delay_minutes: int = 0
+    scenario_id: str | None = None
+    source_snapshot_id: str | None = None
+    simulation_run_id: str | None = None
+    source_tick_id: str | None = None
+    expires_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["created_at"] = self.created_at.isoformat()
         value["source_snapshot_at"] = self.source_snapshot_at.isoformat()
+        value["expires_at"] = (
+            self.expires_at.isoformat() if self.expires_at is not None else None
+        )
         value["guardrail_notes"] = list(self.guardrail_notes)
         value["wave_plan"] = [asdict(wave) for wave in self.wave_plan]
         value["driver_decisions"] = [asdict(item) for item in self.driver_decisions]

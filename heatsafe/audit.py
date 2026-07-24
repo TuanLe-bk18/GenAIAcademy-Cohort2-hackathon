@@ -198,28 +198,50 @@ class BigQueryInterventionAuditStore:
         USING (SELECT @proposal_id proposal_id) source
         ON target.proposal_id = source.proposal_id
           AND target.created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        WHEN MATCHED AND target.simulation_run_id IS NULL
+          AND @simulation_run_id IS NOT NULL THEN UPDATE SET
+          proposal_json = PARSE_JSON(@proposal_json),
+          scenario_id = @scenario_id,
+          source_snapshot_id = @source_snapshot_id,
+          simulation_run_id = @simulation_run_id,
+          source_tick_id = @source_tick_id,
+          expires_at = @expires_at
         WHEN NOT MATCHED THEN INSERT (
           proposal_id, created_at, zone_id, eligible_drivers, selected_drivers,
           exposure_minutes_avoided, net_platform_cost_vnd,
-          projected_fulfillment_rate, within_guardrails, proposal_json
+          projected_fulfillment_rate, within_guardrails, proposal_json,
+          scenario_id, source_snapshot_id, simulation_run_id, source_tick_id,
+          expires_at
         ) VALUES (
           @proposal_id, @created_at, @zone_id, @eligible_drivers, @selected_drivers,
           @exposure_minutes_avoided, @net_platform_cost_vnd,
           @projected_fulfillment_rate, @within_guardrails,
-          PARSE_JSON(@proposal_json)
+          PARSE_JSON(@proposal_json), @scenario_id, @source_snapshot_id,
+          @simulation_run_id, @source_tick_id, @expires_at
         );
         MERGE `{self.dataset}.intervention_events` target
         USING (SELECT @intervention_id intervention_id) source
         ON target.intervention_id = source.intervention_id
           AND target.approved_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        WHEN MATCHED AND target.simulation_run_id IS NULL
+          AND @simulation_run_id IS NOT NULL THEN UPDATE SET
+          scenario_id = @scenario_id,
+          source_snapshot_id = @source_snapshot_id,
+          simulation_run_id = @simulation_run_id,
+          source_tick_id = @source_tick_id,
+          expires_at = @expires_at
         WHEN NOT MATCHED THEN INSERT (
           intervention_id, proposal_id, approved_at, approved_by, actor_type,
           status, dispatch_status, zone_id, eligible_drivers, selected_drivers,
-          exposure_minutes_avoided, net_platform_cost_vnd
+          exposure_minutes_avoided, net_platform_cost_vnd,
+          scenario_id, source_snapshot_id, simulation_run_id, source_tick_id,
+          expires_at
         ) VALUES (
           @intervention_id, @proposal_id, @approved_at, @approved_by, @actor_type,
           'SIMULATED', 'NOT_APPLICABLE', @zone_id, @eligible_drivers, @selected_drivers,
-          @exposure_minutes_avoided, @net_platform_cost_vnd
+          @exposure_minutes_avoided, @net_platform_cost_vnd,
+          @scenario_id, @source_snapshot_id, @simulation_run_id, @source_tick_id,
+          @expires_at
         );
         COMMIT TRANSACTION;
         """
@@ -230,6 +252,21 @@ class BigQueryInterventionAuditStore:
             bigquery.ScalarQueryParameter("approved_at", "TIMESTAMP", approved_at),
             bigquery.ScalarQueryParameter("approved_by", "STRING", approved_by),
             bigquery.ScalarQueryParameter("actor_type", "STRING", actor_type),
+            bigquery.ScalarQueryParameter(
+                "scenario_id", "STRING", proposal.scenario_id
+            ),
+            bigquery.ScalarQueryParameter(
+                "source_snapshot_id", "STRING", proposal.source_snapshot_id
+            ),
+            bigquery.ScalarQueryParameter(
+                "simulation_run_id", "STRING", proposal.simulation_run_id
+            ),
+            bigquery.ScalarQueryParameter(
+                "source_tick_id", "STRING", proposal.source_tick_id
+            ),
+            bigquery.ScalarQueryParameter(
+                "expires_at", "TIMESTAMP", proposal.expires_at
+            ),
             bigquery.ScalarQueryParameter("zone_id", "STRING", proposal.zone_id),
             bigquery.ScalarQueryParameter("eligible_drivers", "INT64", proposal.eligible_drivers),
             bigquery.ScalarQueryParameter("selected_drivers", "INT64", proposal.selected_drivers),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from .currency import USD_TO_VND
 from .models import PauseWave, SafePauseProposal, ZoneSnapshot
@@ -195,13 +195,14 @@ def simulate_safepause(
             ",".join(map(str, upper_demand_by_interval)),
         )
     )
+    created_at = datetime.now(UTC)
     return SafePauseProposal(
         proposal_id=str(
             uuid.uuid5(uuid.NAMESPACE_URL, f"heatsafe:proposal:{proposal_fingerprint}")
         ),
         zone_id=zone.zone_id,
         zone_name=zone.name,
-        created_at=datetime.now(UTC),
+        created_at=created_at,
         source_snapshot_at=zone.observed_at,
         eligible_drivers=eligible,
         high_priority_drivers=high_priority,
@@ -229,6 +230,11 @@ def simulate_safepause(
         guardrail_notes=tuple(notes),
         decision_reason=reason,
         wave_plan=plan,
+        scenario_id=zone.scenario_id,
+        source_snapshot_id=zone.snapshot_id,
+        simulation_run_id=zone.simulation_run_id,
+        source_tick_id=zone.tick_id,
+        expires_at=created_at + timedelta(minutes=15),
     )
 
 

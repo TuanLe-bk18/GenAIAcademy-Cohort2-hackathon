@@ -59,6 +59,7 @@ class SimulationRepositoryTests(unittest.TestCase):
             self.simulation_run.run_id, self.first_tick.tick_id, lease.fencing_token
         )
         self.assertEqual(publication.tick.status, "SNAPSHOT_READY")
+        self.assertEqual(publication.tick.error_code, "MODEL_INPUT_OOD")
 
     def test_expired_lease_cannot_publish(self):
         lease = self.repository.acquire_tick_lease(
@@ -131,10 +132,10 @@ class SimulationRepositoryTests(unittest.TestCase):
         )
         self.assertIsNone(result.last_completed_tick_index)
         self.assertEqual(result.pending_score_tick_id, self.first_tick.tick_id)
-        with self.assertRaises(SimulationRepositoryError):
-            self.repository.finalize_score(
-                self.simulation_run.run_id, self.first_tick.tick_id, succeeded=True
-            )
+        retry = self.repository.finalize_score(
+            self.simulation_run.run_id, self.first_tick.tick_id, succeeded=True
+        )
+        self.assertEqual(retry.last_completed_tick_index, 0)
 
     def test_pending_score_blocks_a_later_tick(self):
         self._publish_first_tick()
@@ -190,6 +191,7 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         self.assertIn("BEGIN TRANSACTION", client.sql)
         self.assertIn("lease_owner = @lease_owner", client.sql)
         self.assertIn("SNAPSHOT_READY", client.sql)
+        self.assertIn("error_code = @model_input_error", client.sql)
         self.assertIn("order_events", client.sql)
         self.assertIn("weather_observations", client.sql)
         self.assertIn("zone_operations", client.sql)
@@ -202,7 +204,7 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         self.assertTrue(all(not isinstance(value, datetime) for row in client.staged_rows for value in row.values()))
         self.assertLess(client.sql.rfind("SNAPSHOT_READY"), client.sql.rfind("COMMIT TRANSACTION"))
         assert client.config is not None
-        self.assertEqual(client.config.maximum_bytes_billed, 250_000_000)
+        self.assertEqual(client.config.maximum_bytes_billed, 350_000_000)
 
     def test_run_lifecycle_uses_precreation_conditional_lease_and_separate_score_cursor(self):
         client = self.Client()

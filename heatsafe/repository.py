@@ -110,6 +110,9 @@ def _parse_zone(raw: dict, *, source: str) -> ZoneSnapshot:
         source=source,
         weather_is_simulated=bool(raw.get("weather_is_simulated", simulated)),
         operations_is_simulated=bool(raw.get("operations_is_simulated", simulated)),
+        simulation_run_id=raw.get("simulation_run_id"),
+        tick_id=raw.get("tick_id"),
+        generator_version=raw.get("generator_version"),
     )
 
 
