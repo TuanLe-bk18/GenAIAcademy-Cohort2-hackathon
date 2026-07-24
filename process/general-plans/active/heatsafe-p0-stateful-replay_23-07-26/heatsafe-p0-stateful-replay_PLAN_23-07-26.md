@@ -1458,7 +1458,7 @@ Phase 2 is `✅ VERIFIED`. The next valid transition is inter-phase
 
 ### Phase 3 — BigQuery Persistence and Snapshot Projection
 
-**Status:** ⏳ PLANNED
+**Status:** 🧪 TESTING — local/fake-client evidence green; disposable BigQuery Hybrid gate pending
 **Dependencies:** Phase 2 ✅ VERIFIED
 **Estimate:** 1 day
 
@@ -1468,6 +1468,22 @@ Phase 2 is `✅ VERIFIED`. The next valid transition is inter-phase
 2. Confirm transaction/staging strategy, conflict error codes, partition-pruned predicates, and per-query/per-tick/full-replay `maximum_bytes_billed`.
 3. Define run-tagged current-table backup and targeted transactional restore; keep `--seed-demo` only as a clearly labelled full reseed/emergency path, not normal rollback.
 4. Present persistence SQL and rollback path; stop for approval.
+
+#### Stage 0 Decision Record — 24-07-2026
+
+Research and innovation are recorded in
+[`phase3_persistence_RESEARCH_24-07-26.md`](phase3_persistence_RESEARCH_24-07-26.md).
+The user explicitly authorized the full Phase 3 RIPER sequence on 24-07-2026.
+The implementation boundary is local/fake-client only: no shared demo dataset,
+IAM, Scheduler, Cloud Run, or deployment mutation. The existing disposable
+BigQuery feasibility probe remains an `INCONCLUSIVE` Hybrid gate and must not
+be represented as live proof.
+
+The frozen design uses a dedicated repository, precreated immutable tick IDs,
+conditional lease acquisition plus in-transaction fencing revalidation,
+expiring staging, transactionally coherent history/current projection with
+`SNAPSHOT_READY` last, and a separate scoring-finalization cursor. The CLI is
+an adapter only and contains no SQL or public control authority.
 
 #### Implementation
 
@@ -1562,6 +1578,33 @@ Retry the published tick by exact `--tick-id`. In the Phase 3 repository probe, 
 - Process crash leaves an orphan staging table that must expire automatically.
 - Missing previous current state.
 - Tick invoked after run completion.
+
+#### Phase 3 Execution Evidence — 24-07-2026
+
+Implemented within the approved local/fake-client boundary:
+
+- `heatsafe.simulation.repository`: 96-tick precreation, active-run exclusion,
+  conditional fencing-token lease, lease expiry, deterministic replay resume,
+  lineage-complete driver/zone/order row projection, idempotent
+  `SNAPSHOT_READY` retry, separate score finalization, and completed-cursor
+  advancement exactly once.
+- `heatsafe.simulation.cli`: `validate-scenario`, `start`, `tick`, `status`,
+  `pause`, and `resume` adapters. The CLI contains no SQL or control authority.
+- BigQuery publication SQL shape: byte cap, labels, in-transaction lease
+  assertion, current-state/snapshot MERGEs, and `SNAPSHOT_READY` before commit.
+- Automated evidence: `13` targeted repository/CLI tests and the full `106`
+  test suite pass; compile and dependency checks pass.
+
+Review boundary:
+
+- The checked-in adapter and fake client prove contract shape, deterministic
+  row projection, local concurrency/failure handling, and CLI routing. They do
+  **not** prove BigQuery's real transaction-conflict winner, processed bytes,
+  staging expiry, persisted cross-process restart, or rollback. Those require
+  the already-defined isolated disposable-dataset Hybrid probe; no shared demo
+  dataset was queried or mutated.
+- Therefore Phase 3 remains `🧪 TESTING`, not `✅ VERIFIED`. Do not begin Phase
+  4 until the Hybrid evidence is captured and user-confirmed.
 
 #### Done Criteria
 
@@ -1901,12 +1944,14 @@ Each screenshot row references a saved BigQuery result artifact and Cloud Loggin
 
 ### Persistence
 
-- [ ] Add start/tick/status/pause/resume CLI.
-- [ ] Add run ownership and tick lease handling.
-- [ ] Add coordinator/tick precreation, fencing-token validation, bounded conflict retry, and expiring staging.
-- [ ] Add idempotent event/history persistence.
-- [ ] Add transactional current-state and snapshot projection.
-- [ ] Add retry/concurrency/failure tests.
+- [x] Add start/tick/status/pause/resume CLI.
+- [x] Add local/fake-client run ownership and tick lease handling.
+- [x] Add local/fake-client coordinator/tick precreation and fencing-token validation.
+- [x] Add deterministic row projection and idempotent `SNAPSHOT_READY` retry.
+- [x] Add BigQuery transaction SQL shape for current-state and snapshot projection.
+- [x] Add fake-client retry/concurrency/failure tests.
+- [ ] Run isolated disposable-dataset Hybrid probe for actual lease fencing,
+  transaction rollback, staging expiry, byte caps, and cross-process persistence.
 
 ### Scoring and Closed Loop
 

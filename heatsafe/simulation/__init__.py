@@ -38,6 +38,15 @@ from .scenario import (
     ScenarioValidationError,
     load_scenario,
 )
+from .repository import (
+    BigQuerySimulationRepository,
+    InMemorySimulationRepository,
+    LeaseConflict,
+    PersistedTick,
+    SimulationRepositoryError,
+    SimulationRun,
+    TickLease,
+)
 from .transitions import (
     SimulationInvariantError,
     project_scoring,
@@ -49,11 +58,14 @@ from .transitions import (
 
 __all__ = [
     "AcclimatizationClass",
+    "BigQuerySimulationRepository",
     "DeterministicRandom",
     "DriverState",
     "DriverStatus",
     "InterventionState",
     "InterventionStatus",
+    "InMemorySimulationRepository",
+    "LeaseConflict",
     "OrderEvent",
     "OrderEventType",
     "OrderState",
@@ -63,8 +75,12 @@ __all__ = [
     "ScenarioValidationError",
     "ScoringProjection",
     "SimulationInvariantError",
+    "SimulationRepositoryError",
+    "SimulationRun",
     "SimulationState",
     "TickResult",
+    "TickLease",
+    "PersistedTick",
     "WeatherState",
     "ZonePrior",
     "ZoneProjection",
