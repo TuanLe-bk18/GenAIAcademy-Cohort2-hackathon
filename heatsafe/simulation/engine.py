@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+from enum import StrEnum
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import timedelta
@@ -1036,8 +1037,8 @@ def _tick_checksum(state: SimulationState, zones: tuple, scoring: tuple) -> str:
                 encoded = format(value, ".6f")
             elif value is None:
                 encoded = "<null>"
-            elif hasattr(value, "value"):
-                encoded = str(value.value)
+            elif isinstance(value, StrEnum):
+                encoded = value.value
             else:
                 encoded = str(value)
             payload = encoded.encode("utf-8")

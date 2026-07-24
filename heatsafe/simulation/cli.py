@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict, is_dataclass
-from typing import Callable
+from typing import Any, Callable, cast
 
 from heatsafe.config import Settings
 
@@ -34,8 +34,8 @@ def create_repository(settings: Settings, *, memory: bool):
 
 
 def _json(value: object) -> str:
-    if is_dataclass(value):
-        value = asdict(value)
+    if is_dataclass(value) and not isinstance(value, type):
+        value = asdict(cast(Any, value))
     return json.dumps(value, default=str, sort_keys=True)
 
 
@@ -52,13 +52,17 @@ def main(argv: list[str] | None = None, *, repository_factory: Callable | None =
     try:
         if args.command == "start":
             run = repository.start(scenario_id=args.scenario, scenario_version=args.scenario_version, seed=args.seed)
-            print(_json(run)); return 0
+            print(_json(run))
+            return 0
         if args.command == "status":
-            print(_json(repository.status(args.scenario))); return 0
+            print(_json(repository.status(args.scenario)))
+            return 0
         if args.command == "pause":
-            print(_json(repository.pause(args.scenario))); return 0
+            print(_json(repository.pause(args.scenario)))
+            return 0
         if args.command == "resume":
-            print(_json(repository.resume(args.scenario))); return 0
+            print(_json(repository.resume(args.scenario)))
+            return 0
         run = repository.status(args.scenario)
         if run is None:
             raise SimulationRepositoryError("start a simulation before requesting a tick")

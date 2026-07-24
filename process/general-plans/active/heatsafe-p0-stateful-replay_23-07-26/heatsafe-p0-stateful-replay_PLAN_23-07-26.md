@@ -1458,7 +1458,7 @@ Phase 2 is `✅ VERIFIED`. The next valid transition is inter-phase
 
 ### Phase 3 — BigQuery Persistence and Snapshot Projection
 
-**Status:** 🧪 TESTING — local/fake-client evidence green; disposable BigQuery Hybrid gate pending
+**Status:** 🧪 TESTING — disposable BigQuery Hybrid evidence captured; awaiting user acceptance
 **Dependencies:** Phase 2 ✅ VERIFIED
 **Estimate:** 1 day
 
@@ -1600,19 +1600,57 @@ Implemented within the approved local/fake-client boundary:
 - `scripts/probe_phase3_bigquery.py` is dry-run by default and refuses any
   dataset not prefixed `heatsafe_phase3_probe_`; its explicit `--execute` path
   provisions then deletes only that disposable dataset.
-- Automated evidence: `13` targeted repository/CLI tests and the full `106`
-  test suite pass; compile and dependency checks pass.
+- Automated evidence: `14` targeted repository/CLI tests and the full `110`
+  test suite pass; compile and dependency checks pass. Local
+  `validate-scenario --memory` also returns the expected 96 weather points.
 
 Review boundary:
 
-- The checked-in adapter and fake client prove contract shape, deterministic
-  row projection, local concurrency/failure handling, and CLI routing. They do
-  **not** prove BigQuery's real transaction-conflict winner, processed bytes,
-  staging expiry, persisted cross-process restart, or rollback. Those require
-  the already-defined isolated disposable-dataset Hybrid probe; no shared demo
-  dataset was queried or mutated.
-- Therefore Phase 3 remains `🧪 TESTING`, not `✅ VERIFIED`. Do not begin Phase
-  4 until the Hybrid evidence is captured and user-confirmed.
+- The isolated provider probe has now proved a real concurrent lease winner,
+  durable cross-process reload/retry, injected transaction rollback preserving
+  `RUNNING`, separate score finalization, and cursor/tick read-back. Publisher
+  and probe count queries enforce a 250 MB billing cap; staging tables have a
+  one-hour expiry set before the transaction. The session does not wait an hour
+  merely to observe expiry.
+  No shared demo dataset was queried or mutated.
+- Therefore Phase 3 remains `🧪 TESTING`, not `✅ VERIFIED`, solely until the
+  user confirms this Hybrid evidence. Do not begin Phase 4 before that
+  confirmation.
+
+Hybrid correction (24-07-2026): the first isolated probe caught a real
+cross-runtime identity defect: BigQuery `TO_HEX` returns uppercase/full 64-char
+SHA-256 while Python uses lowercase 32-char digests. Tick and snapshot SQL now
+applies `SUBSTR(LOWER(...), 1, 32)`; the probe dataset was deleted by its
+`finally` cleanup before this correction.
+
+Hybrid correction (continued): the next isolated probe reached staging and
+caught non-JSON-serializable Python datetimes. Staging now emits RFC 3339 text
+for every datetime before `load_table_from_json`; fake-client coverage asserts
+that no raw datetime reaches the BigQuery client.
+
+Hybrid correction (continued): provider execution then caught `INSERT ROW`
+positional alignment against autodetected staging schemas. Each staging load now
+uses the exact schema of its target table, preserving BigQuery column order and
+types before the fenced transaction runs.
+
+Hybrid correction (continued): real row-count inspection found that publish did
+not persist `last_published_tick_index`/`pending_score_tick_id`, so the score
+finalizer could not advance the completed cursor. The same fenced transaction
+now updates those run fields immediately before committing `SNAPSHOT_READY`.
+
+Hybrid evidence (24-07-2026): on disposable dataset
+`cohort2track2.heatsafe_phase3_probe_20260724p`, two independent repository
+clients produced exactly one `LEASED` winner. After publish/finalize, direct
+read-back returned one `SUCCEEDED` tick and 95 `PENDING`,
+`last_published_tick_index=0`, `last_completed_tick_index=0`, and a null pending
+score. The process deleted the dataset in its `finally` block. A subsequent
+probe injected a failed BigQuery transaction; direct read-back still showed the
+run `RUNNING` before it proceeded to the same exclusive lease path and cleanup.
+
+Hybrid correction (continued): a restarted repository initially could not map
+BigQuery `simulation_run_id` into the repository `run_id`. Tick reload now
+performs that explicit mapping, and a durable `SUCCEEDED` retry reconstructs
+only its deterministic local projection cache, never a second publication.
 
 #### Done Criteria
 

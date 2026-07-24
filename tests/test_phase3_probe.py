@@ -27,6 +27,7 @@ class Phase3ProbeSafetyTests(unittest.TestCase):
         document = json.loads(result.stdout)
         self.assertTrue(document["dry_run"])
         self.assertEqual(document["dataset"], "heatsafe_phase3_probe_unit")
+        self.assertIn("billing cap", document["command"])
 
     def test_shared_or_unprefixed_dataset_is_rejected_before_any_cloud_call(self):
         result = subprocess.run(

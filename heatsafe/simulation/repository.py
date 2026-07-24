@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 import hashlib
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from .engine import advance_tick, initialize_state, load_scenario, load_zone_priors
@@ -219,7 +219,7 @@ def publication_rows(run: SimulationRun, tick: PersistedTick, result: TickResult
             "order_id": event.order_id,
             "event_time": _event_time(state, event.event_minute),
             "event_type": event.event_type.value,
-            "status": orders_by_id.get(event.order_id).status.value if event.order_id in orders_by_id else event.event_type.value,
+            "status": orders_by_id[event.order_id].status.value if event.order_id in orders_by_id else event.event_type.value,
             "driver_id_hash": event.driver_id_hash,
             "origin_zone_id": event.zone_id,
             "destination_zone_id": event.zone_id,
@@ -389,7 +389,15 @@ class InMemorySimulationRepository:
         run = self._require_run(run_id)
         tick = self._require_tick(run_id, tick_id)
         if tick.status in {"SNAPSHOT_READY", "SUCCEEDED"}:
-            return self.published[tick_id]
+            # A restarted worker reloads ticks from durable storage but does not
+            # carry the previous process's in-memory Publication cache.  Rebuild
+            # the deterministic projection for the caller without issuing writes.
+            publication = self.published.get(tick_id)
+            if publication is None:
+                _, result = replay_to_tick(run, tick.tick_index)
+                publication = publication_rows(run, tick, result)
+                self.published[tick_id] = publication
+            return publication
         if tick.status != "LEASED" or not tick.lease_owner or tick.lease_expires_at is None:
             raise LeaseConflict("tick must have a current lease before publication")
         if tick.lease_expires_at <= self.now():
@@ -461,8 +469,15 @@ class BigQuerySimulationRepository(InMemorySimulationRepository):
     recording fake and verify the fenced script/byte cap without provider writes.
     """
 
-    def __init__(self, client, *, dataset: str, **kwargs: object):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        client: Any,
+        *,
+        dataset: str,
+        now: Callable[[], datetime] = _utc_now,
+        lease_seconds: int = 360,
+    ):
+        super().__init__(now=now, lease_seconds=lease_seconds)
         self.client = client
         self.dataset = dataset
 
@@ -492,9 +507,9 @@ INSERT INTO `{self.dataset}.simulation_ticks`
   (simulation_run_id, scenario_id, tick_id, tick_index, simulation_time,
    snapshot_id, status, generator_version, is_simulated)
 SELECT @run_id, @scenario_id,
-  TO_HEX(SHA256(CONCAT('simulation-tick:', @run_id, ':', CAST(index AS STRING)))),
+  SUBSTR(LOWER(TO_HEX(SHA256(CONCAT('simulation-tick:', @run_id, ':', CAST(index AS STRING))))), 1, 32),
   index, TIMESTAMP_ADD(@start_time, INTERVAL 15 * index MINUTE),
-  TO_HEX(SHA256(CONCAT('simulation-snapshot:', @run_id, ':', CAST(index AS STRING)))),
+  SUBSTR(LOWER(TO_HEX(SHA256(CONCAT('simulation-snapshot:', @run_id, ':', CAST(index AS STRING))))), 1, 32),
   'PENDING', @generator_version, TRUE
 FROM UNNEST(GENERATE_ARRAY(0, 95)) index;
 COMMIT TRANSACTION;
@@ -514,7 +529,7 @@ COMMIT TRANSACTION;
         cached = super().status(scenario_id)
         if cached is not None:
             return cached
-        rows = self._query(
+        rows: list[Any] = self._query(
             f"""SELECT simulation_run_id, scenario_id, scenario_version, seed, status,
                        simulation_start_at, last_published_tick_index,
                        last_completed_tick_index, pending_score_tick_id
@@ -583,7 +598,7 @@ ASSERT (SELECT COUNT(*) FROM `{self.dataset}.simulation_ticks`
         return lease
 
     def finalize_score(self, run_id: str, tick_id: str, *, succeeded: bool) -> SimulationRun:
-        run = self._require_run(run_id)
+        self._require_run(run_id)
         tick = self._require_tick(run_id, tick_id)
         if tick.status != "SUCCEEDED":
             self._query(
@@ -657,36 +672,58 @@ WHEN NOT MATCHED THEN INSERT ROW;
 MERGE `{self.dataset}.driver_state_history` target
 USING `{history_stage}` source ON target.state_id = source.state_id
 WHEN NOT MATCHED THEN INSERT ROW;
+UPDATE `{self.dataset}.simulation_runs`
+SET last_published_tick_index = @tick_index, pending_score_tick_id = @tick_id,
+    updated_at = CURRENT_TIMESTAMP()
+WHERE simulation_run_id = @run_id;
 UPDATE `{self.dataset}.simulation_ticks`
 SET status = 'SNAPSHOT_READY', output_checksum = @output_checksum
 WHERE simulation_run_id = @run_id AND tick_id = @tick_id;
 COMMIT TRANSACTION;
 """
-        self._query(script, {"run_id": run_id, "tick_id": tick_id, "lease_owner": tick.lease_owner, "output_checksum": tick.output_checksum})
+        self._query(script, {"run_id": run_id, "tick_id": tick_id, "tick_index": tick.tick_index, "lease_owner": tick.lease_owner, "output_checksum": tick.output_checksum})
         return publication
 
     def _stage_rows(
         self, kind: str, tick_id: str, rows: tuple[dict[str, object], ...]
     ) -> str:
         """Load a per-tick staging table with one-hour expiry before publication."""
+        target_tables = {
+            "driver": "driver_simulation_state",
+            "zone": "zone_snapshots_current",
+            "order": "order_events",
+            "weather": "weather_observations",
+            "operation": "zone_operations",
+            "demand": "demand_history",
+            "history": "driver_state_history",
+        }
+        target_table = target_tables[kind]
         table_id = f"{self.dataset}.__simulation_stage_{kind}_{tick_id}"
         if not rows:
             return table_id
         from google.cloud import bigquery
 
+        target_schema = self.client.get_table(f"{self.dataset}.{target_table}").schema
         config = bigquery.LoadJobConfig(
-            autodetect=True,
+            schema=target_schema,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
             labels={"app": "heatsafe", "component": "simulation_staging"},
         )
-        self.client.load_table_from_json(list(rows), table_id, job_config=config).result()
+        json_rows = [
+            {
+                name: value.isoformat() if isinstance(value, datetime) else value
+                for name, value in row.items()
+            }
+            for row in rows
+        ]
+        self.client.load_table_from_json(json_rows, table_id, job_config=config).result()
         table = self.client.get_table(table_id)
         table.expires = self.now() + timedelta(hours=1)
         self.client.update_table(table, ["expires"])
         return table_id
 
     def _load_ticks(self, run: SimulationRun) -> None:
-        rows = self._query(
+        rows: list[Any] = self._query(
             f"""SELECT simulation_run_id, scenario_id, tick_id, tick_index,
                        simulation_time, snapshot_id, status, lease_owner,
                        lease_expires_at, input_checksum, output_checksum
@@ -696,13 +733,14 @@ COMMIT TRANSACTION;
         )
         for raw in rows:
             row = dict(raw)
+            row["run_id"] = row.pop("simulation_run_id")
             tick = PersistedTick(**row)
             self.ticks[tick.tick_id] = tick
 
-    def _query(self, sql: str, params: dict[str, object]) -> list[object]:
+    def _query(self, sql: str, params: dict[str, Any]) -> list[Any]:
         from google.cloud import bigquery
 
-        def parameter(name: str, value: object):
+        def parameter(name: str, value: Any):
             kind = "BOOL" if isinstance(value, bool) else "INT64" if isinstance(value, int) else "TIMESTAMP" if isinstance(value, datetime) else "STRING"
             return bigquery.ScalarQueryParameter(name, kind, value)
 
