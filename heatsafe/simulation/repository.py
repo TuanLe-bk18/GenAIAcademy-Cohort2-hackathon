@@ -250,6 +250,14 @@ def validate_publication_clock(
     )
 
 
+def validate_persisted_tick_clock(
+    run: SimulationRun, tick: PersistedTick
+) -> None:
+    """Fail before lease acquisition when a run carries legacy clock drift."""
+    fixture = load_scenario(run.scenario_version)
+    _validate_run_tick_clock(run, tick, fixture=fixture)
+
+
 def replay_to_tick(
     run: SimulationRun,
     tick_index: int,

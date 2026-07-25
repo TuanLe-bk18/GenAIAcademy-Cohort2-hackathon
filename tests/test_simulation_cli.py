@@ -5,9 +5,11 @@ import json
 import unittest
 from contextlib import redirect_stdout
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from heatsafe.simulation.cli import main
 from heatsafe.simulation.repository import InMemorySimulationRepository
+from heatsafe.simulation.scoring import DeterministicSnapshotScorer
 
 
 class SimulationCliTests(unittest.TestCase):
@@ -121,6 +123,135 @@ class SimulationCliTests(unittest.TestCase):
         self.assertIn("snapshot_id", payload)
         self.assertIn("checksum", payload)
         self.assertIn("duration_ms", payload)
+
+    def test_fast_replay_runs_back_to_back_through_target_tick(self):
+        self.call("start")
+        run_id = self.repository.status("heatwave").run_id
+        scorer_creations = 0
+
+        def scorer_factory(_settings, *, memory):
+            nonlocal scorer_creations
+            self.assertTrue(memory)
+            scorer_creations += 1
+            return DeterministicSnapshotScorer()
+
+        code, output = self.call_with_scorer(
+            scorer_factory,
+            "fast-replay",
+            "--run-id",
+            run_id,
+            "--until",
+            "2",
+            "--batch-size",
+            "1",
+        )
+
+        payloads = [json.loads(line) for line in output.splitlines()]
+        tick_events = [
+            payload
+            for payload in payloads
+            if payload.get("event") == "simulation_tick_completed"
+        ]
+        completion = payloads[-1]
+        self.assertEqual(code, 0)
+        self.assertEqual(scorer_creations, 1)
+        self.assertEqual(len(tick_events), 3)
+        self.assertEqual(
+            self.repository.status("heatwave").last_completed_tick_index, 2
+        )
+        self.assertEqual(
+            completion["event"], "simulation_fast_replay_completed"
+        )
+        self.assertEqual(completion["outcome"], "SUCCEEDED")
+        self.assertEqual(completion["executed_ticks"], 3)
+        self.assertEqual(completion["target_tick_index"], 2)
+
+    def test_fast_replay_rejects_unsafe_batching_before_mutation(self):
+        self.call("start")
+        run_id = self.repository.status("heatwave").run_id
+        code, output = self.call(
+            "fast-replay", "--run-id", run_id, "--until", "2",
+            "--batch-size", "8"
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("only --batch-size=1 is implemented", output)
+        self.assertIsNone(
+            self.repository.status("heatwave").last_completed_tick_index
+        )
+
+    def test_fast_replay_rejects_manual_tick_id_before_mutation(self):
+        self.call("start")
+        run_id = self.repository.status("heatwave").run_id
+        code, output = self.call(
+            "fast-replay", "--run-id", run_id, "--until", "2",
+            "--tick-id", "fixed"
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("--tick-id cannot be used", output)
+        self.assertIsNone(
+            self.repository.status("heatwave").last_completed_tick_index
+        )
+
+    def test_fast_replay_stops_on_score_failure(self):
+        class FailingScorer:
+            def score(self, _run, _publication):
+                raise RuntimeError("model unavailable")
+
+        self.call("start")
+        run_id = self.repository.status("heatwave").run_id
+        code, output = self.call_with_scorer(
+            lambda _settings, *, memory: FailingScorer(),
+            "fast-replay",
+            "--run-id",
+            run_id,
+            "--until",
+            "2",
+        )
+
+        run = self.repository.status("heatwave")
+        self.assertEqual(code, 2)
+        self.assertIn("SCORE_FAILED", output)
+        self.assertIsNone(run.last_completed_tick_index)
+        self.assertIsNotNone(run.pending_score_tick_id)
+
+    def test_fast_replay_requires_exact_run_before_mutation(self):
+        self.call("start")
+
+        code, output = self.call("fast-replay", "--until", "2")
+        self.assertEqual(code, 2)
+        self.assertIn("requires --run-id", output)
+
+        code, output = self.call(
+            "fast-replay", "--run-id", "wrong-run", "--until", "2"
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("does not match", output)
+        self.assertIsNone(
+            self.repository.status("heatwave").last_completed_tick_index
+        )
+
+    def test_fast_replay_rejects_legacy_clock_before_lease_mutation(self):
+        self.call("start")
+        run = self.repository.status("heatwave")
+        self.repository.runs[run.run_id] = replace(
+            run, start_time=datetime(2026, 7, 24, tzinfo=UTC)
+        )
+        tick = next(
+            tick
+            for tick in self.repository.ticks.values()
+            if tick.run_id == run.run_id and tick.tick_index == 0
+        )
+
+        code, output = self.call(
+            "fast-replay", "--run-id", run.run_id, "--until", "0"
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("replay clock drift", output)
+        self.assertEqual(self.repository.ticks[tick.tick_id].status, "PENDING")
+        self.assertIsNone(self.repository.ticks[tick.tick_id].lease_owner)
 
 
 if __name__ == "__main__":

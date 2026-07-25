@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -18,6 +19,8 @@ FORECAST_CONTEXT_POINTS = 2_048
 MINIMUM_QUERY_BYTES_BILLED = 10 * 1024 * 1024
 MAX_FORECAST_MINUTES = 24 * 60
 HANOI_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+REPLAY_TICK_COUNT = 96
+_SIMULATION_RUN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,28 @@ class SnapshotResult:
     fallback_reason: str | None = None
     data_fresh: bool = True
     freshness_warning: str | None = None
+
+
+@dataclass(frozen=True)
+class ReplayRunSummary:
+    simulation_run_id: str
+    scenario_id: str
+    scenario_version: str
+    status: str
+    simulation_start_at: datetime
+    last_published_tick_index: int | None
+    last_completed_tick_index: int | None
+    pending_score_tick_id: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ReplayRunProgress:
+    run: ReplayRunSummary
+    succeeded_ticks: int
+    failed_ticks: int
+    latest_succeeded_tick_index: int | None
+    total_ticks: int = REPLAY_TICK_COUNT
 
 
 @dataclass(frozen=True)
@@ -93,6 +118,13 @@ class AIModelUnavailable(RuntimeError):
 def _parse_datetime(value: datetime | str) -> datetime:
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
     return parsed.astimezone(UTC)
+
+
+def _validate_simulation_run_id(run_id: str) -> str:
+    normalized = str(run_id).lower()
+    if not _SIMULATION_RUN_ID_RE.fullmatch(normalized):
+        raise ValueError("simulation_run_id must be a lowercase 32-character hex ID")
+    return normalized
 
 
 def _parse_zone(raw: dict, *, source: str) -> ZoneSnapshot:
@@ -280,6 +312,7 @@ class BigQueryRepository:
             raise ValueError("HEATSAFE_SCENARIO must be live or heatwave")
         self.table = f"{self.dataset}.{self.settings.current_snapshot_table}"
         self._client_instance: Any | None = None
+        self._selected_replay_lineage: tuple[str, str, str] | None = None
 
     def _client(self) -> Any:
         if self._client_instance is None:
@@ -301,6 +334,7 @@ class BigQueryRepository:
     def load(self) -> SnapshotResult:
         from google.cloud import bigquery
 
+        self._selected_replay_lineage = None
         query = f"""
             SELECT * FROM `{self.table}`
             WHERE scenario_id = @scenario_id
@@ -336,6 +370,282 @@ class BigQueryRepository:
             f"BigQuery · {self.table} · {self.scenario}",
             data_fresh=data_fresh,
             freshness_warning=freshness_warning,
+        )
+
+    @staticmethod
+    def _build_replay_run(row: dict[str, Any]) -> ReplayRunSummary:
+        return ReplayRunSummary(
+            simulation_run_id=str(row["simulation_run_id"]),
+            scenario_id=str(row["scenario_id"]),
+            scenario_version=str(row["scenario_version"]),
+            status=str(row["status"]),
+            simulation_start_at=_parse_datetime(row["simulation_start_at"]),
+            last_published_tick_index=(
+                int(row["last_published_tick_index"])
+                if row.get("last_published_tick_index") is not None
+                else None
+            ),
+            last_completed_tick_index=(
+                int(row["last_completed_tick_index"])
+                if row.get("last_completed_tick_index") is not None
+                else None
+            ),
+            pending_score_tick_id=(
+                str(row["pending_score_tick_id"])
+                if row.get("pending_score_tick_id") is not None
+                else None
+            ),
+            created_at=_parse_datetime(row["created_at"]),
+        )
+
+    def list_replay_runs(self, limit: int = 20) -> list[ReplayRunSummary]:
+        from google.cloud import bigquery
+
+        limit = max(1, min(int(limit), 100))
+        query = f"""
+            SELECT simulation_run_id, scenario_id, scenario_version, status,
+                   simulation_start_at, last_published_tick_index,
+                   last_completed_tick_index, pending_score_tick_id, created_at
+            FROM `{self.dataset}.simulation_runs`
+            WHERE scenario_id = @scenario_id
+            ORDER BY created_at DESC
+            LIMIT @limit
+        """
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter(
+                    "scenario_id", "STRING", self.scenario
+                ),
+                bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            ],
+            100_000_000,
+        )
+        rows = [
+            dict(row)
+            for row in self._client().query(query, job_config=config).result()
+        ]
+        return [self._build_replay_run(row) for row in rows]
+
+    def load_replay_progress(self, run_id: str) -> ReplayRunProgress:
+        from google.cloud import bigquery
+
+        run_id = _validate_simulation_run_id(run_id)
+        query = f"""
+            SELECT
+              run.simulation_run_id,
+              run.scenario_id,
+              run.scenario_version,
+              run.status,
+              run.simulation_start_at,
+              run.last_published_tick_index,
+              run.last_completed_tick_index,
+              run.pending_score_tick_id,
+              run.created_at,
+              COUNTIF(tick.status = 'SUCCEEDED') AS succeeded_ticks,
+              COUNTIF(tick.status IN ('SCORE_FAILED', 'FAILED')) AS failed_ticks,
+              MAX(IF(tick.status = 'SUCCEEDED', tick.tick_index, NULL))
+                AS latest_succeeded_tick_index
+            FROM `{self.dataset}.simulation_runs` run
+            LEFT JOIN `{self.dataset}.simulation_ticks` tick
+              USING (simulation_run_id)
+            WHERE run.simulation_run_id = @simulation_run_id
+              AND run.scenario_id = @scenario_id
+            GROUP BY
+              run.simulation_run_id,
+              run.scenario_id,
+              run.scenario_version,
+              run.status,
+              run.simulation_start_at,
+              run.last_published_tick_index,
+              run.last_completed_tick_index,
+              run.pending_score_tick_id,
+              run.created_at
+        """
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter(
+                    "simulation_run_id", "STRING", run_id
+                ),
+                bigquery.ScalarQueryParameter(
+                    "scenario_id", "STRING", self.scenario
+                ),
+            ],
+            100_000_000,
+        )
+        rows = [
+            dict(row)
+            for row in self._client().query(query, job_config=config).result()
+        ]
+        if len(rows) != 1:
+            raise RuntimeError(f"Replay run {run_id} was not found")
+        row = rows[0]
+        return ReplayRunProgress(
+            run=self._build_replay_run(row),
+            succeeded_ticks=int(row["succeeded_ticks"]),
+            failed_ticks=int(row["failed_ticks"]),
+            latest_succeeded_tick_index=(
+                int(row["latest_succeeded_tick_index"])
+                if row.get("latest_succeeded_tick_index") is not None
+                else None
+            ),
+        )
+
+    def load_replay_tick(self, run_id: str, tick_index: int) -> SnapshotResult:
+        from google.cloud import bigquery
+
+        run_id = _validate_simulation_run_id(run_id)
+        tick_index = int(tick_index)
+        if not 0 <= tick_index < REPLAY_TICK_COUNT:
+            raise ValueError("tick_index must be in 0..95")
+        query = f"""
+            WITH selected_tick AS (
+              SELECT simulation_run_id, scenario_id, tick_id, tick_index,
+                     snapshot_id, simulation_time
+              FROM `{self.dataset}.simulation_ticks`
+              WHERE simulation_run_id = @simulation_run_id
+                AND scenario_id = @scenario_id
+                AND tick_index = @tick_index
+                AND status = 'SUCCEEDED'
+            ),
+            selected_partners AS (
+              SELECT scenario_id, zone_id, coolstop_name, coolstop_latitude,
+                     coolstop_longitude
+              FROM `{self.dataset}.coolstop_partners`
+              WHERE scenario_id = @scenario_id OR scenario_id IS NULL
+              QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY zone_id
+                ORDER BY IF(scenario_id = @scenario_id, 0, 1)
+              ) = 1
+            )
+            SELECT
+              operation.scenario_id,
+              tick.snapshot_id,
+              operation.zone_id,
+              weather.name,
+              weather.latitude,
+              weather.longitude,
+              weather.temperature_c,
+              weather.humidity_percent,
+              weather.heat_index_c,
+              operation.observed_at,
+              weather.observed_at AS weather_observed_at,
+              operation.observed_at AS operations_observed_at,
+              operation.active_drivers,
+              operation.fresh_drivers,
+              operation.exposed_2h,
+              operation.exposed_4h,
+              operation.forecast_requests_30m,
+              operation.avg_platform_contribution_vnd,
+              operation.avg_driver_earnings_vnd,
+              partner.coolstop_name,
+              partner.coolstop_latitude,
+              partner.coolstop_longitude,
+              weather.is_simulated AS weather_is_simulated,
+              operation.is_simulated AS operations_is_simulated,
+              operation.simulation_run_id,
+              operation.tick_id,
+              COALESCE(
+                operation.generator_version, weather.generator_version
+              ) AS generator_version
+            FROM selected_tick tick
+            -- Pre-clock-fix app-bound runs may have stale simulation_time, so
+            -- immutable run/tick/snapshot lineage is the exact-tick key.
+            JOIN `{self.dataset}.zone_operations` operation
+              ON operation.simulation_run_id = tick.simulation_run_id
+             AND operation.tick_id = tick.tick_id
+             AND operation.snapshot_id = tick.snapshot_id
+            JOIN `{self.dataset}.weather_observations` weather
+              ON weather.simulation_run_id = tick.simulation_run_id
+             AND weather.tick_id = tick.tick_id
+             AND weather.snapshot_id = tick.snapshot_id
+             AND weather.zone_id = operation.zone_id
+            JOIN selected_partners partner
+              ON partner.zone_id = operation.zone_id
+            ORDER BY operation.zone_id
+        """
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter(
+                    "simulation_run_id", "STRING", run_id
+                ),
+                bigquery.ScalarQueryParameter(
+                    "scenario_id", "STRING", self.scenario
+                ),
+                bigquery.ScalarQueryParameter(
+                    "tick_index", "INT64", tick_index
+                ),
+            ],
+            150_000_000,
+        )
+        rows = [
+            dict(row)
+            for row in self._client().query(query, job_config=config).result()
+        ]
+        if len(rows) != 10:
+            raise RuntimeError(
+                f"Replay tick {tick_index} is incomplete: expected 10 zones, "
+                f"found {len(rows)}"
+            )
+        snapshot_ids = {str(row["snapshot_id"]) for row in rows}
+        run_ids = {str(row["simulation_run_id"]) for row in rows}
+        tick_ids = {str(row["tick_id"]) for row in rows}
+        zone_ids = {str(row["zone_id"]) for row in rows}
+        if (
+            len(snapshot_ids) != 1
+            or run_ids != {run_id}
+            or len(tick_ids) != 1
+            or len(zone_ids) != 10
+        ):
+            raise RuntimeError(
+                f"Replay tick {tick_index} has mixed or duplicate lineage"
+            )
+        zones = [
+            _parse_zone(row, source="BigQuery replay history")
+            for row in rows
+        ]
+        self._selected_replay_lineage = (
+            run_id,
+            next(iter(tick_ids)),
+            next(iter(snapshot_ids)),
+        )
+        return SnapshotResult(
+            zones=zones,
+            mode="cloud-history",
+            source_label=(
+                f"BigQuery · replay {run_id} · tick {tick_index}"
+            ),
+        )
+
+    def _forecast_scope(self) -> tuple[str, list[Any]]:
+        from google.cloud import bigquery
+
+        if self._selected_replay_lineage is None:
+            return (
+                f"""EXISTS (
+                  SELECT 1 FROM `{self.table}` current
+                  WHERE current.scenario_id = @scenario_id
+                    AND current.zone_id = forecast.zone_id
+                    AND current.snapshot_id = forecast.snapshot_id
+                    AND current.simulation_run_id IS NOT DISTINCT FROM
+                        forecast.simulation_run_id
+                    AND current.tick_id IS NOT DISTINCT FROM forecast.tick_id
+                )""",
+                [],
+            )
+        run_id, tick_id, snapshot_id = self._selected_replay_lineage
+        return (
+            """forecast.simulation_run_id = @simulation_run_id
+               AND forecast.tick_id = @tick_id
+               AND forecast.snapshot_id = @snapshot_id""",
+            [
+                bigquery.ScalarQueryParameter(
+                    "simulation_run_id", "STRING", run_id
+                ),
+                bigquery.ScalarQueryParameter("tick_id", "STRING", tick_id),
+                bigquery.ScalarQueryParameter(
+                    "snapshot_id", "STRING", snapshot_id
+                ),
+            ],
         )
 
     def _forecast_query(self, many: bool, horizon_intervals: int = 4) -> str:
@@ -421,6 +731,7 @@ class BigQueryRepository:
 
         horizon_minutes = max(15, min(MAX_FORECAST_MINUTES, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
+        forecast_scope, lineage_parameters = self._forecast_scope()
         query = f"""
             SELECT
               forecast_at forecast_timestamp,
@@ -428,24 +739,27 @@ class BigQueryRepository:
               lower_bound prediction_interval_lower_bound,
               upper_bound prediction_interval_upper_bound,
               status ai_forecast_status,
-              forecast_reused,
-              forecast_source_tick_id,
-              forecast_source_snapshot_id,
-              forecast_source_prediction_run_id,
-              forecast_age_minutes,
+              SAFE_CAST(JSON_VALUE(
+                TO_JSON_STRING(forecast), '$.forecast_reused'
+              ) AS BOOL) AS forecast_reused,
+              JSON_VALUE(
+                TO_JSON_STRING(forecast), '$.forecast_source_tick_id'
+              ) AS forecast_source_tick_id,
+              JSON_VALUE(
+                TO_JSON_STRING(forecast), '$.forecast_source_snapshot_id'
+              ) AS forecast_source_snapshot_id,
+              JSON_VALUE(
+                TO_JSON_STRING(forecast),
+                '$.forecast_source_prediction_run_id'
+              ) AS forecast_source_prediction_run_id,
+              SAFE_CAST(JSON_VALUE(
+                TO_JSON_STRING(forecast), '$.forecast_age_minutes'
+              ) AS INT64) AS forecast_age_minutes,
               generated_at
             FROM `{self.dataset}.zone_demand_forecasts` forecast
             WHERE forecast.scenario_id = @scenario_id
               AND forecast.zone_id = @zone_id
-              AND EXISTS (
-                SELECT 1 FROM `{self.table}` current
-                WHERE current.scenario_id = @scenario_id
-                  AND current.zone_id = forecast.zone_id
-                  AND current.snapshot_id = forecast.snapshot_id
-                  AND current.simulation_run_id IS NOT DISTINCT FROM
-                      forecast.simulation_run_id
-                  AND current.tick_id IS NOT DISTINCT FROM forecast.tick_id
-              )
+              AND {forecast_scope}
             ORDER BY forecast_at
             LIMIT @horizon_intervals
         """
@@ -454,6 +768,7 @@ class BigQueryRepository:
                 bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
                 bigquery.ScalarQueryParameter("zone_id", "STRING", zone_id),
                 bigquery.ScalarQueryParameter("horizon_intervals", "INT64", horizon_intervals),
+                *lineage_parameters,
             ],
             100_000_000,
         )
@@ -469,6 +784,7 @@ class BigQueryRepository:
             return {}
         horizon_minutes = max(15, min(MAX_FORECAST_MINUTES, horizon_minutes))
         horizon_intervals = max(1, round(horizon_minutes / 15))
+        forecast_scope, lineage_parameters = self._forecast_scope()
         query = f"""
             WITH latest_runs AS (
               SELECT
@@ -478,24 +794,27 @@ class BigQueryRepository:
                 lower_bound prediction_interval_lower_bound,
                 upper_bound prediction_interval_upper_bound,
                 status ai_forecast_status,
-                forecast_reused,
-                forecast_source_tick_id,
-                forecast_source_snapshot_id,
-                forecast_source_prediction_run_id,
-                forecast_age_minutes,
+                SAFE_CAST(JSON_VALUE(
+                  TO_JSON_STRING(forecast), '$.forecast_reused'
+                ) AS BOOL) AS forecast_reused,
+                JSON_VALUE(
+                  TO_JSON_STRING(forecast), '$.forecast_source_tick_id'
+                ) AS forecast_source_tick_id,
+                JSON_VALUE(
+                  TO_JSON_STRING(forecast), '$.forecast_source_snapshot_id'
+                ) AS forecast_source_snapshot_id,
+                JSON_VALUE(
+                  TO_JSON_STRING(forecast),
+                  '$.forecast_source_prediction_run_id'
+                ) AS forecast_source_prediction_run_id,
+                SAFE_CAST(JSON_VALUE(
+                  TO_JSON_STRING(forecast), '$.forecast_age_minutes'
+                ) AS INT64) AS forecast_age_minutes,
                 generated_at
               FROM `{self.dataset}.zone_demand_forecasts` forecast
               WHERE forecast.scenario_id = @scenario_id
                 AND forecast.zone_id IN UNNEST(@zone_ids)
-                AND EXISTS (
-                  SELECT 1 FROM `{self.table}` current
-                  WHERE current.scenario_id = @scenario_id
-                    AND current.zone_id = forecast.zone_id
-                    AND current.snapshot_id = forecast.snapshot_id
-                    AND current.simulation_run_id IS NOT DISTINCT FROM
-                        forecast.simulation_run_id
-                    AND current.tick_id IS NOT DISTINCT FROM forecast.tick_id
-                )
+                AND {forecast_scope}
             )
             SELECT *
             FROM latest_runs
@@ -509,6 +828,7 @@ class BigQueryRepository:
                 bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
                 bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
                 bigquery.ScalarQueryParameter("horizon_intervals", "INT64", horizon_intervals),
+                *lineage_parameters,
             ],
             100_000_000,
         )
@@ -709,6 +1029,17 @@ class HybridRepository:
                 source_label=fallback.source_label,
                 fallback_reason=str(exc),
             )
+
+    def list_replay_runs(self, limit: int = 20) -> list[ReplayRunSummary]:
+        return self._cloud().list_replay_runs(limit)
+
+    def load_replay_progress(self, run_id: str) -> ReplayRunProgress:
+        return self._cloud().load_replay_progress(run_id)
+
+    def load_replay_tick(self, run_id: str, tick_index: int) -> SnapshotResult:
+        result = self._cloud().load_replay_tick(run_id, tick_index)
+        self._active = self._cloud()
+        return result
 
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
         try:

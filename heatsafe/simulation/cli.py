@@ -16,6 +16,7 @@ from .repository import (
     InMemorySimulationRepository,
     LeaseConflict,
     SimulationRepositoryError,
+    validate_persisted_tick_clock,
 )
 from .telemetry import (
     TickTelemetry,
@@ -31,8 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         choices=(
-            "validate-scenario", "start", "tick", "status", "pause", "resume",
-            "queue-control", "checkpoint-verify",
+            "validate-scenario", "start", "tick", "fast-replay", "status",
+            "pause", "resume", "queue-control", "checkpoint-verify",
         ),
     )
     parser.add_argument("--scenario", default="heatwave")
@@ -43,6 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id")
     parser.add_argument("--source-tick-id")
     parser.add_argument("--source-snapshot-id")
+    parser.add_argument("--until", type=int, default=95)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--max-runtime-seconds", type=int, default=1_800)
     parser.add_argument("--memory", action="store_true", help="use the deterministic local repository")
     return parser
 
@@ -234,120 +238,45 @@ def _run(
                 )
             print(_json(repository.verify_checkpoints(run.run_id)))
             return 0
-        with component_span("run_load"):
-            run = repository.status(args.scenario)
-        if run is None:
-            raise SimulationRepositoryError("start a simulation before requesting a tick")
-        bind_telemetry(simulation_run_id=run.run_id)
-        if run.status == "COMPLETED":
-            mark_attempt_outcome("NO_OP")
-            _emit(
-                "simulation_tick_terminal",
+        if args.command == "fast-replay":
+            if not args.run_id:
+                print(_json({"error": "fast-replay requires --run-id"}))
+                return 2
+            if not 0 <= args.until <= 95:
+                print(_json({"error": "--until must be in 0..95"}))
+                return 2
+            if args.max_runtime_seconds < 1:
+                print(_json({
+                    "error": "--max-runtime-seconds must be positive"
+                }))
+                return 2
+            if args.tick_id is not None:
+                print(_json({
+                    "error": "--tick-id cannot be used with fast-replay"
+                }))
+                return 2
+            if args.batch_size != 1:
+                print(_json({
+                    "error": (
+                        "only --batch-size=1 is implemented; larger batches "
+                        "remain behind the provider equivalence gate"
+                    )
+                }))
+                return 2
+            return _run_fast_replay(
+                args,
+                settings,
+                repository,
                 started=started,
-                simulation_run_id=run.run_id,
-                status="COMPLETED",
-                outcome="NO_OP_TERMINAL",
-                terminal_signal=True,
+                scorer_factory=scorer_factory,
             )
-            return 0
-        tick_id = args.tick_id
-        if tick_id is None:
-            if run.pending_score_tick_id is not None:
-                tick_id = run.pending_score_tick_id
-            else:
-                index = (
-                    -1 if run.last_published_tick_index is None
-                    else run.last_published_tick_index
-                ) + 1
-                tick_id = next(
-                    tick.tick_id
-                    for tick in repository.ticks.values()
-                    if tick.run_id == run.run_id and tick.tick_index == index
-                )
-        tick = repository.ticks[tick_id]
-        bind_telemetry(
-            tick_id=tick.tick_id,
-            tick_index=tick.tick_index,
-            snapshot_id=tick.snapshot_id,
-        )
-        lease_owner = (
-            os.getenv("CLOUD_RUN_EXECUTION")
-            or os.getenv("HEATSAFE_SIMULATION_EXECUTION_ID")
-            or "cli"
-        )
-        lease_conflict = False
-        with component_span("lease_acquire") as lease_span:
-            try:
-                lease = repository.acquire_tick_lease(
-                    run.run_id, tick_id, lease_owner
-                )
-            except LeaseConflict:
-                lease_span.mark("NO_OP")
-                lease_conflict = True
-        if lease_conflict:
-            mark_attempt_outcome("NO_OP")
-            _emit(
-                "simulation_tick_overlap",
-                started=started,
-                simulation_run_id=run.run_id,
-                tick_id=tick_id,
-                status="RUNNING",
-                outcome="NO_OP_LEASE_HELD",
-            )
-            return 0
-        publication = repository.publish_tick(run.run_id, tick_id, lease.fencing_token)
-        bind_telemetry(
-            execution_mode=repository.ticks[tick_id].execution_mode or "FULL"
-        )
-        if repository.ticks[tick_id].status == "SUCCEEDED":
-            mark_attempt_outcome("NO_OP")
-            _emit(
-                "simulation_tick_noop",
-                started=started,
-                simulation_run_id=run.run_id,
-                tick_id=tick_id,
-                snapshot_id=publication.tick.snapshot_id,
-                status="SUCCEEDED",
-                outcome="NO_OP_ALREADY_SUCCEEDED",
-            )
-            return 0
-        scorer_builder = scorer_factory or create_scorer
-        scorer = scorer_builder(settings, memory=args.memory)
-        try:
-            scoring = scorer.score(run, publication)
-        except Exception as exc:
-            repository.finalize_score(run.run_id, tick_id, succeeded=False)
-            print(_json({
-                "tick_id": publication.tick.tick_id,
-                "status": "SCORE_FAILED",
-                "error": type(exc).__name__,
-            }))
-            return 2
-        if scoring.durably_finalized:
-            completed = repository.acknowledge_scoring_commit(
-                run.run_id, tick_id, scoring.prediction_run_id
-            )
-        else:
-            repository.record_scoring_lineage(
-                run.run_id, tick_id, scoring.prediction_run_id
-            )
-            repository.mark_scored(run.run_id, tick_id)
-            completed = repository.finalize_score(
-                run.run_id, tick_id, succeeded=True
-            )
-        _emit(
-            "simulation_tick_completed",
+        return _run_tick_once(
+            args,
+            settings,
+            repository,
             started=started,
-            simulation_run_id=run.run_id,
-            tick_id=publication.tick.tick_id,
-            snapshot_id=publication.tick.snapshot_id,
-            prediction_run_id=scoring.prediction_run_id,
-            status=repository.ticks[tick_id].status,
-            checksum=publication.result.checksum,
-            last_completed_tick_index=completed.last_completed_tick_index,
-            terminal_signal=completed.status == "COMPLETED",
+            scorer_factory=scorer_factory,
         )
-        return 0
     except SimulationRepositoryError as exc:
         parser_error = {"error": str(exc)}
         print(_json(parser_error))
@@ -358,6 +287,280 @@ def _run(
             "message": str(exc)[:240],
         }))
         return 2
+
+
+def _run_fast_replay(
+    args: argparse.Namespace,
+    settings: Settings,
+    repository: Any,
+    *,
+    started: float,
+    scorer_factory: Callable | None,
+) -> int:
+    with component_span("run_load"):
+        run = repository.status(args.scenario)
+    if run is None:
+        raise SimulationRepositoryError(
+            "start a simulation before requesting a fast replay"
+        )
+    if run.run_id != args.run_id:
+        raise SimulationRepositoryError(
+            "--run-id does not match the active scenario run"
+        )
+    if run.status == "PAUSED":
+        raise SimulationRepositoryError(
+            "resume the simulation before requesting a fast replay"
+        )
+    if run.status == "COMPLETED" or (
+        run.last_completed_tick_index is not None
+        and run.last_completed_tick_index >= args.until
+    ):
+        _emit(
+            "simulation_fast_replay_completed",
+            started=started,
+            simulation_run_id=run.run_id,
+            status=run.status,
+            outcome="NO_OP_TARGET_REACHED",
+            batch_size=1,
+            target_tick_index=args.until,
+            last_completed_tick_index=run.last_completed_tick_index,
+            executed_ticks=0,
+            terminal_signal=run.status == "COMPLETED",
+        )
+        return 0
+
+    scorer_builder = scorer_factory or create_scorer
+    scorer = scorer_builder(settings, memory=args.memory)
+    executed_ticks = 0
+    while True:
+        if time.monotonic() - started >= args.max_runtime_seconds:
+            _emit(
+                "simulation_fast_replay_stopped",
+                started=started,
+                simulation_run_id=run.run_id,
+                status=run.status,
+                outcome="STOPPED_RUNTIME_LIMIT",
+                batch_size=1,
+                target_tick_index=args.until,
+                last_completed_tick_index=run.last_completed_tick_index,
+                executed_ticks=executed_ticks,
+            )
+            return 2
+        before_cursor = run.last_completed_tick_index
+        tick_started = time.monotonic()
+        telemetry = (
+            TickTelemetry(state_mode=settings.simulation_state_mode)
+            if component_telemetry_enabled()
+            else None
+        )
+        if telemetry is None:
+            code = _run_tick_once(
+                args,
+                settings,
+                repository,
+                started=tick_started,
+                scorer_factory=scorer_factory,
+                scorer=scorer,
+                run=run,
+            )
+        else:
+            with telemetry.activate():
+                try:
+                    code = _run_tick_once(
+                        args,
+                        settings,
+                        repository,
+                        started=tick_started,
+                        scorer_factory=scorer_factory,
+                        scorer=scorer,
+                        run=run,
+                    )
+                except BaseException as exc:
+                    telemetry.finish(
+                        outcome="FAILED", error_code=type(exc).__name__
+                    )
+                    raise
+                telemetry.finish(
+                    outcome=(
+                        telemetry.attempt_outcome
+                        if code == 0
+                        else "FAILED"
+                    ),
+                    error_code=(
+                        None if code == 0 else "TICK_COMMAND_FAILED"
+                    ),
+                )
+        if code != 0:
+            return code
+        run = repository.status(args.scenario)
+        if run is None:
+            raise SimulationRepositoryError(
+                "simulation disappeared during fast replay"
+            )
+        after_cursor = run.last_completed_tick_index
+        if after_cursor == before_cursor:
+            _emit(
+                "simulation_fast_replay_stalled",
+                started=started,
+                simulation_run_id=run.run_id,
+                status=run.status,
+                outcome="FAILED_NO_PROGRESS",
+                batch_size=1,
+                target_tick_index=args.until,
+                last_completed_tick_index=after_cursor,
+                executed_ticks=executed_ticks,
+            )
+            return 2
+        executed_ticks += 1
+        if run.status == "COMPLETED" or (
+            after_cursor is not None and after_cursor >= args.until
+        ):
+            _emit(
+                "simulation_fast_replay_completed",
+                started=started,
+                simulation_run_id=run.run_id,
+                status=run.status,
+                outcome="SUCCEEDED",
+                batch_size=1,
+                target_tick_index=args.until,
+                last_completed_tick_index=after_cursor,
+                executed_ticks=executed_ticks,
+                terminal_signal=run.status == "COMPLETED",
+            )
+            return 0
+
+
+def _run_tick_once(
+    args: argparse.Namespace,
+    settings: Settings,
+    repository: Any,
+    *,
+    started: float,
+    scorer_factory: Callable | None,
+    scorer: Any | None = None,
+    run: Any | None = None,
+) -> int:
+    if run is None:
+        with component_span("run_load"):
+            run = repository.status(args.scenario)
+    if run is None:
+        raise SimulationRepositoryError(
+            "start a simulation before requesting a tick"
+        )
+    bind_telemetry(simulation_run_id=run.run_id)
+    if run.status == "COMPLETED":
+        mark_attempt_outcome("NO_OP")
+        _emit(
+            "simulation_tick_terminal",
+            started=started,
+            simulation_run_id=run.run_id,
+            status="COMPLETED",
+            outcome="NO_OP_TERMINAL",
+            terminal_signal=True,
+        )
+        return 0
+    tick_id = args.tick_id
+    if tick_id is None:
+        if run.pending_score_tick_id is not None:
+            tick_id = run.pending_score_tick_id
+        else:
+            index = (
+                -1 if run.last_published_tick_index is None
+                else run.last_published_tick_index
+            ) + 1
+            tick_id = next(
+                tick.tick_id
+                for tick in repository.ticks.values()
+                if tick.run_id == run.run_id and tick.tick_index == index
+            )
+    tick = repository.ticks[tick_id]
+    validate_persisted_tick_clock(run, tick)
+    bind_telemetry(
+        tick_id=tick.tick_id,
+        tick_index=tick.tick_index,
+        snapshot_id=tick.snapshot_id,
+    )
+    lease_owner = (
+        os.getenv("CLOUD_RUN_EXECUTION")
+        or os.getenv("HEATSAFE_SIMULATION_EXECUTION_ID")
+        or "cli"
+    )
+    lease_conflict = False
+    with component_span("lease_acquire") as lease_span:
+        try:
+            lease = repository.acquire_tick_lease(
+                run.run_id, tick_id, lease_owner
+            )
+        except LeaseConflict:
+            lease_span.mark("NO_OP")
+            lease_conflict = True
+    if lease_conflict:
+        mark_attempt_outcome("NO_OP")
+        _emit(
+            "simulation_tick_overlap",
+            started=started,
+            simulation_run_id=run.run_id,
+            tick_id=tick_id,
+            status="RUNNING",
+            outcome="NO_OP_LEASE_HELD",
+        )
+        return 0
+    publication = repository.publish_tick(
+        run.run_id, tick_id, lease.fencing_token
+    )
+    bind_telemetry(
+        execution_mode=repository.ticks[tick_id].execution_mode or "FULL"
+    )
+    if repository.ticks[tick_id].status == "SUCCEEDED":
+        mark_attempt_outcome("NO_OP")
+        _emit(
+            "simulation_tick_noop",
+            started=started,
+            simulation_run_id=run.run_id,
+            tick_id=tick_id,
+            snapshot_id=publication.tick.snapshot_id,
+            status="SUCCEEDED",
+            outcome="NO_OP_ALREADY_SUCCEEDED",
+        )
+        return 0
+    if scorer is None:
+        scorer_builder = scorer_factory or create_scorer
+        scorer = scorer_builder(settings, memory=args.memory)
+    try:
+        scoring = scorer.score(run, publication)
+    except Exception as exc:
+        repository.finalize_score(run.run_id, tick_id, succeeded=False)
+        print(_json({
+            "tick_id": publication.tick.tick_id,
+            "status": "SCORE_FAILED",
+            "error": type(exc).__name__,
+        }))
+        return 2
+    if scoring.durably_finalized:
+        completed = repository.acknowledge_scoring_commit(
+            run.run_id, tick_id, scoring.prediction_run_id
+        )
+    else:
+        repository.record_scoring_lineage(
+            run.run_id, tick_id, scoring.prediction_run_id
+        )
+        repository.mark_scored(run.run_id, tick_id)
+        completed = repository.finalize_score(
+            run.run_id, tick_id, succeeded=True
+        )
+    _emit(
+        "simulation_tick_completed",
+        started=started,
+        simulation_run_id=run.run_id,
+        tick_id=publication.tick.tick_id,
+        snapshot_id=publication.tick.snapshot_id,
+        prediction_run_id=scoring.prediction_run_id,
+        status=repository.ticks[tick_id].status,
+        checksum=publication.result.checksum,
+        last_completed_tick_index=completed.last_completed_tick_index,
+        terminal_signal=completed.status == "COMPLETED",
+    )
+    return 0
 
 
 if __name__ == "__main__":

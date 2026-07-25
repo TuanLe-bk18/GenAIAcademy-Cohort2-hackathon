@@ -16,6 +16,7 @@ from .evidence_tabs import (
     render_model_performance,
 )
 from .state import advance_refresh_token, build_constraints, initialize_state
+from .replay import replay_run_label, replay_tick_time
 from .styles import render_styles
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
     "build_constraints",
     "create_copilot",
     "initialize_state",
+    "replay_run_label",
+    "replay_tick_time",
     "render_business_impact",
     "render_city_intelligence",
     "render_copilot_panel",

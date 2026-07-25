@@ -44,6 +44,14 @@ h4 { color:var(--ops-text); font-size:1.28rem; line-height:1.35; font-weight:750
 .ops-title { color:var(--ops-text); font-size:1.08rem; font-weight:700; }
 .ops-subtitle { color:var(--ops-muted); font-size:.82rem; margin-top:2px; }
 .ops-status-row { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin:.2rem 0 .65rem; }
+.ops-playback-strip {
+  display:flex; align-items:center; flex-wrap:wrap; gap:.55rem 1rem;
+  margin:.25rem 0 .65rem; padding:.55rem .7rem;
+  border:1px solid var(--ops-border); border-left:3px solid var(--ops-cool);
+  border-radius:var(--ops-radius-card); background:var(--ops-surface);
+  color:var(--ops-muted); font-size:.82rem; font-variant-numeric:tabular-nums;
+}
+.ops-playback-strip b { color:var(--ops-text); }
 .ops-pill {
   display:inline-flex; align-items:center; gap:6px; padding:.25rem .55rem;
   border:1px solid var(--ops-border); border-radius:999px; color:var(--ops-muted);
@@ -111,6 +119,10 @@ h4 { color:var(--ops-text); font-size:1.28rem; line-height:1.35; font-weight:750
 .ops-execution-result div { color:var(--ops-muted); font-size:.82rem; line-height:1.5; margin-top:.22rem; }
 div[data-testid="stButton"] button { border-color:var(--ops-border); background:var(--ops-surface); color:var(--ops-text); border-radius:var(--ops-radius-card); min-height:2.75rem; font-size:.84rem; text-align:left; }
 div[data-testid="stButton"] button:hover { border-color:rgba(233,134,58,.65); color:var(--ops-text); }
+div[data-testid="stButton"] button:focus-visible,
+button:focus-visible, input:focus-visible, [role="slider"]:focus-visible {
+  outline:2px solid var(--ops-cool); outline-offset:2px;
+}
 div[data-testid="stMetric"] { background:var(--ops-surface); border:1px solid var(--ops-border); padding:.8rem 1rem; border-radius:var(--ops-radius-panel); }
 div[data-testid="stDataFrame"], div[data-testid="stChatMessage"] { border:1px solid var(--ops-border); border-radius:var(--ops-radius-panel); overflow:hidden; }
 [data-testid="stExpander"] { border:1px solid var(--ops-border); border-radius:var(--ops-radius-panel); background:var(--ops-surface); }
@@ -119,10 +131,16 @@ div[data-testid="stDataFrame"], div[data-testid="stChatMessage"] { border:1px so
 [data-testid="stMarkdownContainer"] h4 { color:var(--ops-text); font-size:1.28rem; font-weight:750; padding-bottom:.45rem; border-bottom:1px solid var(--ops-border); }
 [data-testid="stWidgetLabel"] p, [data-testid="stCheckbox"] label p,
 [data-testid="stCaptionContainer"], [data-testid="stMarkdownContainer"] li { color:var(--ops-muted); font-size:.84rem; line-height:1.5; }
-[data-baseweb="input"] input { font-size:.9rem; }
+[data-baseweb="input"] input { font-size:1rem; }
 div[data-testid="stNumberInput"] label p { color:var(--ops-muted); font-size:.80rem; font-weight:650; text-transform:uppercase; letter-spacing:.04em; }
 div[data-testid="stNumberInput"] [data-baseweb="input"] { border-color:var(--ops-border); border-radius:var(--ops-radius-card); background:var(--ops-surface-2); }
 hr { border-color:var(--ops-border)!important; }
+@media (prefers-reduced-motion:reduce) {
+  *, *::before, *::after {
+    scroll-behavior:auto!important; animation-duration:.01ms!important;
+    animation-iteration-count:1!important; transition-duration:.01ms!important;
+  }
+}
 @media (max-width:900px) {
   .block-container { padding-left:1rem; padding-right:1rem; }
   .ops-zone-stats { grid-template-columns:repeat(2,1fr); }

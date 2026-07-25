@@ -19,6 +19,7 @@ def initialize_state(
     zones: Sequence[ZoneSnapshot],
     *,
     ordered_zones: Sequence[ZoneSnapshot] | None = None,
+    selection_context: str | None = None,
 ) -> ZoneSnapshot | None:
     """Initialize UI controls and return the selected zone for this snapshot."""
     st.session_state.setdefault("decision_budget_cap", DEFAULT_BUDGET_USD)
@@ -31,7 +32,7 @@ def initialize_state(
         return None
 
     valid_zone_ids = {zone.zone_id for zone in zones}
-    context = f"{scenario}:{snapshot_id}"
+    context = selection_context or f"{scenario}:{snapshot_id}"
     candidates = ordered_zones or zones
     default_zone = next(
         (zone for zone in candidates if zone.zone_id in valid_zone_ids), zones[0]

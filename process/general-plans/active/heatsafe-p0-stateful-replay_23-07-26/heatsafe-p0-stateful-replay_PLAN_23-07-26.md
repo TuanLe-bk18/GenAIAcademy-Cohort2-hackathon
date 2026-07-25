@@ -2966,7 +2966,7 @@ raw fixture, public endpoint, model, or legacy scheduler is deleted or replaced.
 
 ### Phase 6 — Fast Replay, Dynamic UI, End-to-End Proof, and Closeout
 
-**Status:** ⏳ PLANNED
+**Status:** 🚧 IN PROGRESS
 **Dependencies:** Phase 5R Stages 1–4 code complete; Stage 5 bounded provider evidence accepted
 **Estimate:** 1–2 days
 
@@ -3032,6 +3032,55 @@ is `VIABLE` within a deliberately narrow boundary:
 - The probe took 34.382 seconds locally, but this includes local simulation and
   manifest hashing and does not prove BigQuery/Cloud Run runtime. The
   `96+1 <=30 minutes` target remains a provider gate.
+
+#### Phase 6 Local Implementation Evidence — 25-07-2026
+
+The first app-bound implementation slice is complete locally without deploying
+or mutating provider resources:
+
+- `BigQueryRepository` now lists replay runs, reports bounded progress, and
+  reconstructs an exact committed tick from immutable run/tick/snapshot
+  history. Mixed lineage, duplicate zones, incomplete ten-zone results,
+  invalid run IDs, out-of-range ticks, and non-contiguous UI histories fail
+  closed. `zone_snapshots_current` is not used for historical reconstruction.
+- A read-only query against the existing `heatsafe_data` run
+  `454bffa67d9846d7adfa743b7f35c868` returned its three succeeded ticks and
+  reconstructed tick 2 with exactly ten zones. This also confirmed that the
+  pre-clock-fix app-bound run ledger can differ from the fixture timestamps;
+  exact immutable lineage is therefore the reader key. Direct image inspection
+  later confirmed that provider images tagged `phase5r-v12`, `phase5r-v13`,
+  and `phase5r-v14` all already use the fixture-owned epoch; the stale app-bound
+  run predates that corrected candidate lineage.
+- Historical forecasts are scoped to the exact selected
+  run/tick/snapshot. The reader tolerates the currently deployed legacy
+  forecast schema, where reuse metadata columns have not yet been added,
+  without changing that table.
+- `fast-replay` reuses the existing one-tick transaction sequentially, requires
+  an explicit active `--run-id`, supports an explicit terminal tick and
+  runtime limit, initializes the scorer once, stops on no progress or scoring
+  failure, and currently accepts only `--batch-size=1`. Batch sizes above one
+  remain rejected before mutation.
+- The Fast Runner was built on the v14 core: SHA-256 checksums for repository,
+  checkpoint, scoring, ML pipeline, scenario, and original one-tick CLI source
+  matched the `phase5r-v14` image digest
+  `sha256:7c4050e90a1a16cc04aad5c32b9bbed3103ebeaee0e7db81085a9a8e49f1f19e`.
+  A pre-lease clock guard now rejects any legacy July-clock run before it can
+  mutate tick lease state.
+- The Streamlit app now provides run selection, committed progress,
+  latest-follow, previous/play/next/latest, a tick slider, and 1/2/5-second
+  presentation speed. Historical playback binds decisions and forecasts to
+  the selected lineage and disables SafePause, Copilot, and unscoped audit
+  details.
+- Targeted repository/CLI/app tests passed `19/19`. The full regression suite
+  passed `207/207` in `292.630s`; compile, `pip check`, and `git diff --check`
+  also passed.
+- Live read-only Streamlit interaction checks passed at latest-follow tick 2
+  and historical tick 1 with no app exception. No Fast Runner invocation,
+  deployment, Scheduler change, BigQuery write, or GCS write was performed.
+
+Remaining provider gates are the immutable-image deployment, backup, bounded
+app-bound replay, runtime/cost evidence, dynamic UI capture across the selected
+ticks, control/retry proof, and invocation-97 terminal no-op.
 
 #### Stage 0: Pre-Phase Research
 
@@ -3234,11 +3283,11 @@ Each screenshot row references a saved BigQuery result artifact and Cloud Loggin
   dispatch-to-terminal interval `<120s`, and zero overlap before Scheduler
   enablement.
 - [ ] Run full test/compile/dependency gates.
-- [ ] Add exact-tick history queries and mixed-lineage rejection.
-- [ ] Add the bounded back-to-back fast-replay command.
+- [x] Add exact-tick history queries and mixed-lineage rejection.
+- [x] Add the bounded back-to-back fast-replay command.
 - [ ] Apply batch-8 only to Stage-0-approved heavy append-only rows; retain
   per-tick fallback.
-- [ ] Add latest-follow and read-only UI playback controls.
+- [x] Add latest-follow and read-only UI playback controls.
 - [ ] Run the one mandatory app-bound full 96-tick replay and invocation-97
   no-op gate in `heatsafe_data`.
 - [ ] Complete dynamic UI and BigQuery evidence.
