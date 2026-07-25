@@ -232,7 +232,7 @@ WHEN NOT MATCHED THEN INSERT (
   generator_version
 ) VALUES (
   @control_event_id, @scenario_id, @run_id, @source_tick_id,
-  @source_snapshot_id, @proposal_id, @payload_checksum, 'QUEUED',
+  @source_snapshot_id, @proposal_id, @payload_checksum, 'AUTHORIZED',
   @selected_driver_count, @requested_by, @actor_type, @request_execution_id,
   @created_at, @authorization_expires_at, @valid_from_simulation_at,
   @valid_until_simulation_at, @max_selected_drivers, TRUE,

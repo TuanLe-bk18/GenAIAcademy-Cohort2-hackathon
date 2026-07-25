@@ -9,6 +9,9 @@ from dataclasses import dataclass
 _PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 _DATASET_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$")
+_QUALIFIED_DATASET_RE = re.compile(
+    r"^[a-z][a-z0-9-]{4,28}[a-z0-9]\.[a-z][a-z0-9_]{0,127}$"
+)
 _IP_LIKE_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 _VERSION_RE = re.compile(r"^[a-z][a-z0-9._-]{0,63}$")
 _REGIONS = frozenset({"asia-southeast1"})
@@ -19,6 +22,7 @@ _SNAPSHOT_TABLES = frozenset({"zone_snapshots_current"})
 _GEMINI_MODELS = frozenset({"gemini-3.1-flash-lite"})
 _SIMULATION_SCENARIO_VERSIONS = frozenset({"hanoi_heatwave_v1"})
 _SIMULATION_GENERATOR_VERSIONS = frozenset({"stateful-replay-v1"})
+_SIMULATION_STATE_MODES = frozenset({"oracle", "checkpoint"})
 
 
 def _require_match(name: str, value: str, pattern: re.Pattern[str]) -> None:
@@ -82,6 +86,10 @@ class Settings:
     simulation_lease_seconds: int = 360
     simulation_generator_version: str = "stateful-replay-v1"
     simulation_staging_dataset_id: str = "heatsafe_sim_staging"
+    simulation_checkpoint_bucket: str = "cohort2track2-heatsafe-sim-checkpoints"
+    simulation_state_mode: str = "oracle"
+    simulation_staging_workers: int = 1
+    simulation_model_dataset: str | None = None
 
     def __post_init__(self) -> None:
         _require_match("GOOGLE_CLOUD_PROJECT", self.project_id, _PROJECT_ID_RE)
@@ -135,6 +143,21 @@ class Settings:
                 "HEATSAFE_SIMULATION_STAGING_DATASET must be separate from "
                 "HEATSAFE_DATASET"
             )
+        _validate_bucket(self.simulation_checkpoint_bucket)
+        _require_choice(
+            "HEATSAFE_SIMULATION_STATE_MODE",
+            self.simulation_state_mode,
+            _SIMULATION_STATE_MODES,
+        )
+        if not 1 <= self.simulation_staging_workers <= 4:
+            raise ValueError("HEATSAFE_SIMULATION_STAGING_WORKERS must be in 1..4")
+        if (
+            self.simulation_model_dataset is not None
+            and not _QUALIFIED_DATASET_RE.fullmatch(self.simulation_model_dataset)
+        ):
+            raise ValueError(
+                "HEATSAFE_SIMULATION_MODEL_DATASET must be project.dataset"
+            )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -185,6 +208,22 @@ class Settings:
             ),
             simulation_staging_dataset_id=os.getenv(
                 "HEATSAFE_SIMULATION_STAGING_DATASET", "heatsafe_sim_staging"
+            ),
+            simulation_checkpoint_bucket=os.getenv(
+                "HEATSAFE_SIMULATION_CHECKPOINT_BUCKET",
+                f"{project_id}-heatsafe-sim-checkpoints",
+            ),
+            simulation_state_mode=os.getenv(
+                "HEATSAFE_SIMULATION_STATE_MODE", "oracle"
+            ).lower(),
+            simulation_staging_workers=_parse_int(
+                "HEATSAFE_SIMULATION_STAGING_WORKERS",
+                "1",
+                minimum=1,
+                maximum=4,
+            ),
+            simulation_model_dataset=(
+                os.getenv("HEATSAFE_SIMULATION_MODEL_DATASET") or None
             ),
         )
 

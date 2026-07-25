@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import os
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -14,7 +15,10 @@ from heatsafe.simulation.control import (
 )
 from heatsafe.simulation.models import DriverStatus, PauseControl
 from heatsafe.simulation.repository import (
+    BigQuerySimulationRepository,
     InMemorySimulationRepository,
+    PersistedTick,
+    SimulationRun,
     SimulationRepositoryError,
 )
 from heatsafe.simulation.scoring import DeterministicSnapshotScorer
@@ -159,6 +163,123 @@ class ControlContractTests(unittest.TestCase):
         }
         self.assertEqual(values["actor_type"], "TRUSTED_OPERATOR")
         self.assertEqual(values["requested_by"], "heatsafe-simulation-control")
+
+    def test_control_authorization_is_frozen_once_for_retry(self):
+        frozen_at = self.now
+        source_time = datetime.fromisoformat("2026-05-26T00:00:00+07:00")
+        payload = _payload(now=frozen_at)
+        queued = validate_control_payload(
+            payload,
+            scenario_id="heatwave",
+            run_id="run-1",
+            source_tick_id="tick-0",
+            source_snapshot_id="snapshot-0",
+            source_tick_index=0,
+            now=frozen_at,
+            simulation_time=source_time,
+        )
+        base_row = {
+            "status": "AUTHORIZED",
+            "was_applied": False,
+            "created_at": frozen_at - timedelta(minutes=1),
+            "authorization_expires_at": frozen_at + timedelta(seconds=1),
+            "valid_until_simulation_at": source_time + timedelta(hours=1),
+            "proposal_json": payload,
+            "scenario_id": "heatwave",
+            "source_tick_id": "tick-0",
+            "source_snapshot_id": "snapshot-0",
+            "tick_index": 0,
+            "source_simulation_time": source_time,
+            "max_selected_drivers": 100,
+            "control_event_id": queued.control_event_id,
+            "proposal_payload_checksum": canonical_proposal_checksum(payload),
+        }
+
+        class Done:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def result(self):
+                return self.rows
+
+        class Client:
+            def __init__(self, row):
+                self.row = row
+                self.calls = 0
+
+            def query(self, _sql, job_config=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return Done([{"has_controls": True}])
+                return Done([self.row])
+
+        run = SimulationRun(
+            "run-1",
+            "heatwave",
+            "hanoi_heatwave_v1",
+            42,
+            "RUNNING",
+            source_time,
+        )
+        tick = PersistedTick(
+            "run-1",
+            "heatwave",
+            "tick-1",
+            1,
+            source_time + timedelta(minutes=15),
+            "snapshot-1",
+        )
+        repository = BigQuerySimulationRepository(
+            Client(base_row),
+            dataset="project.dataset",
+            now=lambda: frozen_at + timedelta(hours=1),
+        )
+
+        controls = repository._controls_for_run(
+            run, tick, authorization_time=frozen_at
+        )
+
+        self.assertTrue(controls)
+        self.assertEqual(repository._rejected_control_receipts, ())
+
+        expired_row = {
+            **base_row,
+            "authorization_expires_at": frozen_at,
+        }
+        expired_repository = BigQuerySimulationRepository(
+            Client(expired_row),
+            dataset="project.dataset",
+            now=lambda: frozen_at - timedelta(hours=1),
+        )
+        self.assertEqual(
+            expired_repository._controls_for_run(
+                run, tick, authorization_time=frozen_at
+            ),
+            (),
+        )
+        receipt = expired_repository._rejected_control_receipts[0]
+        self.assertEqual(receipt["outcome"], "EXPIRED")
+        self.assertEqual(receipt["recorded_at"], frozen_at)
+
+    def test_control_commit_sql_uses_frozen_authorization_time(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "heatsafe"
+            / "simulation"
+            / "repository.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "control.authorization_expires_at > @input_frozen_at",
+            source,
+        )
+        self.assertIn(
+            "control.authorization_expires_at <= @input_frozen_at",
+            source,
+        )
+        self.assertNotIn(
+            "control.authorization_expires_at > CURRENT_TIMESTAMP()",
+            source,
+        )
 
 
 class ClosedLoopRepositoryTests(unittest.TestCase):

@@ -54,6 +54,12 @@ class DemandForecast:
     source: str
     status: str
     points: tuple[ForecastPoint, ...]
+    forecast_reused: bool = False
+    forecast_source_tick_id: str | None = None
+    forecast_source_snapshot_id: str | None = None
+    forecast_source_prediction_run_id: str | None = None
+    forecast_age_minutes: int | None = None
+    generated_at: datetime | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +68,16 @@ class DemandForecast:
             "predicted_requests": self.predicted_requests,
             "source": self.source,
             "status": self.status,
+            "forecast_reused": self.forecast_reused,
+            "forecast_source_tick_id": self.forecast_source_tick_id,
+            "forecast_source_snapshot_id": self.forecast_source_snapshot_id,
+            "forecast_source_prediction_run_id": (
+                self.forecast_source_prediction_run_id
+            ),
+            "forecast_age_minutes": self.forecast_age_minutes,
+            "generated_at": (
+                self.generated_at.isoformat() if self.generated_at else None
+            ),
             "points": [point.to_dict() for point in self.points],
         }
 
@@ -368,13 +384,36 @@ class BigQueryRepository:
         )
         if not points:
             raise ForecastUnavailable(f"TimesFM returned no valid points for {zone_id}")
+        first = rows[0]
+        reused = bool(getattr(first, "forecast_reused", False))
+        source_tick_id = getattr(first, "forecast_source_tick_id", None)
+        age_minutes = getattr(first, "forecast_age_minutes", None)
+        source = "BigQuery ML · TimesFM AI.FORECAST"
+        if reused:
+            source = (
+                "BigQuery ML · TimesFM reused"
+                f" from tick {source_tick_id or 'unknown'}"
+                f" · age {int(age_minutes or 0)} min"
+            )
         return DemandForecast(
             zone_id=zone_id,
             horizon_minutes=horizon_minutes,
             predicted_requests=sum(point.predicted_requests for point in points),
-            source="BigQuery ML · TimesFM AI.FORECAST",
+            source=source,
             status="OK",
             points=points,
+            forecast_reused=reused,
+            forecast_source_tick_id=source_tick_id,
+            forecast_source_snapshot_id=getattr(
+                first, "forecast_source_snapshot_id", None
+            ),
+            forecast_source_prediction_run_id=getattr(
+                first, "forecast_source_prediction_run_id", None
+            ),
+            forecast_age_minutes=(
+                int(age_minutes) if age_minutes is not None else None
+            ),
+            generated_at=getattr(first, "generated_at", None),
         )
 
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
@@ -388,14 +427,25 @@ class BigQueryRepository:
               predicted_requests forecast_value,
               lower_bound prediction_interval_lower_bound,
               upper_bound prediction_interval_upper_bound,
-              status ai_forecast_status
-            FROM `{self.dataset}.zone_demand_forecasts`
-            WHERE scenario_id = @scenario_id AND zone_id = @zone_id
-              AND snapshot_id = (
-                SELECT ANY_VALUE(snapshot_id) FROM `{self.table}`
-                WHERE scenario_id = @scenario_id
+              status ai_forecast_status,
+              forecast_reused,
+              forecast_source_tick_id,
+              forecast_source_snapshot_id,
+              forecast_source_prediction_run_id,
+              forecast_age_minutes,
+              generated_at
+            FROM `{self.dataset}.zone_demand_forecasts` forecast
+            WHERE forecast.scenario_id = @scenario_id
+              AND forecast.zone_id = @zone_id
+              AND EXISTS (
+                SELECT 1 FROM `{self.table}` current
+                WHERE current.scenario_id = @scenario_id
+                  AND current.zone_id = forecast.zone_id
+                  AND current.snapshot_id = forecast.snapshot_id
+                  AND current.simulation_run_id IS NOT DISTINCT FROM
+                      forecast.simulation_run_id
+                  AND current.tick_id IS NOT DISTINCT FROM forecast.tick_id
               )
-            QUALIFY prediction_run_id = MAX(prediction_run_id) OVER ()
             ORDER BY forecast_at
             LIMIT @horizon_intervals
         """
@@ -423,22 +473,31 @@ class BigQueryRepository:
             WITH latest_runs AS (
               SELECT
                 zone_id,
-                prediction_run_id,
                 forecast_at forecast_timestamp,
                 predicted_requests forecast_value,
                 lower_bound prediction_interval_lower_bound,
                 upper_bound prediction_interval_upper_bound,
-                status ai_forecast_status
-              FROM `{self.dataset}.zone_demand_forecasts`
-              WHERE scenario_id = @scenario_id AND zone_id IN UNNEST(@zone_ids)
-                AND snapshot_id = (
-                  SELECT ANY_VALUE(snapshot_id) FROM `{self.table}`
-                  WHERE scenario_id = @scenario_id
+                status ai_forecast_status,
+                forecast_reused,
+                forecast_source_tick_id,
+                forecast_source_snapshot_id,
+                forecast_source_prediction_run_id,
+                forecast_age_minutes,
+                generated_at
+              FROM `{self.dataset}.zone_demand_forecasts` forecast
+              WHERE forecast.scenario_id = @scenario_id
+                AND forecast.zone_id IN UNNEST(@zone_ids)
+                AND EXISTS (
+                  SELECT 1 FROM `{self.table}` current
+                  WHERE current.scenario_id = @scenario_id
+                    AND current.zone_id = forecast.zone_id
+                    AND current.snapshot_id = forecast.snapshot_id
+                    AND current.simulation_run_id IS NOT DISTINCT FROM
+                        forecast.simulation_run_id
+                    AND current.tick_id IS NOT DISTINCT FROM forecast.tick_id
                 )
-              QUALIFY prediction_run_id = MAX(prediction_run_id)
-                OVER (PARTITION BY zone_id)
             )
-            SELECT * EXCEPT(prediction_run_id)
+            SELECT *
             FROM latest_runs
             QUALIFY ROW_NUMBER() OVER (
               PARTITION BY zone_id ORDER BY forecast_timestamp

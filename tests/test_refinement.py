@@ -151,7 +151,7 @@ class CopilotExecutionTests(unittest.TestCase):
 
 
 class BigQueryBatchForecastTests(unittest.TestCase):
-    def test_batch_forecast_isolates_latest_run_and_keeps_partial_results(self):
+    def test_batch_forecast_uses_exact_current_lineage_and_keeps_partial_results(self):
         captured = {}
         row = SimpleNamespace(
             zone_id="available-zone",
@@ -160,6 +160,12 @@ class BigQueryBatchForecastTests(unittest.TestCase):
             prediction_interval_lower_bound=8.0,
             prediction_interval_upper_bound=12.0,
             ai_forecast_status="",
+            forecast_reused=True,
+            forecast_source_tick_id="tick-0",
+            forecast_source_snapshot_id="snapshot-0",
+            forecast_source_prediction_run_id="prediction-0",
+            forecast_age_minutes=15,
+            generated_at=datetime.now(UTC),
         )
 
         class QueryResult:
@@ -182,6 +188,10 @@ class BigQueryBatchForecastTests(unittest.TestCase):
         self.assertIn("WITH latest_runs AS", captured["query"])
         self.assertIn("FROM latest_runs", captured["query"])
         self.assertIn("PARTITION BY zone_id ORDER BY forecast_timestamp", captured["query"])
+        self.assertNotIn("MAX(prediction_run_id)", captured["query"])
+        self.assertIn("current.tick_id IS NOT DISTINCT FROM", captured["query"])
+        self.assertTrue(forecasts["available-zone"].forecast_reused)
+        self.assertIn("reused from tick tick-0", forecasts["available-zone"].source)
 
 
 class SharedDecisionServiceTests(unittest.TestCase):

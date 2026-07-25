@@ -8,6 +8,7 @@ from heatsafe.simulation.repository import (
     InMemorySimulationRepository,
     LeaseConflict,
     RunConflict,
+    SimulationRun,
     SimulationRepositoryError,
 )
 from infra.provision_gcp import table_schemas
@@ -257,6 +258,58 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         }]
         repository._load_ticks(run)
         self.assertEqual(repository.ticks["tick-0"].run_id, run.run_id)
+
+    def test_status_loads_run_and_ticks_in_one_billed_query(self):
+        client = self.Client()
+        repository = BigQuerySimulationRepository(
+            client, dataset="project.dataset"
+        )
+        calls = []
+
+        def query(sql, _params):
+            calls.append(sql)
+            return [{
+                "simulation_run_id": "run-1",
+                "scenario_id": "heatwave",
+                "scenario_version": "hanoi_heatwave_v1",
+                "seed": 42,
+                "status": "RUNNING",
+                "simulation_start_at": datetime(2026, 5, 26, tzinfo=UTC),
+                "last_published_tick_index": None,
+                "last_completed_tick_index": None,
+                "pending_score_tick_id": None,
+                "risk_model_version": None,
+                "forecast_context_version": None,
+                "forecast_context_seeded_at": None,
+                "forecast_context_point_count": None,
+                "persisted_ticks": [],
+            }]
+
+        repository._query = query
+        run = repository.status("heatwave")
+        self.assertIsNotNone(run)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("ARRAY_AGG", calls[0])
+        self.assertIn("persisted_ticks", calls[0])
+
+    def test_reload_preserves_sql_null_for_nullable_json_fields(self):
+        client = self.Client()
+        repository = BigQuerySimulationRepository(
+            client, dataset="project.dataset"
+        )
+        repository._load_ticks(
+            SimulationRun(
+                "run-1",
+                "heatwave",
+                "hanoi_heatwave_v1",
+                42,
+                "RUNNING",
+                datetime(2026, 5, 26, tzinfo=UTC),
+            )
+        )
+        sql = client.queries[-1]
+        self.assertIn("input_manifest_json IS NULL", sql)
+        self.assertIn("execution_reason_codes_json IS NULL", sql)
 
 
 if __name__ == "__main__":

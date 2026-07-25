@@ -179,6 +179,11 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("forecast_at", "TIMESTAMP"), _f("predicted_requests", "INT64"),
             _f("lower_bound", "INT64"), _f("upper_bound", "INT64"),
             _f("model_version", "STRING"), _f("status", "STRING"),
+            _f("forecast_source_tick_id", "STRING", "NULLABLE"),
+            _f("forecast_source_snapshot_id", "STRING", "NULLABLE"),
+            _f("forecast_source_prediction_run_id", "STRING", "NULLABLE"),
+            _f("forecast_reused", "BOOL", "NULLABLE"),
+            _f("forecast_age_minutes", "INT64", "NULLABLE"),
             *prediction_lineage,
         ],
         "model_evaluations": [
@@ -250,6 +255,10 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("last_published_tick_index", "INT64", "NULLABLE"),
             _f("last_completed_tick_index", "INT64", "NULLABLE"),
             _f("pending_score_tick_id", "STRING", "NULLABLE"),
+            _f("risk_model_version", "STRING", "NULLABLE"),
+            _f("forecast_context_version", "STRING", "NULLABLE"),
+            _f("forecast_context_seeded_at", "TIMESTAMP", "NULLABLE"),
+            _f("forecast_context_point_count", "INT64", "NULLABLE"),
             _f("config_json", "JSON"), _f("created_at", "TIMESTAMP"),
             _f("updated_at", "TIMESTAMP"), _f("is_simulated", "BOOL"),
         ],
@@ -267,6 +276,26 @@ def table_schemas() -> dict[str, list[bigquery.SchemaField]]:
             _f("finished_at", "TIMESTAMP", "NULLABLE"),
             _f("error_code", "STRING", "NULLABLE"),
             _f("error_message", "STRING", "NULLABLE"),
+            _f("input_manifest_json", "JSON", "NULLABLE"),
+            _f("input_manifest_checksum", "STRING", "NULLABLE"),
+            _f("input_frozen_at", "TIMESTAMP", "NULLABLE"),
+            _f("checkpoint_object_name", "STRING", "NULLABLE"),
+            _f("checkpoint_format_version", "STRING", "NULLABLE"),
+            _f("checkpoint_generation", "INT64", "NULLABLE"),
+            _f("checkpoint_compressed_size", "INT64", "NULLABLE"),
+            _f("checkpoint_expanded_size", "INT64", "NULLABLE"),
+            _f("checkpoint_payload_sha256", "STRING", "NULLABLE"),
+            _f("checkpoint_state_checksum", "STRING", "NULLABLE"),
+            _f("state_mode", "STRING", "NULLABLE"),
+            _f("execution_mode", "STRING", "NULLABLE"),
+            _f("execution_reason_codes_json", "JSON", "NULLABLE"),
+            _f("low_risk_streak", "INT64", "NULLABLE"),
+            _f("recovery_streak", "INT64", "NULLABLE"),
+            _f("scoring_outcome", "STRING", "NULLABLE"),
+            _f("forecast_source_tick_id", "STRING", "NULLABLE"),
+            _f("forecast_source_snapshot_id", "STRING", "NULLABLE"),
+            _f("forecast_source_prediction_run_id", "STRING", "NULLABLE"),
+            _f("forecast_generated_at", "TIMESTAMP", "NULLABLE"),
             _f("generator_version", "STRING"), _f("is_simulated", "BOOL"),
         ],
         "driver_simulation_state": [
@@ -373,6 +402,59 @@ def ensure_bucket(settings: Settings) -> storage.Bucket:
     if not any(rule.get("condition", {}).get("matchesPrefix") == ["weather/"] for rule in bucket.lifecycle_rules):
         bucket.add_lifecycle_delete_rule(age=30, matches_prefix=["weather/"])
         bucket.patch()
+    return bucket
+
+
+def ensure_checkpoint_bucket(settings: Settings) -> storage.Bucket:
+    """Create/read back the dedicated, non-public, regional checkpoint bucket."""
+    client = storage.Client(project=settings.project_id)
+    bucket = client.lookup_bucket(settings.simulation_checkpoint_bucket)
+    if bucket is None:
+        bucket = client.bucket(settings.simulation_checkpoint_bucket)
+        bucket.iam_configuration.uniform_bucket_level_access_enabled = True
+        bucket.iam_configuration.public_access_prevention = "enforced"
+        bucket.labels = {
+            "app": "heatsafe",
+            "env": "demo",
+            "component": "simulation-checkpoint",
+            "managed_by": "scripts",
+        }
+        bucket = client.create_bucket(
+            bucket, project=settings.project_id, location=settings.region
+        )
+    bucket.reload()
+    if bucket.location.lower() != settings.region.lower():
+        raise RuntimeError(
+            "checkpoint bucket location conflicts with simulation region"
+        )
+    bucket.iam_configuration.uniform_bucket_level_access_enabled = True
+    bucket.iam_configuration.public_access_prevention = "enforced"
+    bucket.labels = {
+        **dict(bucket.labels or {}),
+        "app": "heatsafe",
+        "env": "demo",
+        "component": "simulation-checkpoint",
+        "managed_by": "scripts",
+    }
+    rules = [
+        rule
+        for rule in bucket.lifecycle_rules
+        if rule.get("action", {}).get("type") != "Delete"
+    ]
+    rules.append({"action": {"type": "Delete"}, "condition": {"age": 35}})
+    bucket.lifecycle_rules = rules
+    bucket.patch()
+    bucket.reload()
+    if not bucket.iam_configuration.uniform_bucket_level_access_enabled:
+        raise RuntimeError("checkpoint bucket uniform access is not enabled")
+    if bucket.iam_configuration.public_access_prevention != "enforced":
+        raise RuntimeError("checkpoint bucket public access prevention is not enforced")
+    if not any(
+        rule.get("action", {}).get("type") == "Delete"
+        and rule.get("condition", {}).get("age") == 35
+        for rule in bucket.lifecycle_rules
+    ):
+        raise RuntimeError("checkpoint bucket 35-day lifecycle is missing")
     return bucket
 
 
@@ -738,6 +820,11 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--bootstrap-checkpoints",
+        action="store_true",
+        help="Provision/read back only the dedicated checkpoint bucket.",
+    )
+    parser.add_argument(
         "--dataset",
         help="Explicit disposable dataset ID for --schema-only.",
     )
@@ -748,6 +835,21 @@ def main() -> None:
     )
     args = parser.parse_args()
     settings = Settings.from_env()
+    if args.bootstrap_checkpoints:
+        if (
+            args.seed_demo
+            or args.schema_only
+            or args.schema_only_current
+            or args.dataset
+            or args.cleanup_schema_only
+        ):
+            parser.error("--bootstrap-checkpoints must be used alone")
+        bucket = ensure_checkpoint_bucket(settings)
+        print(
+            f"Prepared gs://{bucket.name} in {bucket.location} with "
+            "uniform access, public access prevention, and 35-day lifecycle"
+        )
+        return
     if args.schema_only and args.schema_only_current:
         parser.error("--schema-only and --schema-only-current are mutually exclusive")
     if args.schema_only_current:

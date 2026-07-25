@@ -66,7 +66,7 @@ class Phase4ProbeSafetyTests(unittest.TestCase):
         self.assertTrue(document["dry_run"])
         self.assertFalse(document["shared_mutation"])
         self.assertEqual(
-            document["scoring_maximum_bytes_billed"], 300_000_000
+            document["scoring_maximum_bytes_billed"], 400_000_000
         )
 
 

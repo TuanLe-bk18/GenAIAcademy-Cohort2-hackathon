@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import sys
 import uuid
 from datetime import UTC, datetime
@@ -16,9 +17,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from heatsafe.config import Settings  # noqa: E402
+from heatsafe.simulation.telemetry import component_span  # noqa: E402
 
 
-MAXIMUM_SCORING_QUERY_BYTES = 300_000_000
+MAXIMUM_SCORING_QUERY_BYTES = 400_000_000
+_MODEL_DATASET_RE = re.compile(
+    r"^[a-z][a-z0-9-]{4,28}[a-z0-9]\.[A-Za-z_][A-Za-z0-9_]{0,1023}$"
+)
 
 
 def _query(client: bigquery.Client, sql: str, *, parameters: list | None = None) -> None:
@@ -183,6 +188,13 @@ def score_snapshot(
     tick_id: str | None = None,
     snapshot_id: str | None = None,
     simulation_time: datetime | None = None,
+    model_dataset: str | None = None,
+    run_ml_inference: bool = True,
+    generate_forecast: bool = True,
+    forecast_source_tick_id: str | None = None,
+    forecast_source_snapshot_id: str | None = None,
+    forecast_source_prediction_run_id: str | None = None,
+    seed_forecast_context: bool = True,
 ) -> str:
     if feature_source not in {"legacy", "simulation"}:
         raise ValueError("feature_source must be 'legacy' or 'simulation'")
@@ -195,10 +207,31 @@ def score_snapshot(
         assert simulation_run_id and tick_id and snapshot_id and simulation_time
         if simulation_time.tzinfo is None:
             raise ValueError("simulation_time must be timezone-aware")
+        if not generate_forecast and any(
+            value is None
+            for value in (
+                forecast_source_tick_id,
+                forecast_source_snapshot_id,
+                forecast_source_prediction_run_id,
+            )
+        ):
+            raise ValueError(
+                "forecast reuse requires complete source lineage"
+            )
     elif any(value is not None for value in lineage):
         raise ValueError("legacy scoring does not accept simulation lineage")
 
     dataset = settings.dataset_path
+    if model_dataset is not None and not _MODEL_DATASET_RE.fullmatch(
+        model_dataset
+    ):
+        raise ValueError("model_dataset must be a fully qualified project.dataset")
+    model_path = (
+        f"{model_dataset}.heat_risk_escalation_model"
+        if model_dataset is not None
+        else f"{dataset}.heat_risk_escalation_model"
+    )
+    model_metadata_dataset = model_dataset or dataset
     prediction_run_id = (
         ""
         if feature_source == "simulation"
@@ -206,16 +239,22 @@ def score_snapshot(
     )
     if model_version is None:
         lookup_config = bigquery.QueryJobConfig(maximum_bytes_billed=50_000_000)
-        rows = list(
-            client.query(
-                f"""
-                SELECT model_version FROM `{dataset}.model_evaluations`
+        if feature_source == "simulation":
+            lookup_sql = f"""
+                SELECT model_version
+                FROM `{model_metadata_dataset}.model_evaluations`
+                WHERE model_name = 'heat_risk_escalation_model'
+                ORDER BY evaluated_at DESC
+                LIMIT 1
+            """
+        else:
+            lookup_sql = f"""
+                SELECT model_version
+                FROM `{model_metadata_dataset}.model_evaluations`
                 WHERE model_name = 'heat_risk_escalation_model'
                 ORDER BY evaluated_at DESC LIMIT 1
-                """,
-                job_config=lookup_config,
-            ).result()
-        )
+            """
+        rows = list(client.query(lookup_sql, job_config=lookup_config).result())
         if not rows:
             raise RuntimeError("No evaluated heat-risk model is available for scoring")
         model_version = str(rows[0].model_version)
@@ -227,8 +266,136 @@ def score_snapshot(
             ).encode()
         ).hexdigest()[:24]
 
+    context_seed_sql = ""
+    if feature_source == "simulation" and seed_forecast_context:
+        context_seed_sql = f"""
+    MERGE `{dataset}.demand_history` target
+    USING (
+      WITH points AS (
+        SELECT interval_start
+        FROM UNNEST(GENERATE_TIMESTAMP_ARRAY(
+          TIMESTAMP_SUB(@simulation_time, INTERVAL 30225 MINUTE),
+          @simulation_time,
+          INTERVAL 15 MINUTE
+        )) interval_start
+      )
+      SELECT @scenario_id scenario_id, zone.zone_id, points.interval_start,
+        CAST(GREATEST(1, ROUND(
+          zone.forecast_requests_30m / 2.0
+          * (0.58
+             + 0.38 * EXP(-POW(EXTRACT(HOUR FROM points.interval_start AT TIME ZONE 'Asia/Ho_Chi_Minh') - 8, 2) / 7.0)
+             + 0.22 * EXP(-POW(EXTRACT(HOUR FROM points.interval_start AT TIME ZONE 'Asia/Ho_Chi_Minh') - 12, 2) / 5.0)
+             + 0.52 * EXP(-POW(EXTRACT(HOUR FROM points.interval_start AT TIME ZONE 'Asia/Ho_Chi_Minh') - 19, 2) / 8.0)
+             + MOD(ABS(FARM_FINGERPRINT(CONCAT(zone.zone_id, ':', CAST(points.interval_start AS STRING)))), 9) / 100.0
+            )
+        )) AS INT64) requests,
+        TRUE is_simulated, @simulation_run_id simulation_run_id,
+        'forecast-context-seed' tick_id, 'timesfm-seed-v1' generator_version
+      FROM `{dataset}.{settings.current_snapshot_table}` zone
+      CROSS JOIN points
+      WHERE zone.scenario_id = @scenario_id
+        AND zone.simulation_run_id = @simulation_run_id
+        AND zone.tick_id = @tick_id
+    ) source
+    ON target.simulation_run_id = source.simulation_run_id
+      AND target.tick_id = source.tick_id
+      AND target.zone_id = source.zone_id
+      AND target.interval_start = source.interval_start
+    WHEN NOT MATCHED THEN INSERT (
+      scenario_id, zone_id, interval_start, requests, is_simulated,
+      simulation_run_id, tick_id, generator_version
+    ) VALUES (
+      source.scenario_id, source.zone_id, source.interval_start, source.requests,
+      source.is_simulated, source.simulation_run_id, source.tick_id,
+      source.generator_version
+    );
+    UPDATE `{dataset}.simulation_runs`
+    SET forecast_context_version = 'timesfm-2.5-context-2048-v1',
+        forecast_context_seeded_at = COALESCE(
+          forecast_context_seeded_at, CURRENT_TIMESTAMP()
+        ),
+        forecast_context_point_count = 20160,
+        risk_model_version = COALESCE(risk_model_version, @model_version)
+    WHERE simulation_run_id = @simulation_run_id
+      AND (
+        SELECT COUNT(*)
+        FROM `{dataset}.demand_history`
+        WHERE simulation_run_id = @simulation_run_id
+          AND tick_id = 'forecast-context-seed'
+      ) = 20160;
+        """
+
+    run_finalize_sql = ""
+    if feature_source == "simulation":
+        run_finalize_sql = f"""
+    UPDATE `{dataset}.simulation_runs`
+    SET last_completed_tick_index = (
+          SELECT tick_index
+          FROM `{dataset}.simulation_ticks`
+          WHERE simulation_run_id = @simulation_run_id
+            AND tick_id = @tick_id
+        ),
+        pending_score_tick_id = NULL,
+        next_simulation_at = (
+          SELECT TIMESTAMP_ADD(
+            simulation_start_at, INTERVAL 15 * (tick_index + 1) MINUTE
+          )
+          FROM `{dataset}.simulation_ticks`
+          WHERE simulation_run_id = @simulation_run_id
+            AND tick_id = @tick_id
+        ),
+        status = IF(
+          (SELECT tick_index
+           FROM `{dataset}.simulation_ticks`
+           WHERE simulation_run_id = @simulation_run_id
+             AND tick_id = @tick_id) = 95,
+          'COMPLETED',
+          status
+        ),
+        updated_at = CURRENT_TIMESTAMP()
+    WHERE simulation_run_id = @simulation_run_id
+      AND pending_score_tick_id = @tick_id;
+    ASSERT @@row_count = 1;
+        """
+
+    simulation_clock_guard_sql = ""
+    if feature_source == "simulation":
+        simulation_clock_guard_sql = f"""
+    ASSERT (
+      SELECT COUNT(*) = 1
+      FROM `{dataset}.simulation_runs` simulation_run
+      JOIN `{dataset}.simulation_ticks` tick
+        ON tick.simulation_run_id = simulation_run.simulation_run_id
+      WHERE simulation_run.simulation_run_id = @simulation_run_id
+        AND simulation_run.scenario_id = @scenario_id
+        AND tick.tick_id = @tick_id
+        AND tick.snapshot_id = @snapshot_id
+        AND tick.simulation_time = @simulation_time
+        AND simulation_run.simulation_start_at = TIMESTAMP_SUB(
+          @simulation_time, INTERVAL 15 * tick.tick_index MINUTE
+        )
+        AND (
+          SELECT COUNT(*) = 10
+            AND COUNTIF(snapshot.observed_at != @simulation_time) = 0
+            AND COUNTIF(snapshot.simulation_run_id != @simulation_run_id) = 0
+            AND COUNTIF(snapshot.tick_id != @tick_id) = 0
+          FROM `{dataset}.{settings.current_snapshot_table}` snapshot
+          WHERE snapshot.scenario_id = @scenario_id
+        )
+        AND (
+          SELECT COUNT(*) = 10
+            AND COUNTIF(demand.interval_start != @simulation_time) = 0
+          FROM `{dataset}.demand_history` demand
+          WHERE demand.scenario_id = @scenario_id
+            AND demand.simulation_run_id = @simulation_run_id
+            AND demand.tick_id = @tick_id
+        )
+    ) AS 'simulation replay clock and lineage must match before scoring';
+        """
+
     if feature_source == "simulation":
         feature_sql = f"""
+    {simulation_clock_guard_sql}
     ASSERT (
       SELECT COUNT(*) = 10
         AND COUNT(DISTINCT snapshot_id) = 1
@@ -342,46 +509,7 @@ def score_snapshot(
       AND driver.last_tick_id = @tick_id
       AND driver.status IN ('IDLE', 'TO_PICKUP', 'ON_TRIP');
 
-    MERGE `{dataset}.demand_history` target
-    USING (
-      WITH points AS (
-        SELECT interval_start
-        FROM UNNEST(GENERATE_TIMESTAMP_ARRAY(
-          TIMESTAMP_SUB(@simulation_time, INTERVAL 30225 MINUTE),
-          @simulation_time,
-          INTERVAL 15 MINUTE
-        )) interval_start
-      )
-      SELECT @scenario_id scenario_id, zone.zone_id, points.interval_start,
-        CAST(GREATEST(1, ROUND(
-          zone.forecast_requests_30m / 2.0
-          * (0.58
-             + 0.38 * EXP(-POW(EXTRACT(HOUR FROM points.interval_start AT TIME ZONE 'Asia/Ho_Chi_Minh') - 8, 2) / 7.0)
-             + 0.22 * EXP(-POW(EXTRACT(HOUR FROM points.interval_start AT TIME ZONE 'Asia/Ho_Chi_Minh') - 12, 2) / 5.0)
-             + 0.52 * EXP(-POW(EXTRACT(HOUR FROM points.interval_start AT TIME ZONE 'Asia/Ho_Chi_Minh') - 19, 2) / 8.0)
-             + MOD(ABS(FARM_FINGERPRINT(CONCAT(zone.zone_id, ':', CAST(points.interval_start AS STRING)))), 9) / 100.0
-            )
-        )) AS INT64) requests,
-        TRUE is_simulated, @simulation_run_id simulation_run_id,
-        'forecast-context-seed' tick_id, 'timesfm-seed-v1' generator_version
-      FROM `{dataset}.{settings.current_snapshot_table}` zone
-      CROSS JOIN points
-      WHERE zone.scenario_id = @scenario_id
-        AND zone.simulation_run_id = @simulation_run_id
-        AND zone.tick_id = @tick_id
-    ) source
-    ON target.simulation_run_id = source.simulation_run_id
-      AND target.tick_id = source.tick_id
-      AND target.zone_id = source.zone_id
-      AND target.interval_start = source.interval_start
-    WHEN NOT MATCHED THEN INSERT (
-      scenario_id, zone_id, interval_start, requests, is_simulated,
-      simulation_run_id, tick_id, generator_version
-    ) VALUES (
-      source.scenario_id, source.zone_id, source.interval_start, source.requests,
-      source.is_simulated, source.simulation_run_id, source.tick_id,
-      source.generator_version
-    );
+    {context_seed_sql}
         """
         forecast_anchor = "@simulation_time"
         forecast_filter = """
@@ -392,8 +520,21 @@ def score_snapshot(
         feature_cleanup = ""
         prediction_cleanup = ""
         tick_status_sql = f"""
+    BEGIN TRANSACTION;
     UPDATE `{dataset}.simulation_ticks`
-    SET status = 'SCORED',
+    SET status = 'SUCCEEDED',
+        scoring_outcome = 'SCORED',
+        finished_at = CURRENT_TIMESTAMP(),
+        forecast_source_prediction_run_id = IF(
+          forecast_source_tick_id = tick_id,
+          @prediction_run_id,
+          forecast_source_prediction_run_id
+        ),
+        forecast_generated_at = IF(
+          forecast_source_tick_id = tick_id,
+          CURRENT_TIMESTAMP(),
+          forecast_generated_at
+        ),
         error_code = IF(
           (SELECT LOGICAL_OR(feature_ood)
            FROM `{dataset}.driver_current_features`
@@ -404,6 +545,9 @@ def score_snapshot(
         )
     WHERE simulation_run_id = @simulation_run_id AND tick_id = @tick_id
       AND status IN ('SNAPSHOT_READY', 'SCORE_FAILED');
+    ASSERT @@row_count = 1;
+    {run_finalize_sql}
+    COMMIT TRANSACTION;
         """
     else:
         feature_sql = f"""
@@ -458,10 +602,49 @@ def score_snapshot(
         )
         tick_status_sql = ""
 
-    sql = f"""
+    forecast_context_guard_sql = ""
+    if feature_source == "simulation":
+        forecast_context_guard_sql = f"""
+    -- FORECAST_CONTEXT_GUARD_START
+    ASSERT (
+      SELECT COUNT(DISTINCT zone_id) = 10
+        AND COUNT(DISTINCT CONCAT(
+          zone_id, ':', CAST(interval_start AS STRING)
+        )) = 20160
+        AND MAX(interval_start) = @simulation_time
+      FROM `{dataset}.demand_history`
+      WHERE scenario_id = @scenario_id
+        AND simulation_run_id = @simulation_run_id
+        AND interval_start BETWEEN TIMESTAMP_SUB(
+          @simulation_time, INTERVAL 30225 MINUTE
+        ) AND @simulation_time
+    ) AS 'forecast context must end at the current simulation time';
+    -- FORECAST_CONTEXT_GUARD_END
+        """
+
+    if feature_source == "simulation" and not run_ml_inference:
+        sql = f"""
+    {feature_sql}
+    {feature_cleanup}
+    BEGIN TRANSACTION;
+    UPDATE `{dataset}.simulation_ticks`
+    SET status = 'SUCCEEDED',
+        scoring_outcome = 'SKIPPED_LOW_RISK',
+        finished_at = CURRENT_TIMESTAMP()
+    WHERE simulation_run_id = @simulation_run_id
+      AND tick_id = @tick_id
+      AND execution_mode IN ('MONITOR', 'RECOVERY')
+      AND status IN ('SNAPSHOT_READY', 'SCORE_FAILED');
+    ASSERT @@row_count = 1;
+    {run_finalize_sql}
+    COMMIT TRANSACTION;
+        """
+    else:
+        sql = f"""
     {feature_sql}
 
     {feature_cleanup}
+    {forecast_context_guard_sql}
     CREATE TEMP TABLE forecast_rows AS
     SELECT
       @prediction_run_id AS prediction_run_id,
@@ -478,6 +661,11 @@ def score_snapshot(
       CAST(ROUND(prediction_interval_upper_bound) AS INT64) AS upper_bound,
       'TimesFM 2.5' AS model_version,
       COALESCE(ai_forecast_status, '') AS status,
+      @tick_id AS forecast_source_tick_id,
+      @snapshot_id AS forecast_source_snapshot_id,
+      @prediction_run_id AS forecast_source_prediction_run_id,
+      FALSE AS forecast_reused,
+      0 AS forecast_age_minutes,
       @simulation_run_id AS simulation_run_id,
       @tick_id AS tick_id,
       @generator_version AS generator_version
@@ -508,12 +696,17 @@ def score_snapshot(
     WHEN NOT MATCHED THEN INSERT (
       prediction_run_id, generated_at, scenario_id, snapshot_id, zone_id,
       forecast_at, predicted_requests, lower_bound, upper_bound, model_version,
-      status, simulation_run_id, tick_id, generator_version
+      status, forecast_source_tick_id, forecast_source_snapshot_id,
+      forecast_source_prediction_run_id, forecast_reused,
+      forecast_age_minutes, simulation_run_id, tick_id, generator_version
     ) VALUES (
       source.prediction_run_id, source.generated_at, source.scenario_id,
       source.snapshot_id, source.zone_id, source.forecast_at,
       source.predicted_requests, source.lower_bound, source.upper_bound,
-      source.model_version, source.status, source.simulation_run_id,
+      source.model_version, source.status,
+      source.forecast_source_tick_id, source.forecast_source_snapshot_id,
+      source.forecast_source_prediction_run_id, source.forecast_reused,
+      source.forecast_age_minutes, source.simulation_run_id,
       source.tick_id, source.generator_version
     );
 
@@ -555,14 +748,14 @@ def score_snapshot(
       (SELECT prob
        FROM UNNEST(predicted_heat_risk_escalation_60m_probs)
        WHERE label = TRUE) risk_probability
-    FROM ML.PREDICT(MODEL `{dataset}.heat_risk_escalation_model`, TABLE action_features);
+    FROM ML.PREDICT(MODEL `{model_path}`, TABLE action_features);
 
     CREATE TEMP TABLE explained AS
     SELECT
       driver_id_hash,
       TO_JSON(top_feature_attributions) top_factors_json
     FROM ML.EXPLAIN_PREDICT(
-      MODEL `{dataset}.heat_risk_escalation_model`,
+      MODEL `{model_path}`,
       (SELECT * FROM action_features WHERE action_type = 'NONE'),
       STRUCT(3 AS top_k_features, TRUE AS approx_feature_contrib)
     );
@@ -624,6 +817,75 @@ def score_snapshot(
     );
     {tick_status_sql}
     """
+    reuse_forecast_sql = f"""
+    CREATE TEMP TABLE forecast_rows AS
+    SELECT
+      @prediction_run_id AS prediction_run_id,
+      source.generated_at,
+      @scenario_id AS scenario_id,
+      @snapshot_id AS snapshot_id,
+      source.zone_id,
+      source.forecast_at,
+      source.predicted_requests,
+      source.lower_bound,
+      source.upper_bound,
+      source.model_version,
+      source.status,
+      @forecast_source_tick_id AS forecast_source_tick_id,
+      @forecast_source_snapshot_id AS forecast_source_snapshot_id,
+      @forecast_source_prediction_run_id
+        AS forecast_source_prediction_run_id,
+      TRUE AS forecast_reused,
+      TIMESTAMP_DIFF(@simulation_time, source.generated_at, MINUTE)
+        AS forecast_age_minutes,
+      @simulation_run_id AS simulation_run_id,
+      @tick_id AS tick_id,
+      @generator_version AS generator_version
+    FROM `{dataset}.zone_demand_forecasts` source
+    WHERE source.simulation_run_id = @simulation_run_id
+      AND source.prediction_run_id = @forecast_source_prediction_run_id
+      AND source.tick_id = @forecast_source_tick_id
+      AND source.snapshot_id = @forecast_source_snapshot_id
+      AND source.forecast_at > @simulation_time;
+    ASSERT (
+      SELECT COUNT(DISTINCT zone_id) = 10
+        AND COUNTIF(status != '') = 0
+        AND MIN(forecast_at) > @simulation_time
+      FROM forecast_rows
+    ) AS 'reused forecast must retain ten successful future zone series';
+    MERGE `{dataset}.zone_demand_forecasts` target
+    USING forecast_rows source
+    ON target.prediction_run_id = source.prediction_run_id
+      AND target.zone_id = source.zone_id
+      AND target.forecast_at = source.forecast_at
+    WHEN NOT MATCHED THEN INSERT (
+      prediction_run_id, generated_at, scenario_id, snapshot_id, zone_id,
+      forecast_at, predicted_requests, lower_bound, upper_bound, model_version,
+      status, forecast_source_tick_id, forecast_source_snapshot_id,
+      forecast_source_prediction_run_id, forecast_reused,
+      forecast_age_minutes, simulation_run_id, tick_id, generator_version
+    ) VALUES (
+      source.prediction_run_id, source.generated_at, source.scenario_id,
+      source.snapshot_id, source.zone_id, source.forecast_at,
+      source.predicted_requests, source.lower_bound, source.upper_bound,
+      source.model_version, source.status, source.forecast_source_tick_id,
+      source.forecast_source_snapshot_id,
+      source.forecast_source_prediction_run_id, source.forecast_reused,
+      source.forecast_age_minutes, source.simulation_run_id,
+      source.tick_id, source.generator_version
+    );
+    """
+    if feature_source == "simulation" and not generate_forecast:
+        if run_ml_inference:
+            start = sql.index("    -- FORECAST_CONTEXT_GUARD_START")
+            end = sql.index("    CREATE TEMP TABLE action_features AS")
+            sql = sql[:start] + reuse_forecast_sql + "\n" + sql[end:]
+        else:
+            marker = f"    UPDATE `{dataset}.simulation_ticks`"
+            sql = sql.replace(
+                marker, reuse_forecast_sql + "\n" + marker, 1
+            )
+
     parameters = [
         bigquery.ScalarQueryParameter("scenario_id", "STRING", scenario),
         bigquery.ScalarQueryParameter("prediction_run_id", "STRING", prediction_run_id),
@@ -632,6 +894,19 @@ def score_snapshot(
         bigquery.ScalarQueryParameter("tick_id", "STRING", tick_id),
         bigquery.ScalarQueryParameter("snapshot_id", "STRING", snapshot_id),
         bigquery.ScalarQueryParameter("simulation_time", "TIMESTAMP", simulation_time),
+        bigquery.ScalarQueryParameter(
+            "forecast_source_tick_id", "STRING", forecast_source_tick_id
+        ),
+        bigquery.ScalarQueryParameter(
+            "forecast_source_snapshot_id",
+            "STRING",
+            forecast_source_snapshot_id,
+        ),
+        bigquery.ScalarQueryParameter(
+            "forecast_source_prediction_run_id",
+            "STRING",
+            forecast_source_prediction_run_id,
+        ),
         bigquery.ScalarQueryParameter(
             "generator_version", "STRING",
             settings.simulation_generator_version if feature_source == "simulation" else None,
@@ -643,7 +918,10 @@ def score_snapshot(
             maximum_bytes_billed=MAXIMUM_SCORING_QUERY_BYTES,
             labels={"app": "heatsafe", "component": "simulation-scoring"},
         )
-        client.query(sql, job_config=config).result()
+        with component_span("score_finalize") as score_span:
+            job = client.query(sql, job_config=config)
+            score_span.attach_job(job)
+            job.result()
     except Exception:
         if feature_source == "simulation":
             failure_config = bigquery.QueryJobConfig(

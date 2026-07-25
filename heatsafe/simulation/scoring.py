@@ -8,7 +8,11 @@ from typing import Any, Protocol
 
 from heatsafe.config import Settings
 
-from .repository import Publication, SimulationRun
+from .repository import (
+    Publication,
+    SimulationRun,
+    validate_publication_clock,
+)
 from .randomness import canonical_checksum
 
 
@@ -31,6 +35,7 @@ class ScoringOutcome:
     snapshot_id: str
     simulation_time: object
     predictions: tuple[SnapshotPrediction, ...] = ()
+    durably_finalized: bool = False
 
 
 class SimulationScorer(Protocol):
@@ -41,7 +46,16 @@ class DeterministicSnapshotScorer:
     """Local executable oracle preserving lineage and action ordering."""
 
     def score(self, run: SimulationRun, publication: Publication) -> ScoringOutcome:
+        validate_publication_clock(run, publication)
         tick = publication.tick
+        if tick.execution_mode in {"MONITOR", "RECOVERY"}:
+            return ScoringOutcome(
+                prediction_run_id=f"skip-{tick.tick_id}",
+                run_id=run.run_id,
+                tick_id=tick.tick_id,
+                snapshot_id=tick.snapshot_id,
+                simulation_time=tick.simulation_time,
+            )
         predictions = []
         for row in publication.driver_rows:
             if row["status"] not in {"IDLE", "TO_PICKUP", "ON_TRIP"}:
@@ -87,6 +101,7 @@ class BigQuerySnapshotScorer:
     def score(self, run: SimulationRun, publication: Publication) -> ScoringOutcome:
         from infra.ml_pipeline import score_snapshot
 
+        validate_publication_clock(run, publication)
         tick = publication.tick
         prediction_run_id = score_snapshot(
             self.settings,
@@ -97,6 +112,20 @@ class BigQuerySnapshotScorer:
             tick_id=tick.tick_id,
             snapshot_id=tick.snapshot_id,
             simulation_time=tick.simulation_time,
+            run_ml_inference=tick.execution_mode not in {"MONITOR", "RECOVERY"},
+            generate_forecast=tick.forecast_source_tick_id == tick.tick_id,
+            forecast_source_tick_id=tick.forecast_source_tick_id,
+            forecast_source_snapshot_id=tick.forecast_source_snapshot_id,
+            forecast_source_prediction_run_id=(
+                tick.forecast_source_prediction_run_id
+            ),
+            model_dataset=self.settings.simulation_model_dataset,
+            model_version=run.risk_model_version,
+            seed_forecast_context=not (
+                run.forecast_context_version
+                == "timesfm-2.5-context-2048-v1"
+                and run.forecast_context_point_count == 20_160
+            ),
         )
         return ScoringOutcome(
             prediction_run_id=prediction_run_id,
@@ -104,4 +133,5 @@ class BigQuerySnapshotScorer:
             tick_id=tick.tick_id,
             snapshot_id=tick.snapshot_id,
             simulation_time=tick.simulation_time,
+            durably_finalized=True,
         )

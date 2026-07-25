@@ -31,6 +31,7 @@ class SettingsContractTests(unittest.TestCase):
             settings.simulation_staging_dataset_path,
             "cohort2track2.heatsafe_sim_staging",
         )
+        self.assertIsNone(settings.simulation_model_dataset)
 
     def test_external_identifiers_fail_closed(self):
         invalid = {
@@ -62,6 +63,10 @@ class SettingsContractTests(unittest.TestCase):
             ],
             "HEATSAFE_SIMULATION_STAGING_DATASET": [
                 "", "Data", "1data", "data-set", "../staging",
+            ],
+            "HEATSAFE_SIMULATION_MODEL_DATASET": [
+                "heatsafe_data", "project.Data", "project.dataset.extra",
+                "project.dataset`",
             ],
         }
         for variable, values in invalid.items():

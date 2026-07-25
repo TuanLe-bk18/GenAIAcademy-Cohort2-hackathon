@@ -17,6 +17,13 @@ from .repository import (
     LeaseConflict,
     SimulationRepositoryError,
 )
+from .telemetry import (
+    TickTelemetry,
+    bind_telemetry,
+    component_span,
+    component_telemetry_enabled,
+    mark_attempt_outcome,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             "validate-scenario", "start", "tick", "status", "pause", "resume",
-            "queue-control",
+            "queue-control", "checkpoint-verify",
         ),
     )
     parser.add_argument("--scenario", default="heatwave")
@@ -44,10 +51,20 @@ def create_repository(settings: Settings, *, memory: bool):
     if memory:
         return InMemorySimulationRepository(lease_seconds=settings.simulation_lease_seconds)
     from google.cloud import bigquery
+    from google.cloud import storage
+
+    from .checkpoint import GCSCheckpointStore
+
     return BigQuerySimulationRepository(
         bigquery.Client(project=settings.project_id), dataset=settings.dataset_path,
         staging_dataset=settings.simulation_staging_dataset_path,
         lease_seconds=settings.simulation_lease_seconds,
+        checkpoint_store=GCSCheckpointStore(
+            storage.Client(project=settings.project_id),
+            settings.simulation_checkpoint_bucket,
+        ),
+        state_mode=settings.simulation_state_mode,
+        staging_workers=settings.simulation_staging_workers,
     )
 
 
@@ -102,6 +119,45 @@ def main(
     started = time.monotonic()
     args = build_parser().parse_args(argv)
     settings = Settings.from_env()
+    if args.command == "tick" and component_telemetry_enabled():
+        telemetry = TickTelemetry(state_mode=settings.simulation_state_mode)
+        with telemetry.activate():
+            try:
+                result = _run(
+                    args,
+                    settings,
+                    started=started,
+                    repository_factory=repository_factory,
+                    scorer_factory=scorer_factory,
+                    control_writer_factory=control_writer_factory,
+                )
+            except BaseException as exc:
+                telemetry.finish(outcome="FAILED", error_code=type(exc).__name__)
+                raise
+            telemetry.finish(
+                outcome=telemetry.attempt_outcome if result == 0 else "FAILED",
+                error_code=None if result == 0 else "TICK_COMMAND_FAILED",
+            )
+            return result
+    return _run(
+        args,
+        settings,
+        started=started,
+        repository_factory=repository_factory,
+        scorer_factory=scorer_factory,
+        control_writer_factory=control_writer_factory,
+    )
+
+
+def _run(
+    args: argparse.Namespace,
+    settings: Settings,
+    *,
+    started: float,
+    repository_factory: Callable | None,
+    scorer_factory: Callable | None,
+    control_writer_factory: Callable | None,
+) -> int:
     if args.command == "validate-scenario":
         from .scenario import load_scenario
         fixture = load_scenario(args.scenario_version)
@@ -170,10 +226,21 @@ def main(
         if args.command == "resume":
             print(_json(repository.resume(args.scenario)))
             return 0
-        run = repository.status(args.scenario)
+        if args.command == "checkpoint-verify":
+            run = repository.status(args.scenario)
+            if run is None:
+                raise SimulationRepositoryError(
+                    "start a simulation before verifying checkpoints"
+                )
+            print(_json(repository.verify_checkpoints(run.run_id)))
+            return 0
+        with component_span("run_load"):
+            run = repository.status(args.scenario)
         if run is None:
             raise SimulationRepositoryError("start a simulation before requesting a tick")
+        bind_telemetry(simulation_run_id=run.run_id)
         if run.status == "COMPLETED":
+            mark_attempt_outcome("NO_OP")
             _emit(
                 "simulation_tick_terminal",
                 started=started,
@@ -197,14 +264,28 @@ def main(
                     for tick in repository.ticks.values()
                     if tick.run_id == run.run_id and tick.tick_index == index
                 )
+        tick = repository.ticks[tick_id]
+        bind_telemetry(
+            tick_id=tick.tick_id,
+            tick_index=tick.tick_index,
+            snapshot_id=tick.snapshot_id,
+        )
         lease_owner = (
             os.getenv("CLOUD_RUN_EXECUTION")
             or os.getenv("HEATSAFE_SIMULATION_EXECUTION_ID")
             or "cli"
         )
-        try:
-            lease = repository.acquire_tick_lease(run.run_id, tick_id, lease_owner)
-        except LeaseConflict:
+        lease_conflict = False
+        with component_span("lease_acquire") as lease_span:
+            try:
+                lease = repository.acquire_tick_lease(
+                    run.run_id, tick_id, lease_owner
+                )
+            except LeaseConflict:
+                lease_span.mark("NO_OP")
+                lease_conflict = True
+        if lease_conflict:
+            mark_attempt_outcome("NO_OP")
             _emit(
                 "simulation_tick_overlap",
                 started=started,
@@ -215,7 +296,11 @@ def main(
             )
             return 0
         publication = repository.publish_tick(run.run_id, tick_id, lease.fencing_token)
+        bind_telemetry(
+            execution_mode=repository.ticks[tick_id].execution_mode or "FULL"
+        )
         if repository.ticks[tick_id].status == "SUCCEEDED":
+            mark_attempt_outcome("NO_OP")
             _emit(
                 "simulation_tick_noop",
                 started=started,
@@ -238,8 +323,18 @@ def main(
                 "error": type(exc).__name__,
             }))
             return 2
-        repository.mark_scored(run.run_id, tick_id)
-        completed = repository.finalize_score(run.run_id, tick_id, succeeded=True)
+        if scoring.durably_finalized:
+            completed = repository.acknowledge_scoring_commit(
+                run.run_id, tick_id, scoring.prediction_run_id
+            )
+        else:
+            repository.record_scoring_lineage(
+                run.run_id, tick_id, scoring.prediction_run_id
+            )
+            repository.mark_scored(run.run_id, tick_id)
+            completed = repository.finalize_score(
+                run.run_id, tick_id, succeeded=True
+            )
         _emit(
             "simulation_tick_completed",
             started=started,
