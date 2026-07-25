@@ -3082,6 +3082,56 @@ Remaining provider gates are the immutable-image deployment, backup, bounded
 app-bound replay, runtime/cost evidence, dynamic UI capture across the selected
 ticks, control/retry proof, and invocation-97 terminal no-op.
 
+#### Phase 6 App-Bound Provider Gate — 25-07-2026
+
+Explicit Phase 6 execute authority was received after the local slice was
+committed as `89b5b26`. The provider run preserved the stop/reassess boundary:
+
+- The pre-replay backup is stored in
+  `cohort2track2.heatsafe_phase6_backup` under tag `20260725113518` with a
+  45-day default expiration. Source and backup row counts plus canonical
+  checksums matched for 10 heatwave current-zone rows, 3,875 current-driver
+  rows, one scenario lock, and one active-run row.
+- Cloud Build `f582d9ed-6264-4fe3-8781-48e47e383f45` produced immutable image
+  `sha256:d1f9af7c60804495184e786cd2720942832e792f365960127cdd495eccf49699`.
+  The app is on revision `heatsafe-ops-00008-b22`, and the bounded job is
+  `heatsafe-simulation-fast-replay-20260725113518`; neither deployment created
+  or enabled a Scheduler.
+- The first `start` attempt failed before creating a run because the shared
+  app-bound `simulation_runs` table still had the legacy schema. The deployer
+  then applied the additive `--schema-only-current` migration; runtime code did
+  not provision infrastructure. The first tick attempt stopped before
+  publication because the configured checkpoint bucket did not exist. The
+  deployer created the regional, uniform-access, public-access-prevented
+  `cohort2track2-heatsafe-sim-checkpoints` bucket with a 35-day lifecycle and
+  runtime object-creator/viewer access. The failed lease was expired only after
+  asserting its exact run, tick, token, status, and missing checkpoint object.
+- Legacy run `454bffa67d9846d7adfa743b7f35c868` was backed up and transitioned
+  from `RUNNING` to `FAILED` under an exact-row assertion. Corrected app-bound
+  run `36a173c5a2d44e3a8f4da4eefae8709c` starts at
+  `2026-05-26 00:00:00+07:00`. Ticks 0–3 committed and scored sequentially;
+  tick 4 remained `PENDING`, there was no pending score, and the run was
+  explicitly returned to `PAUSED`.
+- Tick totals were 109.366s, 67.596s, and 73.176s for ticks 0–2. The dominant
+  measured components were `publication_commit` at 18.719–56.738s and
+  `score_finalize` at 27.534–38.620s. This projects far beyond the Phase 6
+  `96+1 <=30 minutes` target, so the execution was cancelled at the bounded
+  runtime gate rather than continuing to consume shared resources. No
+  invocation-97 claim is made.
+- Corrected tick-2 forecasts span `2026-05-26 00:45–04:00+07:00`; the old July
+  forecast-axis mismatch is absent for the new lineage. A read-only decision
+  replay at the same Hoàn Kiếm tick and UI controls still returned
+  `NO_FEASIBLE` for 19 eligible drivers with the same upper-demand ETA and
+  fulfillment conflicts. The prior clock mismatch was therefore not the direct
+  cause of that safety outcome.
+- All HeatSafe Scheduler resources remained `PAUSED`, the backup was retained,
+  and the deployed service continued to return a healthy response.
+
+The next implementation slice must reduce or amortize the measured
+`publication_commit` and `score_finalize` costs without weakening per-tick
+lineage, score barriers, checkpoint fencing, or fail-closed decisions. Resume
+the paused run only after a fresh runtime projection passes the 30-minute gate.
+
 #### Stage 0: Pre-Phase Research
 
 1. Review all prior phase evidence and unresolved test-infra notes.
