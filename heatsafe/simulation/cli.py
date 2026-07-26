@@ -34,11 +34,17 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "validate-scenario", "start", "tick", "fast-replay", "status",
             "pause", "resume", "queue-control", "checkpoint-verify",
+            "audit-realism",
         ),
     )
     parser.add_argument("--scenario", default="heatwave")
     parser.add_argument("--scenario-version", default="hanoi_heatwave_v1")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--seeds",
+        default="42,77,91",
+        help="comma-separated deterministic seeds for audit-realism",
+    )
     parser.add_argument("--tick-id")
     parser.add_argument("--proposal-id")
     parser.add_argument("--run-id")
@@ -167,6 +173,29 @@ def _run(
         fixture = load_scenario(args.scenario_version)
         print(_json({"scenario_version": args.scenario_version, "weather_points": len(fixture.weather)}))
         return 0
+    if args.command == "audit-realism":
+        from .realism import run_realism_audit
+
+        try:
+            seeds = tuple(int(value.strip()) for value in args.seeds.split(","))
+        except ValueError:
+            print(_json({"error": "--seeds must be comma-separated integers"}))
+            return 2
+        if not seeds or any(seed < 0 for seed in seeds):
+            print(_json({"error": "--seeds requires one or more non-negative integers"}))
+            return 2
+        audits = tuple(
+            run_realism_audit(seed=seed, scenario_version=args.scenario_version)
+            for seed in seeds
+        )
+        payload = {
+            "scenario_version": args.scenario_version,
+            "seeds": seeds,
+            "certified": all(audit.passed for audit in audits),
+            "audits": tuple(audit.to_dict() for audit in audits),
+        }
+        print(_json(payload))
+        return 0 if payload["certified"] else 2
     if args.command == "queue-control":
         required = {
             "--proposal-id": args.proposal_id,

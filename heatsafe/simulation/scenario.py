@@ -48,6 +48,7 @@ class ScenarioValidationError(ValueError):
 class ScenarioFixture:
     manifest: dict[str, Any]
     weather: tuple[dict[str, Any], ...]
+    realism_profile: dict[str, Any]
     directory: Path
 
 
@@ -105,7 +106,10 @@ def _validate_manifest(manifest: dict[str, Any], scenario_version: str) -> None:
         "derivation.version", "derivation.method_by_field",
         "derivation.output_columns", "validation.expected_first_time",
         "validation.expected_last_time", "validation.expected_rows",
-        "validation.ranges", "zone_weather_offsets", "operational_priors",
+        "validation.ranges", "zone_weather_offsets",
+        "zone_weather_offset_method.type", "zone_weather_offset_method.source",
+        "zone_weather_offset_method.derivation",
+        "zone_weather_offset_method.limitations", "operational_priors",
         "disclaimer",
     )
     for path in required:
@@ -128,13 +132,25 @@ def _validate_manifest(manifest: dict[str, Any], scenario_version: str) -> None:
     if tuple(_required_path(manifest, "derivation.output_columns")) != WEATHER_COLUMNS:
         _fail("manifest output columns differ from the Phase 1 contract")
     if _required_path(manifest, "zone_weather_offsets") != {
-        zone: 0.0
-        for zone in (
-            "hoan-kiem", "hai-ba-trung", "dong-da", "ba-dinh", "cau-giay",
-            "thanh-xuan", "hoang-mai", "nam-tu-liem", "ha-dong", "bac-tu-liem",
-        )
+        "hoan-kiem": 0.9,
+        "hai-ba-trung": 0.5,
+        "dong-da": 0.4,
+        "ba-dinh": 0.3,
+        "cau-giay": 0.0,
+        "thanh-xuan": -0.1,
+        "hoang-mai": -0.2,
+        "nam-tu-liem": -0.4,
+        "ha-dong": -0.6,
+        "bac-tu-liem": -0.8,
     }:
-        _fail("P0 requires an explicit zero weather offset for all ten zones")
+        _fail("scenario zone weather offsets differ from the reviewed profile")
+    if (
+        _required_path(manifest, "zone_weather_offset_method.type")
+        != "synthetic_stable_temperature_offset_c"
+        or _required_path(manifest, "zone_weather_offset_method.source")
+        != "data/demo_snapshot.json"
+    ):
+        _fail("scenario zone weather offset provenance is unsupported")
 
 
 def _validate_weather(
@@ -287,6 +303,35 @@ def _validate_weather(
     return tuple(converted)
 
 
+def _load_realism_profile(directory: Path) -> dict[str, Any]:
+    try:
+        profile = json.loads(
+            (directory / "realism_profile.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ScenarioValidationError(
+            f"cannot load scenario realism profile: {exc}"
+        ) from exc
+    required = {
+        "schema_version", "profile_id", "classification", "scope", "shift",
+        "dayparts", "acceptance",
+    }
+    if not required <= profile.keys():
+        _fail("realism profile is missing required fields")
+    if profile["classification"] != "synthetic-prior":
+        _fail("realism profile must label operational assumptions as synthetic-prior")
+    shift = profile["shift"]
+    expected_shift = {
+        "initial_carryover_max_minutes": 180,
+        "standard_continuous_shift_minutes": 210,
+        "extended_continuous_shift_minutes": 300,
+        "minimum_recovery_minutes": 15,
+    }
+    if shift != expected_shift:
+        _fail("realism profile shift assumptions differ from the reviewed engine")
+    return profile
+
+
 def load_scenario(
     scenario_version: str,
     *,
@@ -314,5 +359,6 @@ def load_scenario(
     return ScenarioFixture(
         manifest=manifest,
         weather=_validate_weather(manifest, rows),
+        realism_profile=_load_realism_profile(directory),
         directory=directory,
     )

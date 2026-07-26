@@ -164,6 +164,63 @@ class ControlContractTests(unittest.TestCase):
         self.assertEqual(values["actor_type"], "TRUSTED_OPERATOR")
         self.assertEqual(values["requested_by"], "heatsafe-simulation-control")
 
+    def test_city_controls_validate_first_then_commit_in_one_transaction(self):
+        first_payload = _payload(now=self.now)
+        second_payload = _payload(now=self.now)
+        second_payload["proposal_id"] = "proposal-2"
+        second_payload["driver_decisions"][0]["driver_id_hash"] = "driver-c"
+        second_payload["driver_decisions"][1]["driver_id_hash"] = "driver-d"
+
+        class Done:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def result(self):
+                return self.rows
+
+        class Client:
+            def __init__(self):
+                self.queries = []
+
+            def query(self, sql, job_config):
+                self.queries.append((sql, job_config))
+                if len(self.queries) == 1:
+                    return Done([{
+                        "proposal_json": first_payload,
+                        "scenario_id": "heatwave",
+                        "tick_index": 0,
+                        "simulation_time": datetime(2026, 5, 26, tzinfo=UTC),
+                    }])
+                if len(self.queries) == 2:
+                    return Done([{
+                        "proposal_json": second_payload,
+                        "scenario_id": "heatwave",
+                        "tick_index": 0,
+                        "simulation_time": datetime(2026, 5, 26, tzinfo=UTC),
+                    }])
+                return Done([])
+
+        client = Client()
+        queued = BigQueryControlWriter(
+            client, dataset="project.dataset", now=lambda: self.now
+        ).queue_many(
+            proposal_ids=("proposal-1", "proposal-2"),
+            run_id="run-1",
+            source_tick_id="tick-0",
+            source_snapshot_id="snapshot-0",
+            request_execution_id="job-execution-city",
+        )
+
+        self.assertEqual(len(queued), 2)
+        self.assertEqual(len(client.queries), 3)
+        transaction = client.queries[2][0]
+        self.assertIn("BEGIN TRANSACTION", transaction)
+        self.assertIn("COMMIT TRANSACTION", transaction)
+        self.assertEqual(
+            transaction.count("MERGE `project.dataset.simulation_control_events`"),
+            2,
+        )
+
     def test_control_authorization_is_frozen_once_for_retry(self):
         frozen_at = self.now
         source_time = datetime.fromisoformat("2026-05-26T00:00:00+07:00")

@@ -10,7 +10,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .config import Settings
-from .models import DriverActionPrediction, ZoneSnapshot
+from .demand_profile import intraday_demand_factor
+from .models import DriverActionPrediction, DriverCurrentFeature, ZoneSnapshot
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SNAPSHOT = ROOT / "data" / "demo_snapshot.json"
@@ -188,34 +189,8 @@ class SnapshotRepository:
 
     @staticmethod
     def _intraday_demand_factor(forecast_at: datetime, zone_seed: int) -> float:
-        """Return a smooth, zone-specific Hanoi ride-demand profile."""
-        local = forecast_at.astimezone(HANOI_TZ)
-        hour = local.hour + local.minute / 60
-        weekend = local.weekday() >= 5
-        phase = math.radians(zone_seed % 360)
-
-        def peak(center: float, width: float, amplitude: float) -> float:
-            return amplitude * math.exp(-0.5 * ((hour - center) / width) ** 2)
-
-        # Typical urban demand: commuter peaks on weekdays, a lunch lift, and
-        # the strongest peak in the evening. Weekends start later and stay busy
-        # later at night.
-        morning_center = (9.0 if weekend else 8.0) + ((zone_seed % 7) - 3) * 0.08
-        evening_center = (19.0 if weekend else 18.25) + ((zone_seed % 5) - 2) * 0.1
-        factor = 0.30
-        factor += peak(morning_center, 1.35, 0.44 if weekend else 0.66)
-        factor += peak(12.25, 1.65, 0.38)
-        factor += peak(evening_center, 1.75, 0.88 if weekend else 0.78)
-        factor += peak(22.0, 1.45, 0.22 if weekend else 0.12)
-
-        # Two low-amplitude waves add local variation without producing the
-        # jagged, independently-random points of the previous demo heuristic.
-        variation = (
-            1.0
-            + 0.045 * math.sin(2 * math.pi * hour / 1.75 + phase)
-            + 0.025 * math.sin(2 * math.pi * hour / 0.65 + phase / 2)
-        )
-        return max(0.2, factor * variation)
+        """Return the shared synthetic Hanoi operational demand profile."""
+        return intraday_demand_factor(forecast_at, zone_seed)
 
     def forecast_demand(self, zone_id: str, horizon_minutes: int = 60) -> DemandForecast:
         zone = next(zone for zone in self.load().zones if zone.zone_id == zone_id)
@@ -291,6 +266,15 @@ class SnapshotRepository:
             return {}
         raise AIModelUnavailable(
             "Driver-level BigQuery ML predictions are unavailable in snapshot mode"
+        )
+
+    def load_driver_features_many(
+        self, zone_ids: list[str], snapshot_id: str
+    ) -> dict[str, tuple[DriverCurrentFeature, ...]]:
+        if not zone_ids:
+            return {}
+        raise AIModelUnavailable(
+            "Driver-level current features are unavailable in snapshot mode"
         )
 
 
@@ -945,6 +929,114 @@ class BigQueryRepository:
             for zone_id, zone_rows in grouped.items()
         }
 
+    @staticmethod
+    def _build_driver_features(
+        rows: list[Any],
+    ) -> tuple[DriverCurrentFeature, ...]:
+        return tuple(
+            DriverCurrentFeature(
+                scenario_id=str(row.scenario_id),
+                snapshot_id=str(row.snapshot_id),
+                observed_at=_parse_datetime(row.observed_at),
+                driver_id_hash=str(row.driver_id_hash),
+                zone_id=str(row.zone_id),
+                heat_index_c=float(row.heat_index_c),
+                humidity_percent=float(row.humidity_percent),
+                continuous_exposure_minutes=int(row.continuous_exposure_minutes),
+                trips_60m=int(row.trips_60m),
+                distance_km_60m=float(row.distance_km_60m),
+                rest_minutes_120m=int(row.rest_minutes_120m),
+                hydration_gap_minutes=int(row.hydration_gap_minutes),
+                route_heat_load=float(row.route_heat_load),
+                workload_intensity=float(row.workload_intensity),
+                is_simulated=bool(row.is_simulated),
+                simulation_run_id=(
+                    str(row.simulation_run_id)
+                    if getattr(row, "simulation_run_id", None) is not None
+                    else None
+                ),
+                tick_id=(
+                    str(row.tick_id)
+                    if getattr(row, "tick_id", None) is not None
+                    else None
+                ),
+                driver_status=str(
+                    getattr(row, "driver_status", None) or "ACTIVE"
+                ),
+                heat_dose_120m=float(
+                    getattr(row, "heat_dose_120m", None) or 0.0
+                ),
+                acclimatization_class=(
+                    str(row.acclimatization_class)
+                    if getattr(row, "acclimatization_class", None) is not None
+                    else None
+                ),
+                generator_version=(
+                    str(row.generator_version)
+                    if getattr(row, "generator_version", None) is not None
+                    else None
+                ),
+            )
+            for row in rows
+        )
+
+    def load_driver_features_many(
+        self, zone_ids: list[str], snapshot_id: str
+    ) -> dict[str, tuple[DriverCurrentFeature, ...]]:
+        """Load one exact-snapshot feature batch without future/replay fallback."""
+        from google.cloud import bigquery
+
+        if not zone_ids:
+            return {}
+        lineage_sql = ""
+        lineage_parameters: list[Any] = []
+        if self._selected_replay_lineage is not None:
+            run_id, tick_id, selected_snapshot_id = self._selected_replay_lineage
+            if selected_snapshot_id != snapshot_id:
+                raise ValueError("selected replay snapshot does not match feature request")
+            lineage_sql = """
+              AND simulation_run_id = @simulation_run_id
+              AND tick_id = @tick_id
+            """
+            lineage_parameters = [
+                bigquery.ScalarQueryParameter(
+                    "simulation_run_id", "STRING", run_id
+                ),
+                bigquery.ScalarQueryParameter("tick_id", "STRING", tick_id),
+            ]
+        query = f"""
+            SELECT
+              scenario_id, snapshot_id, observed_at, driver_id_hash, zone_id,
+              heat_index_c, humidity_percent, continuous_exposure_minutes,
+              trips_60m, distance_km_60m, rest_minutes_120m,
+              hydration_gap_minutes, route_heat_load, workload_intensity,
+              is_simulated, simulation_run_id, tick_id, driver_status,
+              heat_dose_120m, acclimatization_class, generator_version
+            FROM `{self.dataset}.driver_current_features`
+            WHERE scenario_id = @scenario_id
+              AND snapshot_id = @snapshot_id
+              AND zone_id IN UNNEST(@zone_ids)
+              {lineage_sql}
+            ORDER BY zone_id, driver_id_hash
+        """
+        config = self._job_config(
+            [
+                bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
+                bigquery.ScalarQueryParameter("snapshot_id", "STRING", snapshot_id),
+                bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
+                *lineage_parameters,
+            ],
+            100_000_000,
+        )
+        rows = list(self._client().query(query, job_config=config).result())
+        grouped: dict[str, list[Any]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.zone_id), []).append(row)
+        return {
+            zone_id: self._build_driver_features(zone_rows)
+            for zone_id, zone_rows in grouped.items()
+        }
+
     def load_zone_risk_summary(self, snapshot_id: str) -> dict[str, float]:
         from google.cloud import bigquery
 
@@ -1078,6 +1170,18 @@ class HybridRepository:
                 "AI recommendations require materialized BigQuery ML predictions"
             )
         return self._active.load_driver_predictions_many(zone_ids, snapshot_id)
+
+    def load_driver_features_many(
+        self, zone_ids: list[str], snapshot_id: str
+    ) -> dict[str, tuple[DriverCurrentFeature, ...]]:
+        """Load only exact Current-mode driver evidence; never synthesize it."""
+        if not zone_ids:
+            return {}
+        if not isinstance(self._active, BigQueryRepository):
+            raise AIModelUnavailable(
+                "Preventive planning requires materialized current driver features"
+            )
+        return self._active.load_driver_features_many(zone_ids, snapshot_id)
 
     def load_zone_risk_summary(self, snapshot_id: str) -> dict[str, float]:
         if not isinstance(self._active, BigQueryRepository):

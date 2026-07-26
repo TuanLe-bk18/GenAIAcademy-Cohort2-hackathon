@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from datetime import datetime
 
-from heatsafe.repository import SnapshotRepository
+from heatsafe.demand_profile import intraday_demand_factor
 
 from .models import WeatherState, ZonePrior
 from .randomness import DeterministicRandom, stable_int
@@ -54,9 +54,9 @@ def demand_mean_15m(
     zone_shock: float,
 ) -> float:
     zone_seed = stable_int(zone.zone_id, bits=64)
-    intraday = SnapshotRepository._intraday_demand_factor(event_time, zone_seed)
+    intraday = intraday_demand_factor(event_time, zone_seed)
     anchor_time = event_time.replace(hour=13, minute=0, second=0, microsecond=0)
-    anchor = SnapshotRepository._intraday_demand_factor(anchor_time, zone_seed)
+    anchor = intraday_demand_factor(anchor_time, zone_seed)
     return max(
         0.0,
         zone.forecast_requests_30m

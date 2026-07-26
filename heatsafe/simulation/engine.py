@@ -53,10 +53,18 @@ from .transitions import (
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SNAPSHOT = ROOT / "data" / "demo_snapshot.json"
-GENERATOR_VERSION = "stateful-replay-v1"
+GENERATOR_VERSION = "stateful-replay-v2"
 SCENARIO_VERSION = "hanoi_heatwave_v1"
 _MASK_60 = (1 << 60) - 1
 _MASK_120 = (1 << 120) - 1
+_INITIAL_CARRYOVER_MAX_MINUTES = 180
+# A preventive relief rotation occurs before every member of a small overnight
+# cohort reaches the mandatory 4h+ threshold together.  This is a simulator
+# prior (not a claim about a real platform's labour policy) and is recorded in
+# the scenario realism profile.
+_STANDARD_CONTINUOUS_SHIFT_MINUTES = 210
+_EXTENDED_CONTINUOUS_SHIFT_MINUTES = 300
+_RECOVERY_RESET_MINUTES = 15
 
 
 def load_zone_priors(path: Path = DEFAULT_SNAPSHOT) -> tuple[ZonePrior, ...]:
@@ -105,12 +113,38 @@ def _schedule_bits(
     zone: ZonePrior,
     driver_ids: tuple[str, ...],
     seed: int,
-) -> dict[str, int]:
-    """Build exact 15-minute supply targets with stable, sticky assignments."""
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Build exact supply targets and declared overnight carry-over ages.
+
+    The scenario begins at midnight.  Drivers already online then may be in a
+    night shift, but their age is a bounded, deterministic shift prior rather
+    than a ratio copied from the 13:00 aggregate snapshot.  Rotation is also
+    explicit, preventing the same synthetic cohort from silently working all
+    day.
+    """
     bits = {driver_id: 0 for driver_id in driver_ids}
     active: set[str] = set()
     online_since: dict[str, int] = {}
     offline_since = {driver_id: 0 for driver_id in driver_ids}
+    carryover_slots = {
+        driver_id: stable_int(
+            SCENARIO_VERSION, seed, zone.zone_id, driver_id, "night-carryover"
+        )
+        % (_INITIAL_CARRYOVER_MAX_MINUTES // 15 + 1)
+        for driver_id in driver_ids
+    }
+    initial_carryover_minutes: dict[str, int] = {}
+    def max_shift_slots(driver_id: str) -> int:
+        # Most synthetic shifts rotate before four hours; a bounded, explicit
+        # minority covers longer demand windows and can legitimately enter the
+        # mandatory 4h+ cohort.  This avoids both roster-wide saturation and a
+        # demo that can never exercise the safety policy.
+        minutes = (
+            _EXTENDED_CONTINUOUS_SHIFT_MINUTES
+            if stable_int(SCENARIO_VERSION, seed, zone.zone_id, driver_id, "extended-shift") % 5 == 0
+            else _STANDARD_CONTINUOUS_SHIFT_MINUTES
+        )
+        return minutes // 15
     for slot in range(96):
         desired = target_active(zone, slot * 15)
         if len(active) > desired:
@@ -150,12 +184,50 @@ def _schedule_bits(
             )
             for driver_id in candidates[: desired - len(active)]:
                 active.add(driver_id)
-                online_since[driver_id] = slot
+                if slot == 0:
+                    initial_carryover_minutes[driver_id] = carryover_slots[driver_id] * 15
+                    online_since[driver_id] = -carryover_slots[driver_id]
+                else:
+                    online_since[driver_id] = slot
+        # A fixed synthetic roster must rotate while supply is flat as well as
+        # at supply transitions.  Otherwise one cohort can remain online for a
+        # whole day and turn an exposure threshold into a roster-wide artifact.
+        exhausted = sorted(
+            (
+                driver_id
+                for driver_id in active
+                if slot - online_since.get(driver_id, slot) >= max_shift_slots(driver_id)
+            ),
+            key=lambda driver_id: (online_since[driver_id], driver_id),
+        )
+        for driver_id in exhausted:
+            candidates = sorted(
+                (candidate for candidate in driver_ids if candidate not in active),
+                key=lambda candidate: (
+                    slot - offline_since.get(candidate, 0) < 2,
+                    -(slot - offline_since.get(candidate, 0)),
+                    stable_int(
+                        SCENARIO_VERSION,
+                        seed,
+                        zone.zone_id,
+                        slot,
+                        candidate,
+                        "shift-rotate",
+                    ),
+                ),
+            )
+            if not candidates:
+                continue
+            active.remove(driver_id)
+            offline_since[driver_id] = slot
+            replacement = candidates[0]
+            active.add(replacement)
+            online_since[replacement] = slot
         if len(active) != desired:
             raise RuntimeError(f"cannot allocate exact supply target for {zone.zone_id}")
         for driver_id in active:
             bits[driver_id] |= 1 << slot
-    return bits
+    return bits, initial_carryover_minutes
 
 
 def _largest_remainder(total: int, shares: tuple[float, ...]) -> tuple[int, ...]:
@@ -231,26 +303,11 @@ def initialize_state(
             f"sim-{canonical_checksum((SCENARIO_VERSION, seed, zone.zone_id, index))[:20]}"
             for index in range(roster_size)
         )
-        schedules = _schedule_bits(zone, driver_ids, seed)
+        schedules, initial_carryover_minutes = _schedule_bits(zone, driver_ids, seed)
         active_ids = sorted(
             driver_id for driver_id in driver_ids if schedules[driver_id] & 1
         )
         active_count = len(active_ids)
-        exposed_2h = round(
-            active_count * zone.exposed_2h_anchor / zone.active_anchor
-        )
-        exposed_4h = min(
-            exposed_2h,
-            round(active_count * zone.exposed_4h_anchor / zone.active_anchor),
-        )
-        exposure_order = sorted(
-            active_ids,
-            key=lambda driver_id: stable_int(
-                SCENARIO_VERSION, seed, zone.zone_id, driver_id, "exposure"
-            ),
-        )
-        four_hour_ids = set(exposure_order[:exposed_4h])
-        two_hour_ids = set(exposure_order[exposed_4h:exposed_2h])
         idle_count, pickup_count, trip_count = _largest_remainder(
             active_count, (0.60, 0.20, 0.20)
         )
@@ -286,14 +343,7 @@ def initialize_state(
                 else AcclimatizationClass.HIGH
             )
             status = statuses.get(driver_id, DriverStatus.OFFLINE)
-            if driver_id in four_hour_ids:
-                exposure = stream.randint(240, 360)
-            elif driver_id in two_hour_ids:
-                exposure = stream.randint(120, 239)
-            elif status in ACTIVE_STATUSES:
-                exposure = stream.randint(0, 119)
-            else:
-                exposure = 0
+            exposure = initial_carryover_minutes.get(driver_id, 0)
             prior_distance = (
                 round(3.0 + stream.uniform() * 5.0, 4)
                 if status in ACTIVE_STATUSES
@@ -309,13 +359,17 @@ def initialize_state(
                 schedule_bits=schedules[driver_id],
                 acclimatization_class=acclimatization,
                 continuous_exposure_minutes=exposure,
-                heat_dose_120m=round(exposure * 0.08, 4),
+                # There is no checked-in prior-day dose history.  Preserve the
+                # declared shift carry-over for continuous work only; start the
+                # decaying physiological proxy at a known baseline instead of
+                # inventing a 13:00-derived dose at midnight.
+                heat_dose_120m=0.0,
                 hydration_gap_minutes=stream.randint(15, 120)
                 if status in ACTIVE_STATUSES
                 else 0,
                 trips_minute_bits=prior_trip_bit,
                 distance_by_minute=(prior_distance,),
-                online_since_minute=0 if status in ACTIVE_STATUSES else None,
+                online_since_minute=-exposure if status in ACTIVE_STATUSES else None,
                 offline_since_minute=None if status in ACTIVE_STATUSES else 0,
             )
             if status in {DriverStatus.TO_PICKUP, DriverStatus.ON_TRIP}:
@@ -876,11 +930,41 @@ def _match_requests(
         )
 
 
+def _trailing_rest_minutes(rest_minute_bits: int) -> int:
+    """Return the current uninterrupted PAUSED streak from bounded history."""
+    count = 0
+    while rest_minute_bits & 1:
+        count += 1
+        rest_minute_bits >>= 1
+    return count
+
+
+def _heat_input_per_minute(
+    driver: DriverState,
+    weather: WeatherState,
+    acclimatization_factor: float,
+) -> float:
+    """Keep ambient and sunlight load separate in the thermal proxy.
+
+    High humidity can still create overnight ambient burden.  The solar term is
+    zero whenever shortwave radiation is zero, so the model does not treat a
+    midnight route as equivalent to direct daytime solar exposure.
+    """
+    ambient = max(0.0, weather.heat_index_c - 27.0)
+    solar = (
+        min(1.0, max(0.0, weather.shortwave_radiation_wm2) / 850.0)
+        * max(0.0, weather.heat_index_c - 30.0)
+        * 0.35
+    )
+    return (ambient + solar) * route_heat_load(driver) * acclimatization_factor / 60
+
+
 def _update_driver_metrics(
     drivers: dict[str, DriverState],
     interventions: dict[str, InterventionState],
     economics: dict[str, tuple[float, int, int]],
-    heat_index_c: float,
+    weather: WeatherState,
+    minute: int,
 ) -> None:
     decay = math.exp(-math.log(2) / 120)
     acclimatization = {
@@ -896,15 +980,27 @@ def _update_driver_metrics(
             DriverStatus.ON_TRIP,
             DriverStatus.TO_COOLSTOP,
         }
-        if exposed:
-            exposure = driver.continuous_exposure_minutes + 1
-        elif driver.status == DriverStatus.PAUSED:
-            exposure = max(0, driver.continuous_exposure_minutes - 3)
-        else:
-            exposure = max(0, driver.continuous_exposure_minutes - 1)
         paused = driver.status == DriverStatus.PAUSED
         rest_bits = ((driver.rest_minute_bits << 1) | int(paused)) & _MASK_120
-        if paused and rest_bits & ((1 << 5) - 1) == (1 << 5) - 1:
+        pause_recovery = _trailing_rest_minutes(rest_bits) >= _RECOVERY_RESET_MINUTES
+        offline_recovery = (
+            driver.status == DriverStatus.OFFLINE
+            and driver.offline_since_minute is not None
+            and minute - driver.offline_since_minute + 1 >= _RECOVERY_RESET_MINUTES
+        )
+        # A completed pause transitions to IDLE before this update.  Its trailing
+        # rest bits therefore remain the authoritative recovery evidence for the
+        # first active minute after the break.
+        recovered = pause_recovery or offline_recovery
+        if exposed:
+            exposure = (0 if recovered else driver.continuous_exposure_minutes) + 1
+        elif recovered:
+            exposure = 0
+        else:
+            # A shorter interruption neither counts as work nor silently turns
+            # continuous exposure into a slow-decay accumulator.
+            exposure = driver.continuous_exposure_minutes
+        if pause_recovery:
             hydration = 0
         elif exposed:
             hydration = driver.hydration_gap_minutes + 1
@@ -919,10 +1015,9 @@ def _update_driver_metrics(
             driver.contribution_by_minute + (contribution,)
         )[-60:]
         heat_input = (
-            max(0.0, heat_index_c - 27)
-            * route_heat_load(driver)
-            * acclimatization[driver.acclimatization_class]
-            / 60
+            _heat_input_per_minute(
+                driver, weather, acclimatization[driver.acclimatization_class]
+            )
             if exposed
             else 0.0
         )
@@ -1005,7 +1100,8 @@ def advance_minute(
         drivers,
         interventions,
         economics,
-        weather_at(fixture, minute).heat_index_c,
+        weather_at(fixture, minute),
+        minute,
     )
     next_state = replace(
         state,

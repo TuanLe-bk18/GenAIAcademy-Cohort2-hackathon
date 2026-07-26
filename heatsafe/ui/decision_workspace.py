@@ -314,6 +314,8 @@ def render_decision_workspace(
     expected_escalations: float | None = None,
     audit_store: AuditStore | None = None,
     data_fresh: bool = True,
+    show_execution: bool = True,
+    show_recommendation: bool = True,
     error: Exception | str | None = None,
 ) -> InterventionEvent | None:
     """Compose the selected-zone decision workspace from focused renderers."""
@@ -323,10 +325,22 @@ def render_decision_workspace(
     center, right = st.columns([2.2, 1], gap="medium")
     with center:
         render_zone_header(zone, expected_escalations)
-        render_recommendation(recommendation, error=error)
+        if show_recommendation:
+            render_recommendation(recommendation, error=error)
+        else:
+            st.info(
+                "Predictive watch · forecast and risk evidence are updating. "
+                "No SafePause plan is presented before the decision tick."
+            )
         render_forecast(forecast)
     with right:
         render_business_impact(proposal, constraints)
+        if not show_execution:
+            st.caption(
+                "Use the operational clock decision controls above to activate "
+                "SafePause or continue without intervention."
+            )
+            return None
         return render_execution(
             zone, proposal, audit_store, data_fresh=data_fresh
         )

@@ -292,6 +292,42 @@ class BigQueryPublisherShapeTests(unittest.TestCase):
         self.assertIn("ARRAY_AGG", calls[0])
         self.assertIn("persisted_ticks", calls[0])
 
+    def test_refresh_status_discards_cloud_run_process_cache(self):
+        repository = BigQuerySimulationRepository(
+            self.Client(), dataset="project.dataset"
+        )
+        calls = []
+
+        def query(_sql, _params):
+            calls.append(len(calls))
+            completed = None if len(calls) == 1 else 0
+            return [{
+                "simulation_run_id": "run-1",
+                "scenario_id": "heatwave",
+                "scenario_version": "hanoi_heatwave_v1",
+                "seed": 42,
+                "status": "RUNNING",
+                "simulation_start_at": datetime(2026, 5, 26, tzinfo=UTC),
+                "last_published_tick_index": completed,
+                "last_completed_tick_index": completed,
+                "pending_score_tick_id": None,
+                "risk_model_version": None,
+                "forecast_context_version": None,
+                "forecast_context_seeded_at": None,
+                "forecast_context_point_count": None,
+                "persisted_ticks": [],
+            }]
+
+        repository._query = query
+        first = repository.status("heatwave")
+        cached = repository.status("heatwave")
+        refreshed = repository.refresh_status("heatwave")
+
+        self.assertIs(first, cached)
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(first.last_completed_tick_index)
+        self.assertEqual(refreshed.last_completed_tick_index, 0)
+
     def test_reload_preserves_sql_null_for_nullable_json_fields(self):
         client = self.Client()
         repository = BigQuerySimulationRepository(

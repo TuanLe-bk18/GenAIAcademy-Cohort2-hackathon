@@ -333,6 +333,9 @@ class ScenarioFixtureTests(unittest.TestCase):
     def test_reviewed_fixture_loads_and_preserves_provenance(self):
         fixture = load_scenario("hanoi_heatwave_v1")
         self.assertEqual(len(fixture.weather), 96)
+        self.assertEqual(
+            fixture.realism_profile["classification"], "synthetic-prior"
+        )
         peak = max(fixture.weather, key=lambda row: row["temperature_c"])
         self.assertEqual(peak["local_time"].isoformat(), "2026-05-26T16:00:00+07:00")
         self.assertAlmostEqual(peak["temperature_c"], 41.1)

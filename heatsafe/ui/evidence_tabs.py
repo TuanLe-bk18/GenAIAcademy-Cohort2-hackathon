@@ -55,10 +55,15 @@ def render_city_intelligence(
         zones[0] if zones else None,
     )
     max_risk = max(zone_risk.values(), default=1.0) or 1.0
+    intervention_rank = {
+        row.zone_id: index for index, row in enumerate(city_plan.rows, 1)
+    }
     map_rows = []
     for zone in zones:
         expected = zone_risk.get(zone.zone_id)
         intensity = max(0.0, (expected or 0.0) / max_risk)
+        plan_rank = intervention_rank.get(zone.zone_id)
+        top_intervention = plan_rank is not None and plan_rank <= 3
         map_rows.append(
             {
                 "zone_id": zone.zone_id,
@@ -68,6 +73,13 @@ def render_city_intelligence(
                 "expected_events": round(expected, 2) if expected is not None else None,
                 "heat_index": zone.heat_index_c,
                 "active": zone.active_drivers,
+                "intervention_rank": plan_rank,
+                "line_color": (
+                    [255, 132, 61, 255]
+                    if top_intervention
+                    else [255, 255, 255, 70]
+                ),
+                "line_width": 5 if top_intervention else 1,
                 "color": [
                     round(255 * max(0.35, min(1.0, intensity))),
                     round(150 * (1 - min(1.0, intensity))),
@@ -92,7 +104,9 @@ def render_city_intelligence(
                             get_radius="800 + active * 2",
                             pickable=True,
                             stroked=True,
-                            get_line_color=[255, 255, 255, 80],
+                            get_line_color="line_color",
+                            get_line_width="line_width",
+                            line_width_min_pixels=1,
                         )
                     ],
                     initial_view_state=pdk.ViewState(
@@ -105,7 +119,7 @@ def render_city_intelligence(
                     tooltip=cast(
                         Any,
                         {
-                            "html": "<b>{name}</b><br/>Expected escalations: {expected_events}<br/>Heat Index: {heat_index}°C<br/>Active: {active}",
+                            "html": "<b>{name}</b><br/>Baseline expected escalations: {expected_events}<br/>Intervention rank: {intervention_rank}<br/>Heat Index: {heat_index}°C<br/>Active: {active}",
                             "style": {"backgroundColor": "#211f1c", "color": "white"},
                         },
                     ),
@@ -131,7 +145,9 @@ def render_city_intelligence(
                 st.rerun()
         if selected is not None:
             st.caption(
-                f"Selected: {selected.name}. Priority uses summed driver-level model probability."
+                f"Selected workspace: {selected.name}. Fill color = baseline expected "
+                "escalations; radius = active drivers; orange outline = top-3 "
+                "intervention opportunity by expected preventable risk."
             )
 
     records = _city_rows(city_plan)

@@ -68,6 +68,12 @@ from .transitions import (
     require_order_transition,
     validate_state,
 )
+from .realism import (
+    RealismAudit,
+    audit_full_day,
+    load_realism_profile,
+    run_realism_audit,
+)
 
 __all__ = [
     "AcclimatizationClass",
@@ -88,6 +94,7 @@ __all__ = [
     "OrderState",
     "OrderStatus",
     "PauseControl",
+    "RealismAudit",
     "QueuedControl",
     "ScenarioFixture",
     "ScenarioValidationError",
@@ -106,12 +113,15 @@ __all__ = [
     "ZoneProjection",
     "advance_minute",
     "advance_tick",
+    "audit_full_day",
     "canonical_checksum",
     "canonical_proposal_checksum",
     "canonical_json",
     "hourly_summary",
     "initialize_state",
     "load_scenario",
+    "load_realism_profile",
+    "run_realism_audit",
     "load_zone_priors",
     "project_scoring",
     "project_zones",

@@ -1,0 +1,17 @@
+{
+  "checkpoint_compressed_size": 1060925,
+  "checkpoint_format_version": "json-floathex-offset-gzip-v1",
+  "checkpoint_payload_sha256": "438e8e1b6882fb2ae35078958f519cbbb3e1e92c944d85cee356429c5125bc39",
+  "decision_tick": 45,
+  "end_tick": 53,
+  "generator_version": "stateful-replay-v2",
+  "scenario_version": "hanoi_heatwave_v1",
+  "seed": 42,
+  "selected_zone_ids": [
+    "hai-ba-trung",
+    "cau-giay",
+    "ha-dong"
+  ],
+  "source_state_checksum": "011222c65df7ef8cc63ac8a3ea1e1d3fd9c27f0b28edddfbbd7534e6353ff3f9",
+  "start_tick": 37
+}

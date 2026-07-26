@@ -9,29 +9,43 @@ import streamlit as st
 from heatsafe.audit import HybridInterventionAuditStore
 from heatsafe.config import Settings
 from heatsafe.currency import vnd_to_usd
-from heatsafe.models import DecisionConstraints
+from heatsafe.models import DecisionConstraints, PredictiveCityPlan
+from heatsafe.operational_runtime import (
+    activate_simulated_plan,
+    continue_without_intervention,
+)
+from heatsafe.production_mode import build_production_evidence
 from heatsafe.repository import (
     HybridRepository,
     ReplayRunProgress,
     ReplayRunSummary,
+    SnapshotResult,
 )
 from heatsafe.risk import operational_priority
 from heatsafe.services.decision_service import (
-    CityWidePlan,
     SelectedZoneDecision,
-    build_city_wide_plan,
     build_selected_zone_decision,
+)
+from heatsafe.services.preventive_planning import (
+    build_accelerated_forecast_input,
+    build_current_forecast_input,
+    build_predictive_city_plan,
+    project_city_forecast,
 )
 from heatsafe.telemetry import log_event
 from heatsafe.ui import (
     advance_refresh_token,
+    build_city_planner_view,
     build_constraints,
+    build_unavailable_city_planner_view,
     initialize_state,
-    render_city_intelligence,
-    render_copilot_panel,
+    render_city_plan_actions,
+    render_city_plan_copilot,
+    render_city_planner,
     render_decision_workspace,
     render_driver_evidence,
     render_model_performance,
+    render_production_mode,
     replay_run_label,
     replay_tick_time,
     render_styles,
@@ -39,7 +53,11 @@ from heatsafe.ui import (
 
 DECISION_HORIZON_MINUTES = 240
 
-st.set_page_config(page_title="HeatSafe AI Ops", page_icon="☀️", layout="wide")
+st.set_page_config(
+    page_title="HeatSafe AI Ops",
+    page_icon=":material/health_and_safety:",
+    layout="wide",
+)
 render_styles()
 
 
@@ -121,24 +139,24 @@ def load_selected_decision(
     return build_selected_zone_decision(repository, zone, constraints)
 
 
-@st.cache_data(ttl=900, show_spinner="Analyzing city-wide AI interventions...")
-def load_city_wide_ai_plan(
+@st.cache_data(ttl=900, show_spinner="Building all-district preventive plan...")
+def load_predictive_city_plan(
     scenario: str,
     snapshot_id: str,
     constraints: DecisionConstraints,
     refresh_token: str,
     run_id: str | None = None,
     tick_index: int | None = None,
-) -> CityWidePlan:
+) -> PredictiveCityPlan:
     del refresh_token
     repository, result = repository_snapshot(
         scenario, run_id=run_id, tick_index=tick_index
     )
-    return build_city_wide_plan(
-        repository,
-        result.zones,
-        snapshot_id=snapshot_id,
-        constraints=constraints,
+    if result.zones[0].snapshot_id != snapshot_id:
+        raise RuntimeError("current city evidence does not match the requested snapshot")
+    evidence = build_current_forecast_input(repository, result.zones)
+    return build_predictive_city_plan(
+        project_city_forecast(evidence), constraints
     )
 
 
@@ -347,7 +365,7 @@ def select_zone_from_control() -> None:
     st.session_state.selected_zone_id = st.session_state.zone_selector_id
 
 
-def render_decision_controls(ordered_zones) -> str:
+def render_decision_controls(ordered_zones, *, locked: bool = False) -> str:
     rank_by_id = {zone.zone_id: index for index, zone in enumerate(ordered_zones, 1)}
     zone_by_id = {zone.zone_id: zone for zone in ordered_zones}
     selected_zone_id = str(st.session_state.selected_zone_id)
@@ -363,8 +381,9 @@ def render_decision_controls(ordered_zones) -> str:
             key="zone_selector_id",
             on_change=select_zone_from_control,
             format_func=lambda zone_id: (
-                f"{rank_by_id[zone_id]}. {zone_by_id[zone_id].name} · "
-                f"Priority {operational_priority(zone_by_id[zone_id])}/100 · "
+                f"Baseline risk #{rank_by_id[zone_id]} · "
+                f"{zone_by_id[zone_id].name} · "
+                f"Policy priority {operational_priority(zone_by_id[zone_id])}/100 · "
                 f"{zone_by_id[zone_id].heat_index_c:.1f}°C"
             ),
         )
@@ -374,6 +393,7 @@ def render_decision_controls(ordered_zones) -> str:
             min_value=0.0,
             step=10.0,
             key="decision_budget_cap",
+            disabled=locked,
         )
     with sponsor_column:
         st.number_input(
@@ -381,6 +401,7 @@ def render_decision_controls(ordered_zones) -> str:
             min_value=0.0,
             step=0.04,
             key="decision_partner_credit",
+            disabled=locked,
         )
     selected_zone_id = str(selected_zone_id)
     st.session_state.selected_zone_id = selected_zone_id
@@ -388,31 +409,73 @@ def render_decision_controls(ordered_zones) -> str:
 
 
 scenario = render_header()
+experience_mode = st.selectbox(
+    "Experience mode",
+    ("current", "accelerated-production"),
+    format_func=lambda value: (
+        "Current operations"
+        if value == "current"
+        else "Production · Accelerated window"
+    ),
+    disabled=scenario != "heatwave",
+)
+production_active = (
+    scenario == "heatwave" and experience_mode == "accelerated-production"
+)
+production_session = render_production_mode() if production_active else None
 st.session_state.setdefault("refresh_token", uuid4().hex)
 refresh_token = str(st.session_state.refresh_token)
-replay_run_id, replay_tick_index, replay_progress = render_replay_controls(
-    scenario, refresh_token
-)
-result = load_snapshot(
-    scenario,
-    refresh_token,
-    replay_run_id,
-    replay_tick_index,
-)
+if production_session is not None:
+    replay_run_id = None
+    replay_tick_index = None
+    replay_progress = None
+    production_constraints = DecisionConstraints(horizon_minutes=120)
+    production_evidence = (
+        production_session.decision_evidence
+        if production_session.status == "AWAITING_DECISION"
+        and production_session.decision_evidence is not None
+        else build_production_evidence(
+            production_session.actual_result,
+            fixture=production_session.fixture,
+            zones=production_session.zones,
+            constraints=production_constraints,
+        )
+    )
+    result = SnapshotResult(
+        zones=list(production_evidence.zones),
+        mode="accelerated-production",
+        source_label="Stateful Production window",
+    )
+else:
+    production_constraints = None
+    production_evidence = None
+    replay_run_id, replay_tick_index, replay_progress = render_replay_controls(
+        scenario, refresh_token
+    )
+    result = load_snapshot(
+        scenario,
+        refresh_token,
+        replay_run_id,
+        replay_tick_index,
+    )
 zones = result.zones
 if not zones:
     st.error("No operational zones are available for this scenario.")
     st.stop()
 
 snapshot_id = zones[0].snapshot_id
-audit = HybridInterventionAuditStore()
+audit = None if production_active else HybridInterventionAuditStore()
 try:
-    zone_risk = load_zone_ai_summary(
-        scenario,
-        snapshot_id,
-        refresh_token,
-        replay_run_id,
-        replay_tick_index,
+    zone_risk = (
+        dict(production_evidence.zone_risk)
+        if production_evidence is not None
+        else load_zone_ai_summary(
+            scenario,
+            snapshot_id,
+            refresh_token,
+            replay_run_id,
+            replay_tick_index,
+        )
     )
     ai_summary_ready = True
 except Exception as exc:
@@ -448,22 +511,50 @@ render_status(
     snapshot_id,
     playback_tick_index=replay_tick_index,
 )
-selected_zone_id = render_decision_controls(ordered_zones)
+if production_active:
+    st.session_state.decision_budget_cap = 200.0
+    st.session_state.decision_partner_credit = 0.32
+selected_zone_id = render_decision_controls(
+    ordered_zones,
+    locked=production_active,
+)
 selected = next(zone for zone in zones if zone.zone_id == selected_zone_id)
-constraints = build_constraints(DECISION_HORIZON_MINUTES)
+constraints = (
+    production_constraints
+    if production_constraints is not None
+    else build_constraints(DECISION_HORIZON_MINUTES)
+)
 
 selected_decision: SelectedZoneDecision | None = None
 decision_error: Exception | None = None
 try:
-    selected_decision = load_selected_decision(
-        scenario,
-        selected.zone_id,
-        selected.snapshot_id,
-        constraints,
-        refresh_token,
-        replay_run_id,
-        replay_tick_index,
-    )
+    if production_evidence is not None:
+        forecast = production_evidence.forecast_for(selected.zone_id)
+        recommendation = production_evidence.recommendation_for(selected.zone_id)
+        if forecast is None or recommendation is None:
+            raise RuntimeError("Production evidence is incomplete for selected zone")
+        selected_decision = SelectedZoneDecision(
+            zone=selected,
+            constraints=constraints,
+            forecast=forecast,
+            predictions=tuple(
+                item
+                for item in production_evidence.predictions
+                if item.zone_id == selected.zone_id
+            ),
+            recommendation=recommendation,
+            rule_reference=None,
+        )
+    else:
+        selected_decision = load_selected_decision(
+            scenario,
+            selected.zone_id,
+            selected.snapshot_id,
+            constraints,
+            refresh_token,
+            replay_run_id,
+            replay_tick_index,
+        )
 except Exception as exc:
     decision_error = exc
     log_event(
@@ -472,6 +563,95 @@ except Exception as exc:
         zone_id=selected.zone_id,
         error_type=type(exc).__name__,
     )
+
+predictive_plan: PredictiveCityPlan | None = None
+try:
+    if production_session is not None:
+        accelerated_evidence = build_accelerated_forecast_input(
+            production_session.actual_result,
+            fixture=production_session.fixture,
+            zones=production_session.zones,
+        )
+        predictive_plan = build_predictive_city_plan(
+            project_city_forecast(accelerated_evidence), constraints
+        )
+    else:
+        predictive_plan = load_predictive_city_plan(
+            scenario,
+            snapshot_id,
+            constraints,
+            refresh_token,
+            replay_run_id,
+            replay_tick_index,
+        )
+    city_view = build_city_planner_view(predictive_plan, zones)
+except Exception as exc:
+    city_view = build_unavailable_city_planner_view(
+        zones,
+        mode="ACCELERATED" if production_active else "CURRENT",
+        reason=(
+            "Snapshot-matched planning evidence is unavailable "
+            f"({type(exc).__name__})."
+        ),
+    )
+    log_event(
+        "predictive_city_plan_unavailable",
+        severity="WARNING",
+        error_type=type(exc).__name__,
+    )
+
+decision_available = (
+    not production_active
+    or (
+        production_session is not None
+        and production_session.status == "AWAITING_DECISION"
+    )
+)
+city_action = render_city_plan_actions(
+    city_view,
+    decision_available=decision_available,
+)
+if city_action is not None and predictive_plan is not None:
+    if production_session is not None:
+        selected_proposals = tuple(
+            row.best_window.proposal
+            for row in predictive_plan.rows
+            if row.zone_id in predictive_plan.selected_zone_ids
+            and row.best_window is not None
+        )
+        production_session.choose(city_action, proposals=selected_proposals)
+        receipt = {
+            "snapshot_id": snapshot_id,
+            "status": (
+                "SIMULATED_QUEUED"
+                if city_action == "ACTIVATE"
+                else "CONTINUED"
+            ),
+        }
+    elif city_action == "ACTIVATE":
+        receipt = activate_simulated_plan(
+            predictive_plan,
+            audit_store=audit,
+            current_snapshot_id=snapshot_id,
+        )
+    else:
+        receipt = continue_without_intervention(
+            predictive_plan,
+            current_snapshot_id=snapshot_id,
+        )
+    st.session_state["city_plan_receipt"] = receipt
+    st.rerun()
+
+receipt = st.session_state.get("city_plan_receipt")
+if isinstance(receipt, dict) and receipt.get("snapshot_id") == snapshot_id:
+    st.success(f"City plan decision recorded: {receipt['status']}.")
+elif getattr(receipt, "evidence_lineage", None) is not None:
+    if receipt.evidence_lineage.snapshot_id == snapshot_id:
+        message = f"City plan decision recorded: {receipt.status}."
+        if receipt.status in {"STALE_PLAN", "FAILED"}:
+            st.warning(message)
+        else:
+            st.success(message)
 
 render_decision_workspace(
     selected,
@@ -486,32 +666,24 @@ render_decision_workspace(
             or bool(st.session_state.get("playback_follow_latest"))
         )
     ),
+    show_execution=False,
+    show_recommendation=(
+        not production_active
+        or (
+            production_session is not None
+            and production_session.current_tick
+            >= production_session.window.decision_tick
+        )
+    ),
     error=decision_error,
 )
 
 try:
-    city_plan = load_city_wide_ai_plan(
-        scenario,
-        snapshot_id,
-        constraints,
-        refresh_token,
-        replay_run_id,
-        replay_tick_index,
+    evaluations = (
+        []
+        if production_active
+        else load_model_evaluation_history(scenario, refresh_token)
     )
-except Exception as exc:
-    city_plan = CityWidePlan(
-        rows=(),
-        unavailable_zones=(),
-        constraints=constraints,
-    )
-    log_event(
-        "city_ai_plan_unavailable",
-        severity="WARNING",
-        error_type=type(exc).__name__,
-    )
-
-try:
-    evaluations = load_model_evaluation_history(scenario, refresh_token)
 except Exception as exc:
     evaluations = []
     log_event(
@@ -521,42 +693,40 @@ except Exception as exc:
     )
 
 proposal = selected_decision.proposal if selected_decision is not None else None
-st.divider()
 city_tab, drivers_tab, copilot_tab, model_tab = st.tabs(
-    ["CITY INTELLIGENCE", "DRIVER EVIDENCE", "COPILOT & AUDIT", "MODEL PERFORMANCE"]
+    ["City intelligence", "Driver evidence", "Copilot & audit", "Model performance"]
 )
 with city_tab:
-    render_city_intelligence(
-        zones,
-        zone_risk,
-        city_plan,
-        selection_context=f"{scenario}:{snapshot_id}",
+    render_city_planner(
+        city_view,
+        selection_context=f"{scenario}:{snapshot_id}:{city_view.mode}",
     )
 with drivers_tab:
     render_driver_evidence(proposal)
 with copilot_tab:
     copilot_column, audit_column = st.columns([1.2, 1], gap="large")
     with copilot_column:
-        if (
-            replay_run_id is not None
-            and not st.session_state.get("playback_follow_latest")
-        ):
-            st.markdown("#### HeatSafe Copilot")
-            st.info(
-                "Historical playback is read-only. Copilot stays disabled "
-                "to prevent mixing this tick with current evidence."
-            )
-        else:
-            render_copilot_panel(
-                zones,
-                selected,
-                scenario,
-                constraints,
-                refresh_token=refresh_token,
-            )
+        render_city_plan_copilot(city_view)
     with audit_column:
         st.markdown(f"#### {selected.name} simulation audit")
-        if (
+        if production_session is not None:
+            st.markdown(
+                f"**Window:** tick {production_session.window.start_tick}–"
+                f"{production_session.window.end_tick} · "
+                f"decision K={production_session.window.decision_tick}"
+            )
+            st.markdown(
+                f"**Choice:** {production_session.choice or 'Pending'} · "
+                f"**Controls:** {len(production_session.controls)} · "
+                f"**Actual checksum:** "
+                f"`{production_session.actual_result.checksum[:16]}`"
+            )
+            if production_session.choice == "ACTIVATE":
+                st.caption(
+                    "Actual-vs-shadow divergence is derived from exact proposal "
+                    "controls; no driver notification or dispatch was sent."
+                )
+        elif (
             replay_run_id is not None
             and not st.session_state.get("playback_follow_latest")
         ):
@@ -588,8 +758,12 @@ with model_tab:
 
 refresh_column, policy_column = st.columns([1, 5], vertical_alignment="center")
 with refresh_column:
-    if st.button("Refresh data", width="stretch"):
-        advance_refresh_token()
+    refresh_label = "Reset window" if production_session is not None else "Refresh data"
+    if st.button(refresh_label, width="stretch"):
+        if production_session is not None:
+            production_session.reset()
+        else:
+            advance_refresh_token()
         st.rerun()
 with policy_column:
     st.caption(
@@ -598,7 +772,7 @@ with policy_column:
         f"${vnd_to_usd(constraints.sponsor_per_driver_vnd):,.2f} partner credit."
     )
 
-if replay_run_id is not None:
+if replay_run_id is not None and production_session is None:
     follow_latest = bool(st.session_state.get("playback_follow_latest"))
     playing = bool(st.session_state.get("playback_playing"))
     latest_tick = (

@@ -87,16 +87,22 @@
     }
   },
   "zone_weather_offsets": {
-    "hoan-kiem": 0.0,
-    "hai-ba-trung": 0.0,
-    "dong-da": 0.0,
-    "ba-dinh": 0.0,
+    "hoan-kiem": 0.9,
+    "hai-ba-trung": 0.5,
+    "dong-da": 0.4,
+    "ba-dinh": 0.3,
     "cau-giay": 0.0,
-    "thanh-xuan": 0.0,
-    "hoang-mai": 0.0,
-    "nam-tu-liem": 0.0,
-    "ha-dong": 0.0,
-    "bac-tu-liem": 0.0
+    "thanh-xuan": -0.1,
+    "hoang-mai": -0.2,
+    "nam-tu-liem": -0.4,
+    "ha-dong": -0.6,
+    "bac-tu-liem": -0.8
+  },
+  "zone_weather_offset_method": {
+    "type": "synthetic_stable_temperature_offset_c",
+    "source": "data/demo_snapshot.json",
+    "derivation": "Center the ten prior zone temperatures on their city mean, multiply deviations by 0.35, round to 0.1 C, and preserve an exactly zero city-wide mean.",
+    "limitations": "Offsets preserve only the scenario's relative microclimate ordering. They are deterministic simulation inputs, not district-level observations or forecasts."
   },
   "operational_priors": {
     "source": "data/demo_snapshot.json",

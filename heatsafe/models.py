@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .simulation.models import PauseControl
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,230 @@ class DriverActionPrediction:
     @property
     def risk_reduction(self) -> float:
         return max(0.0, self.baseline_risk - self.action_risk)
+
+
+@dataclass(frozen=True)
+class DriverCurrentFeature:
+    """Snapshot-matched driver features used by preventive projection."""
+
+    scenario_id: str
+    snapshot_id: str
+    observed_at: datetime
+    driver_id_hash: str
+    zone_id: str
+    heat_index_c: float
+    humidity_percent: float
+    continuous_exposure_minutes: int
+    trips_60m: int
+    distance_km_60m: float
+    rest_minutes_120m: int
+    hydration_gap_minutes: int
+    route_heat_load: float
+    workload_intensity: float
+    is_simulated: bool
+    simulation_run_id: str | None = None
+    tick_id: str | None = None
+    driver_status: str = "ACTIVE"
+    heat_dose_120m: float = 0.0
+    acclimatization_class: str | None = None
+    generator_version: str | None = None
+
+
+@dataclass(frozen=True)
+class ForecastEvidenceLineage:
+    mode: str
+    scenario_id: str
+    snapshot_id: str
+    observed_at: datetime
+    prediction_run_ids: tuple[str, ...]
+    model_versions: tuple[str, ...]
+    simulation_run_id: str | None = None
+    tick_id: str | None = None
+    tick_index: int | None = None
+    scenario_version: str | None = None
+    generator_version: str | None = None
+
+
+@dataclass(frozen=True)
+class ForecastDemandPoint:
+    minutes_ahead: int
+    median_requests: int
+    upper_requests: int
+
+
+@dataclass(frozen=True)
+class HeatForecastEvidence:
+    minutes_ahead: int
+    temperature_c: float
+    humidity_percent: float
+    heat_index_c: float
+    provenance: str
+    model_version: str | None = None
+
+
+@dataclass(frozen=True)
+class ForecastDriverAction:
+    pause_start_delay_minutes: int
+    pause_duration_minutes: int
+    action_risk: float
+    top_factors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ForecastDriverInput:
+    driver_id_hash: str
+    zone_id: str
+    status: str
+    continuous_exposure_minutes: int
+    rest_minutes_120m: int
+    hydration_gap_minutes: int
+    heat_dose_120m: float
+    baseline_risk: float
+    actions: tuple[ForecastDriverAction, ...] = ()
+
+
+@dataclass(frozen=True)
+class ForecastZoneInput:
+    zone: ZoneSnapshot
+    heat: tuple[HeatForecastEvidence, ...]
+    demand: tuple[ForecastDemandPoint, ...]
+    drivers: tuple[ForecastDriverInput, ...]
+
+
+@dataclass(frozen=True)
+class CurrentForecastInput:
+    lineage: ForecastEvidenceLineage
+    zones: tuple[ForecastZoneInput, ...]
+    horizons: tuple[int, ...] = (0, 60, 120)
+
+
+@dataclass(frozen=True)
+class AcceleratedForecastInput:
+    lineage: ForecastEvidenceLineage
+    zones: tuple[ForecastZoneInput, ...]
+    horizons: tuple[int, ...] = (0, 60, 120)
+
+
+@dataclass(frozen=True)
+class ForecastHorizon:
+    minutes_ahead: int
+    heat: HeatForecastEvidence
+    demand_median: int
+    demand_upper: int
+    mandatory_now: int
+    projected_mandatory: int
+    watchlist: int
+    expected_crossers: float
+    online_continuation_probability: float
+    baseline_expected_risk: float
+
+
+@dataclass(frozen=True)
+class DriverForecastHorizon:
+    minutes_ahead: int
+    crossing_probability: float
+    online_probability: float
+    projected_risk: float
+
+
+@dataclass(frozen=True)
+class DriverForecastProjection:
+    driver_id_hash: str
+    horizons: tuple[DriverForecastHorizon, ...]
+
+
+@dataclass(frozen=True)
+class ZoneForecastProjection:
+    zone_id: str
+    zone_name: str
+    horizons: tuple[ForecastHorizon, ...]
+    drivers: tuple[DriverForecastProjection, ...] = ()
+    source: ForecastZoneInput | None = None
+
+
+@dataclass(frozen=True)
+class CityForecastProjection:
+    lineage: ForecastEvidenceLineage
+    zones: tuple[ZoneForecastProjection, ...]
+    path_ids: tuple[str, ...]
+    projection_version: str
+
+
+@dataclass(frozen=True)
+class InterventionWindow:
+    start_delay_minutes: int
+    end_delay_minutes: int
+    proposal: SafePauseProposal
+    path_costs_vnd: tuple[int, ...]
+    expected_cost_vnd: int
+    p95_reserved_cost_vnd: int
+    projected_mandatory_after_60m: float
+    projected_mandatory_after_120m: float
+    residual_risk_60m: float
+    residual_risk_120m: float
+
+
+@dataclass(frozen=True)
+class PredictiveZonePlanRow:
+    zone_id: str
+    zone_name: str
+    horizons: tuple[ForecastHorizon, ...]
+    current_raw_risk: float
+    expected_risk_prevented: float
+    best_window: InterventionWindow | None
+    preventive_pauses: int
+    severity_rank: int
+    future_safety_rank: int
+    opportunity_rank: int
+    portfolio_status: str
+    portfolio_reason: str
+    path_costs_vnd: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PredictiveCityPlan:
+    portfolio_id: str
+    mode: str
+    rows: tuple[PredictiveZonePlanRow, ...]
+    selected_zone_ids: tuple[str, ...]
+    expected_cost_vnd: int
+    p95_reserved_cost_vnd: int
+    budget_cap_vnd: int
+    status: str
+    evidence_lineage: ForecastEvidenceLineage
+    forecast_version: str
+    created_at: datetime
+    expires_at: datetime
+    mandatory_now_covered: int = 0
+    mandatory_now_uncovered: int = 0
+
+
+@dataclass(frozen=True)
+class ProjectedZoneOutcome:
+    zone_id: str
+    baseline_mandatory_60m: float
+    projected_mandatory_60m: float
+    baseline_mandatory_120m: float
+    projected_mandatory_120m: float
+    baseline_risk_60m: float
+    residual_risk_60m: float
+    baseline_risk_120m: float
+    residual_risk_120m: float
+
+
+@dataclass(frozen=True)
+class SimulatedControlReceipt:
+    receipt_id: str
+    portfolio_id: str
+    evidence_lineage: ForecastEvidenceLineage
+    selected_proposal_checksums: tuple[str, ...]
+    controls: tuple[PauseControl, ...]
+    projected_outcomes: tuple[ProjectedZoneOutcome, ...]
+    status: str
+    dispatch_status: str
+    created_at: datetime
+    approved_intervention_ids: tuple[str, ...] = ()
+    error_code: str | None = None
 
 
 @dataclass(frozen=True)

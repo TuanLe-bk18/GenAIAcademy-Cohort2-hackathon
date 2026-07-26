@@ -6,10 +6,12 @@ import unittest
 from contextlib import redirect_stdout
 from dataclasses import replace
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 from heatsafe.simulation.cli import main
 from heatsafe.simulation.repository import InMemorySimulationRepository
 from heatsafe.simulation.scoring import DeterministicSnapshotScorer
+from heatsafe.simulation import load_zone_priors
 
 
 class SimulationCliTests(unittest.TestCase):
@@ -40,6 +42,22 @@ class SimulationCliTests(unittest.TestCase):
         code, output = self.call("validate-scenario")
         self.assertEqual(code, 0)
         self.assertIn('"weather_points": 96', output)
+
+    def test_audit_realism_is_local_and_reports_all_requested_seeds(self):
+        bounded = replace(
+            load_zone_priors()[0],
+            active_anchor=48,
+            exposed_2h_anchor=0,
+            exposed_4h_anchor=0,
+            forecast_requests_30m=12,
+        )
+        with patch("heatsafe.simulation.engine.load_zone_priors", return_value=(bounded,)):
+            code, output = self.call("audit-realism", "--seeds", "42")
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["certified"])
+        self.assertEqual(payload["seeds"], [42])
+        self.assertEqual(len(payload["audits"][0]["hourly"]), 24)
 
     def test_start_tick_status_pause_and_resume_route_through_repository(self):
         self.assertEqual(self.call("start", "--seed", "42")[0], 0)

@@ -24,6 +24,7 @@ ACTION_DURATIONS = (15, 30)
 MANDATORY_EXPOSURE_MINUTES = 240
 MANDATORY_PRIORITY_TIER = "MANDATORY_4H"
 MODEL_PRIORITY_TIER = "MODEL_ELIGIBLE"
+PROJECTED_MANDATORY_PRIORITY_TIER = "PROJECTED_MANDATORY"
 
 
 def _prediction_index(
@@ -89,15 +90,27 @@ def _build_candidate(
     prediction_run_id: str,
     model_version: str,
     mandatory_ids: set[str] | None = None,
+    preventive_ids: set[str] | None = None,
+    start_delay_minutes: int = 0,
     min_action_reduction: float = MIN_ACTION_RISK_REDUCTION,
 ) -> SafePauseProposal | None:
     mandatory_ids = set(mandatory_ids or ())
+    preventive_ids = set(preventive_ids or ()) - mandatory_ids
     if not mandatory_ids.issubset(eligible_ids):
+        return None
+    if not preventive_ids.issubset(eligible_ids):
+        return None
+    if start_delay_minutes not in ACTION_DELAYS:
         return None
     selected_count = min(selected_count, len(eligible_ids))
     if selected_count < len(mandatory_ids):
         return None
-    waves = max(1, min(waves, len(ACTION_DELAYS), selected_count))
+    available_wave_delays = tuple(
+        delay for delay in ACTION_DELAYS if delay >= start_delay_minutes
+    )
+    if waves > len(available_wave_delays):
+        return None
+    waves = max(1, min(waves, len(available_wave_delays), selected_count))
     exposure_by_driver = {
         driver_id: next(
             (
@@ -122,8 +135,12 @@ def _build_candidate(
     plan: list[PauseWave] = []
 
     for wave_index, size in enumerate(_wave_sizes(selected_count, waves)):
-        delay = ACTION_DELAYS[wave_index]
-        next_delay = ACTION_DELAYS[wave_index + 1] if wave_index + 1 < waves else None
+        delay = available_wave_delays[wave_index]
+        next_delay = (
+            available_wave_delays[wave_index + 1]
+            if wave_index + 1 < waves
+            else None
+        )
         selected_wave: list[tuple[DriverActionPrediction, str]] = []
 
         while mandatory_remaining and len(selected_wave) < size:
@@ -140,6 +157,7 @@ def _build_candidate(
                 if (driver_id, delay, pause_minutes) in actions
             ),
             key=lambda item: (
+                item.driver_id_hash not in preventive_ids,
                 -_next_wave_cost(
                     actions,
                     item.driver_id_hash,
@@ -155,9 +173,22 @@ def _build_candidate(
         )
         optional_slots = size - len(selected_wave)
         selected_optional = [
-            item for item in ranked_optional if item.risk_reduction >= min_action_reduction
+            item
+            for item in ranked_optional
+            if item.driver_id_hash in preventive_ids
+            or item.risk_reduction >= min_action_reduction
         ][:optional_slots]
-        selected_wave.extend((item, MODEL_PRIORITY_TIER) for item in selected_optional)
+        selected_wave.extend(
+            (
+                item,
+                (
+                    PROJECTED_MANDATORY_PRIORITY_TIER
+                    if item.driver_id_hash in preventive_ids
+                    else MODEL_PRIORITY_TIER
+                ),
+            )
+            for item in selected_optional
+        )
         if len(selected_wave) != size:
             return None
         high = sum(tier == MANDATORY_PRIORITY_TIER for _, tier in selected_wave)
@@ -184,6 +215,11 @@ def _build_candidate(
                     f"Mandatory safety rule: continuous exposure is at least "
                     f"{MANDATORY_EXPOSURE_MINUTES} minutes; assigned to the earliest "
                     "available wave."
+                )
+            elif priority_tier == PROJECTED_MANDATORY_PRIORITY_TIER:
+                assignment_reason = (
+                    "Preventive priority: projected probability of crossing the "
+                    "240-minute continuous-exposure threshold is at least 50%."
                 )
             else:
                 assignment_reason = (
@@ -259,6 +295,7 @@ def _build_candidate(
             str(selected_count),
             str(pause_minutes),
             str(waves),
+            str(start_delay_minutes),
             str(budget_cap_vnd),
             str(sponsor_per_driver_vnd),
             ",".join(item.driver_id_hash for item in decisions),
@@ -337,6 +374,8 @@ def recommend_ai_intervention(
     upper_demand_by_interval: tuple[int, ...],
     budget_cap_vnd: int = 5_000_000,
     sponsor_per_driver_vnd: int = 8_000,
+    candidate_start_delays: tuple[int, ...] = (0,),
+    preventive_ids: frozenset[str] = frozenset(),
 ) -> RecommendationResult:
     if not predictions:
         return RecommendationResult(
@@ -371,6 +410,7 @@ def recommend_ai_intervention(
         for driver_id, exposure in exposure_by_driver.items()
         if exposure >= MANDATORY_EXPOSURE_MINUTES
     }
+    preventive_ids = frozenset(preventive_ids) - mandatory_ids
     missing_mandatory_actions = {
         driver_id
         for driver_id in mandatory_ids
@@ -395,6 +435,7 @@ def recommend_ai_intervention(
         )
     eligible_ids = sorted(
         mandatory_ids
+        | set(preventive_ids)
         | {
             driver_id
             for driver_id, risk in baseline.items()
@@ -411,6 +452,7 @@ def recommend_ai_intervention(
         },
         key=lambda driver_id: (
             driver_id not in mandatory_ids,
+            driver_id not in preventive_ids,
             -baseline[driver_id],
             -exposure_by_driver[driver_id],
             driver_id,
@@ -435,27 +477,32 @@ def recommend_ai_intervention(
     }
     if mandatory_ids:
         selected_counts.add(len(mandatory_ids))
+    if preventive_ids:
+        selected_counts.add(len(mandatory_ids | set(preventive_ids)))
     for pause_minutes in ACTION_DURATIONS:
-        for waves in (1, 2, 3, 4):
-            for selected_count in sorted(selected_counts):
-                candidate = _build_candidate(
-                    zone,
-                    eligible_ids=eligible_ids,
-                    selected_count=selected_count,
-                    pause_minutes=pause_minutes,
-                    waves=waves,
-                    baseline_risk=baseline,
-                    actions=actions,
-                    demand_by_interval=demand_by_interval,
-                    upper_demand_by_interval=upper_demand_by_interval,
-                    budget_cap_vnd=budget_cap_vnd,
-                    sponsor_per_driver_vnd=sponsor_per_driver_vnd,
-                    prediction_run_id=next(iter(run_ids)),
-                    model_version=next(iter(model_versions)),
-                    mandatory_ids=mandatory_ids,
-                )
-                if candidate is not None:
-                    candidates.append(candidate)
+        for start_delay in candidate_start_delays:
+            for waves in (1, 2, 3, 4):
+                for selected_count in sorted(selected_counts):
+                    candidate = _build_candidate(
+                        zone,
+                        eligible_ids=eligible_ids,
+                        selected_count=selected_count,
+                        pause_minutes=pause_minutes,
+                        waves=waves,
+                        baseline_risk=baseline,
+                        actions=actions,
+                        demand_by_interval=demand_by_interval,
+                        upper_demand_by_interval=upper_demand_by_interval,
+                        budget_cap_vnd=budget_cap_vnd,
+                        sponsor_per_driver_vnd=sponsor_per_driver_vnd,
+                        prediction_run_id=next(iter(run_ids)),
+                        model_version=next(iter(model_versions)),
+                        mandatory_ids=mandatory_ids,
+                        preventive_ids=set(preventive_ids),
+                        start_delay_minutes=start_delay,
+                    )
+                    if candidate is not None:
+                        candidates.append(candidate)
 
     feasible = sorted(
         (item for item in candidates if item.within_guardrails),

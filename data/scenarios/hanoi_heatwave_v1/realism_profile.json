@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "profile_id": "hanoi_heatwave_operational_priors_v1",
+  "classification": "synthetic-prior",
+  "scope": "Prototype operational relationships; not empirical fleet telemetry.",
+  "shift": {
+    "initial_carryover_max_minutes": 180,
+    "standard_continuous_shift_minutes": 210,
+    "extended_continuous_shift_minutes": 300,
+    "minimum_recovery_minutes": 15
+  },
+  "dayparts": {
+    "night": [0, 5],
+    "morning_commute": [6, 10],
+    "lunch": [11, 14],
+    "afternoon_heat": [15, 17],
+    "evening_dinner": [18, 21],
+    "late_evening": [22, 24]
+  },
+  "acceptance": {
+    "night_demand_max_fraction_of_evening": 0.45,
+    "morning_demand_min_multiple_of_night": 1.5,
+    "lunch_demand_min_multiple_of_night": 2.0,
+    "evening_demand_min_multiple_of_lunch": 1.05,
+    "night_supply_max_fraction_of_evening": 0.5,
+    "max_exposed_4h_share": 0.95
+  }
+}

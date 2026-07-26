@@ -17,6 +17,7 @@ from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from .engine import (
+    GENERATOR_VERSION,
     advance_tick,
     initialize_state,
     load_scenario,
@@ -144,6 +145,7 @@ class TickInputManifest:
 class SimulationRepository(Protocol):
     def start(self, *, scenario_id: str, scenario_version: str, seed: int) -> SimulationRun: ...
     def status(self, scenario_id: str) -> SimulationRun | None: ...
+    def refresh_status(self, scenario_id: str) -> SimulationRun | None: ...
     def pause(self, scenario_id: str) -> SimulationRun: ...
     def resume(self, scenario_id: str) -> SimulationRun: ...
     def acquire_tick_lease(self, run_id: str, tick_id: str, owner: str) -> TickLease: ...
@@ -519,7 +521,7 @@ def publication_rows(
             "precipitation_mm": result.weather.precipitation_mm,
             "cloud_cover_pct": result.weather.cloud_cover_pct,
             "shortwave_radiation_wm2": result.weather.shortwave_radiation_wm2,
-            "utci_c": None, "derivation_version": "stateful-replay-v1",
+            "utci_c": None, "derivation_version": GENERATOR_VERSION,
             "generator_version": state.generator_version,
         }
         for zone in result.zones
@@ -1007,6 +1009,10 @@ class InMemorySimulationRepository:
         run_id = self.scenario_runs.get(scenario_id)
         return self.runs.get(run_id) if run_id else None
 
+    def refresh_status(self, scenario_id: str) -> SimulationRun | None:
+        """Return authoritative state; memory repository is already authoritative."""
+        return self.status(scenario_id)
+
     def pause(self, scenario_id: str) -> SimulationRun:
         run = self._require_run_for_scenario(scenario_id)
         if run.status == "COMPLETED":
@@ -1467,7 +1473,7 @@ COMMIT TRANSACTION;
                 "scenario_version": scenario_version,
                 "seed": seed,
                 "start_time": run.start_time,
-                "generator_version": "stateful-replay-v1",
+                "generator_version": GENERATOR_VERSION,
             },
         )
         return run
@@ -1563,6 +1569,25 @@ COMMIT TRANSACTION;
         self.scenario_runs[scenario_id] = run.run_id
         self._load_ticks(run, rows=persisted_ticks)
         return run
+
+    def refresh_status(self, scenario_id: str) -> SimulationRun | None:
+        """Discard the process cache before reloading the durable BigQuery ledger."""
+        run_id = self.scenario_runs.pop(scenario_id, None)
+        if run_id is not None:
+            self.runs.pop(run_id, None)
+            tick_ids = tuple(
+                tick_id
+                for tick_id, tick in self.ticks.items()
+                if tick.run_id == run_id
+            )
+            for tick_id in tick_ids:
+                self.ticks.pop(tick_id, None)
+                self.manifests.pop(tick_id, None)
+                self.published.pop(tick_id, None)
+        self.controls.clear()
+        self._controls_loaded = False
+        self._rejected_control_receipts = ()
+        return self.status(scenario_id)
 
     def pause(self, scenario_id: str) -> SimulationRun:
         run = self._require_run_for_scenario(scenario_id)
@@ -1718,7 +1743,7 @@ ORDER BY control.created_at, control.control_event_id
                         if outcome == "EXPIRED"
                         else "SIMULATION_WINDOW_EXPIRED"
                     ),
-                    "generator_version": "stateful-replay-v1",
+                    "generator_version": GENERATOR_VERSION,
                     "is_simulated": True,
                 })
                 continue

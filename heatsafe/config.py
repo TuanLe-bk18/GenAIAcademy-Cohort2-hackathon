@@ -21,7 +21,9 @@ _SCENARIOS = frozenset({"heatwave", "live"})
 _SNAPSHOT_TABLES = frozenset({"zone_snapshots_current"})
 _GEMINI_MODELS = frozenset({"gemini-3.1-flash-lite"})
 _SIMULATION_SCENARIO_VERSIONS = frozenset({"hanoi_heatwave_v1"})
-_SIMULATION_GENERATOR_VERSIONS = frozenset({"stateful-replay-v1"})
+_SIMULATION_GENERATOR_VERSIONS = frozenset(
+    {"stateful-replay-v1", "stateful-replay-v2"}
+)
 _SIMULATION_STATE_MODES = frozenset({"oracle", "checkpoint"})
 
 
@@ -84,7 +86,7 @@ class Settings:
     simulation_seed: int = 42
     simulation_tick_minutes: int = 15
     simulation_lease_seconds: int = 360
-    simulation_generator_version: str = "stateful-replay-v1"
+    simulation_generator_version: str = "stateful-replay-v2"
     simulation_staging_dataset_id: str = "heatsafe_sim_staging"
     simulation_checkpoint_bucket: str = "cohort2track2-heatsafe-sim-checkpoints"
     simulation_state_mode: str = "oracle"
@@ -204,7 +206,7 @@ class Settings:
                 maximum=86_400,
             ),
             simulation_generator_version=os.getenv(
-                "HEATSAFE_SIMULATION_GENERATOR_VERSION", "stateful-replay-v1"
+                "HEATSAFE_SIMULATION_GENERATOR_VERSION", "stateful-replay-v2"
             ),
             simulation_staging_dataset_id=os.getenv(
                 "HEATSAFE_SIMULATION_STAGING_DATASET", "heatsafe_sim_staging"

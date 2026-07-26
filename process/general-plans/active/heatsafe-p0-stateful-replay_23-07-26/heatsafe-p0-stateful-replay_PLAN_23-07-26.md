@@ -1,11 +1,11 @@
-# HeatSafe P0 Stateful Accelerated Replay Implementation Plan
+# HeatSafe P0 Production and Immutable Replay Implementation Plan
 
 **Date**: 23-07-26
-**Status**: 🔨 PHASE 5R STAGES 1–4 CODE COMPLETE/LOCAL GREEN · 🧪 STAGE 5 BOUNDED PROVIDER GREEN · ⏳ PHASE 6 FAST REPLAY/DYNAMIC UI PLANNED
+**Status**: 🧪 PHASE 6 ACCELERATED PRODUCTION WINDOW LOCAL GREEN / USER VISUAL CONFIRMATION PENDING · 🚧 PROVIDER FULL-DAY/REPLAY BUNDLE BLOCKED ON REALISM CERTIFICATION
 **Complexity**: COMPLEX — standard complex, one authoritative execution stream
 **Execution model**: Sequential phase gates; no phase advances until its proof boundary is green
 
-> **TL;DR:** Replace HeatSafe's regenerated static aggregates with a deterministic, stateful 24-hour Hanoi replay that advances 15 simulated minutes per tick, preserves driver/order identity, applies only authenticated, exact-snapshot SafePause control events to later state, materializes the existing snapshot contract, and scores that exact snapshot. Phase 6 adds a bounded fast-run command and dynamic timeline/playback UI over the existing per-tick history; Cloud Run Service/RAM cache remains out of scope.
+> **TL;DR:** Replace HeatSafe's regenerated static aggregates with a deterministic, stateful Hanoi operational day that preserves driver/order identity and makes exact-snapshot SafePause controls change later state. The submission-critical Phase 6 slice is now an **Accelerated Production window** that warm-starts at `K-8`, pauses at `K` for a user decision, and runs actual versus no-action shadow branches through `K+8` inside the deployed app process. This local window may be implemented and tested against the corrected `stateful-replay-v2` synthetic priors before formal three-seed certification. Certification remains a hard gate only for a new provider full-day run, immutable 96-frame ReplayBundle export, Scheduler changes, or claims that the full operational day is certified.
 
 ## Quick Links
 
@@ -46,7 +46,8 @@ P0 creates a simulation substrate under the existing application contract. It mu
 4. Make a trusted, authenticated SafePause control event change later driver availability, rest, exposure, and risk inputs; public audit approval remains non-authoritative.
 5. Keep the existing `ZoneSnapshot`, forecast, prediction, optimizer, UI, and audit contracts compatible.
 6. Make every tick reproducible, idempotent, inspectable, and safe to retry.
-7. Support manual execution first, an opt-in two-minute accelerated-replay Scheduler after verification, and a separately named fifteen-minute real-operations profile.
+7. Support one opt-in fifteen-minute Production scheduler and a separate
+   read-only Replay mode backed by a certified immutable 96-frame bundle.
 
 ### Success Metrics
 
@@ -55,7 +56,8 @@ P0 creates a simulation substrate under the existing application contract. It mu
 | Replay horizon | 24 hours / 96 published ticks |
 | Published tick | 15 simulated minutes |
 | Internal state resolution | Fifteen one-minute substeps per published tick |
-| Wall-clock acceleration | Configurable; accelerated replay default 7.5x via one scheduled tick every two minutes |
+| Production cadence | One full pipeline tick every 15 wall-clock minutes; no overlap |
+| Replay cadence | UI-only playback at 1, 2, or 5 seconds per stored frame; no provider compute |
 | Zones | Existing ten Hanoi zones |
 | Driver continuity | 100% of continuing drivers retain the same `driver_id_hash` |
 | Tick reproducibility | Same scenario version + seed + tick input produces the same checksum |
@@ -343,6 +345,62 @@ discard valid risk and recovery behavior.
   forecast under the validated anomaly rule.
 - The accelerated-replay SLO is measured on representative `FULL` ticks. Low-risk skips
   cannot mask a slow critical daytime path.
+
+### AD-012: Production Computes; Replay Only Presents Certified Frames
+
+**Decision:** Split the application into two explicit operating modes.
+
+| Mode | Clock and source | Allowed work | Forbidden work |
+|---|---|---|---|
+| `PRODUCTION` | Wall-clock scheduler every 15 minutes; latest coherent operational state | Ingestion, state advancement, BigQuery publication, forecast, scoring, decision generation, immutable frame capture | Overlapping ticks; presenting stale lineage as current |
+| `REPLAY` | User-controlled playhead over one certified `ReplayBundle` with frames `000..095` | Load/cache bundle, verify manifest/checksums, render recorded frames and recorded decision evidence | BigQuery queries, simulation advancement, Cloud Run Job dispatch, TimesFM/ML/Gemini calls, control writes, current-table mutation |
+
+**Rationale:** Accelerating the complete provider pipeline to manufacture a
+short replay couples demo UX to BigQuery/ML latency and cost. A replay is a
+presentation of already generated evidence, not another production run.
+
+**Implications:**
+
+- The former `96+1 <=30 minutes` app-bound generation target, batch-8
+  optimization, and two-minute accelerated Scheduler are removed from the
+  Phase 6 critical path.
+- Production must complete each tick comfortably inside the 15-minute cadence
+  and prove zero overlap; the existing representative-`FULL` latency evidence
+  remains relevant to Production only.
+- A bundle manifest pins scenario/run IDs, simulation timezone/start/end,
+  ordered frame checksums, aggregate bundle checksum, generator/image/model/
+  forecast/decision-engine versions, provenance, and certification result.
+- Replay fails closed on missing, duplicate, reordered, mixed-lineage, or
+  checksum-invalid frames. Historical controls remain read-only; interactive
+  what-if branches require a separately recorded branch bundle.
+- `zone_snapshots_current` remains the Production compatibility projection.
+  Replay must not reconstruct frames by querying live/current BigQuery tables.
+
+### AD-013: Operational Realism Is a Certification Gate, Not a Visual Check
+
+**Decision:** A deterministic 96-tick run is not replayable merely because its
+checksums and invariants pass. Before provider generation, the same seed must
+pass a local full-day realism audit covering weather, supply, demand, driver
+shift continuity, exposure/recovery, workload, service outcomes, zone
+variation, and SafePause decision behavior.
+
+**Rationale:** The existing operational priors come from one synthetic 13:00
+snapshot. Scaling those anchors across a day can remain internally consistent
+while producing implausible midnight exposure and infeasible decisions.
+
+**Implications:**
+
+- Certification is versioned and belongs in the bundle manifest.
+- Exact empirical calibration is not claimed without real operations data.
+  Where observations are unavailable, thresholds are documented as
+  stakeholder-approved synthetic priors and are sensitivity-tested.
+- Weather provenance and operational realism are evaluated separately. A hot
+  night with zero solar radiation can be meteorologically coherent; the
+  simulator must still distinguish ambient heat burden from solar/route heat
+  load and must not seed midday exposure cohorts at midnight without explicit
+  carry-over-shift provenance.
+- Any realism-gate failure blocks provider execution and marks existing partial
+  runs non-certified.
 
 ## 4. Public Data Contract
 
@@ -801,7 +859,34 @@ Cloud Scheduler ---> acquire deterministic tick lease
 - **AC-27:** Project, dataset, bucket, table, scenario, and model identifiers are validated before interpolation into SQL or resource paths.
 - **AC-28:** Public reader, trusted operator, simulator, scorer/trainer, deployer, and Scheduler caller permissions are separated; the public identity cannot write simulation control state.
 - **AC-29:** The terminal tick produces an operator alert/terminal signal and the runbook pauses or deletes the recurring schedule within the declared SLA; later dispatches remain no-op.
-- **AC-30:** One mandatory production-path replay publishes exactly tick indices `0..95`; invocation 97 is a measured no-op with unchanged state/event/prediction/checksum counts.
+- **AC-30:** One explicitly authorized, realism-certified generation run
+  publishes exactly tick indices `0..95`; invocation 97 is a measured no-op
+  with unchanged state/event/prediction/checksum counts, after which those
+  immutable results are exported as the Replay bundle. This generation is not
+  part of Replay playback.
+- **AC-31:** Production executes the complete operational pipeline on a
+  fifteen-minute wall-clock cadence, completes before the next dispatch, and
+  proves zero overlapping tick owners.
+- **AC-32:** Replay loads one certified immutable bundle and can play frames
+  `0..95` at 1/2/5-second presentation speeds with zero BigQuery query,
+  forecast, ML, Gemini, simulation-job, trusted-control, or current-state
+  write during playback.
+- **AC-33:** Replay verifies one manifest, exactly 96 ordered unique frames,
+  every per-frame checksum, one aggregate checksum, and pinned run/scenario/
+  generator/image/model/forecast/decision-engine lineage before rendering.
+- **AC-34:** Before a new provider full-day run, the local 96-tick realism
+  report is `CERTIFIED` for all named dayparts and relationship gates; a
+  structurally valid but unrealistic run remains blocked.
+- **AC-35:** Continuous exposure is derived from explicit shift/recovery
+  history rather than a scaled 13:00 aggregate. A new shift starts fresh unless
+  a declared carry-over shift proves otherwise; adequate off-duty/cool
+  recovery resets continuous exposure while the separate heat-dose signal
+  decays rather than resetting instantly.
+- **AC-36:** SafePause outcomes vary coherently by daypart and operating state:
+  low-hazard/no-mandatory periods do not fabricate an intervention,
+  `NO_FEASIBLE` is allowed only when the recorded capacity and guardrail
+  counterfactual supports it, and at least one certified eligible scenario
+  exercises a feasible action path.
 
 ### Data Quality
 
@@ -810,6 +895,12 @@ Cloud Scheduler ---> acquire deterministic tick lease
 - **AC-17:** `requests = matched + cancelled + unfulfilled` at the defined 15-minute aggregation boundary; completed trips are reported separately by completion time.
 - **AC-18:** Simulation-produced state/event rows carry `simulation_run_id`, the applicable `tick_id` or `source_tick_id`, `generator_version`, and `is_simulated`; coordinator/run metadata use their explicitly defined provenance fields.
 - **AC-19:** No field or UI copy represents synthetic risk as diagnosis, observed illness, or proven incident reduction.
+- **AC-37:** The certified operational profile contains a documented night
+  trough, morning commute lift, lunch lift, afternoon heat interaction, and
+  evening/dinner peak. Supply, demand, utilization, exposure, and service
+  outcomes must move relationally rather than as independently sampled curves;
+  exact bands are pinned in the scenario realism profile and justified by
+  observed data or explicitly approved synthetic priors.
 
 ### Operational
 
@@ -878,11 +969,15 @@ Package the tick CLI as a Cloud Run Job, create a least-privilege scheduler trig
 
 **Proof boundary:** one authenticated scheduler dispatch advances exactly one tick; a concurrent dispatch does not duplicate it.
 
-### Phase 6 — End-to-End Replay, UI Proof, and Closeout
+### Phase 6 — Production/Replay Separation, Realism Certification, and Closeout
 
-Run a bounded replay, verify distributions/invariants/checksums, inspect the UI across multiple ticks, test failure recovery, and update operational documentation.
+Correct and certify the full-day operational relationships, keep the 15-minute
+full pipeline in Production, export one immutable 96-frame evidence bundle, and
+make Replay a provider-free read-only presentation path.
 
-**Proof boundary:** the user confirms that the demo visibly changes while preserving decision safety and provenance.
+**Proof boundary:** the user confirms the realism report and visible behavior;
+Production meets its cadence without overlap; Replay verifies and plays all 96
+frames with zero provider calls or state mutation.
 
 ### Expected Outcome
 
@@ -2964,9 +3059,9 @@ raw fixture, public endpoint, model, or legacy scheduler is deleted or replaced.
 6. **RIPER-5 instruction:** this plan-writing turn grants no implementation or
    provider authority. Stage 3P remains conditional on the corrected baseline.
 
-### Phase 6 — Fast Replay, Dynamic UI, End-to-End Proof, and Closeout
+### Phase 6 — Production/Replay Separation, Data Certification, and Closeout
 
-**Status:** 🚧 IN PROGRESS
+**Status:** 🔨 LOCAL ACCELERATED PRODUCTION WINDOW EXECUTING · 🚧 PROVIDER FULL-DAY/REPLAY BUNDLE BLOCKED
 **Dependencies:** Phase 5R Stages 1–4 code complete; Stage 5 bounded provider evidence accepted
 **Estimate:** 1–2 days
 
@@ -3007,11 +3102,14 @@ Phase 6 targets:
 
 | Surface | Target |
 |---|---:|
-| Full app-bound generation | `96+1 <=30 minutes`; stop and reassess if the 32-tick projection misses |
-| UI playback | 1, 2, or 5 wall-clock seconds per simulated tick |
+| Production | Full tick completes inside the 15-minute cadence with zero overlap |
+| Certified generation | One explicitly authorized 96-tick run after local realism certification; no accelerated runtime target |
+| Replay playback | 1, 2, or 5 wall-clock seconds per immutable stored frame |
+| Replay provider work | Zero BigQuery/ML/AI/job/control calls or state writes during playback |
 | State semantics | Bit-for-bit canonical checksums at ticks 0, 4, 24, 48, 95 |
 | Forecast safety | No future-demand read; exact source tick/snapshot lineage |
-| Retry safety | No lost/duplicate logical rows after injected chunk failure |
+| Bundle safety | Exactly 96 ordered frames; manifest, frame, and aggregate checksums verified before render |
+| Data realism | Certified full-day relationship report for all named dayparts and at least three seeds |
 | Scenario isolation | `live` row counts/checksums unchanged |
 
 #### Phase 6 Stage 0 Local Evidence — 25-07-2026
@@ -3127,57 +3225,164 @@ committed as `89b5b26`. The provider run preserved the stop/reassess boundary:
 - All HeatSafe Scheduler resources remained `PAUSED`, the backup was retained,
   and the deployed service continued to return a healthy response.
 
-The next implementation slice must reduce or amortize the measured
-`publication_commit` and `score_finalize` costs without weakening per-tick
-lineage, score barriers, checkpoint fencing, or fail-closed decisions. Resume
-the paused run only after a fresh runtime projection passes the 30-minute gate.
+#### Phase 6 Two-Mode and Data-Realism Amendment — 25-07-2026
+
+**Approval:** The user approved replacing accelerated provider replay with the
+Production/Replay architecture in AD-012 and required a complete realism review
+before paying for another 96-tick generation.
+
+**Supersession:** This section supersedes Phase 6's `96+1 <=30 minutes`
+app-bound target, batch-size `4/8` research, fast-run optimization as a release
+dependency, and two-minute recurring Scheduler. The existing fast-run command
+may remain as a bounded diagnostic tool, but it is not the Replay runtime and
+does not justify resuming the paused provider run.
+
+##### Current full-day realism audit
+
+The authoritative fixture and engine were run locally for all 96 ticks with
+seed `42`, ten zones, no interventions, and no provider calls. Structural
+invariants passed, but realism certification failed:
+
+| Surface | Current evidence | Assessment |
+|---|---|---|
+| Weather | Source-derived 96-row ERA5 curve; 00:00 is 32.5°C/67% RH with zero solar, daily minimum 29.8°C, peak 41.1°C at 16:00 | Source/provenance coherent. A hot night is possible; zero sun does not imply zero ambient heat risk. All ten zone offsets are nevertheless `0.0`, so spatial variation is absent. |
+| Operational source | All supply, exposure, and demand anchors come from one synthetic `data/demo_snapshot.json` at 13:00 | Not empirical intraday operations; cannot be called real-world calibrated. |
+| Roster/start state | 6,230 synthetic roster entries; 780 active at 00:00. Of those, 167 start at `>=2h` and 51 start at `>=4h`, with a maximum 355 minutes | Invalid without declared pre-midnight shift provenance. Midday exposure ratios were scaled directly into midnight. |
+| Exposure/recovery | At 03:45 all 633 active drivers are `>=4h`; at 11:45, 2,805 of 2,984 active are `>=4h`; at 23:45 all 876 active are `>=4h` | Critical failure. `continuous_exposure_minutes` grows for any active status and only decrements one-for-one while offline; it does not model a continuity break or adequate recovery. Mandatory cohorts therefore saturate. |
+| Supply | Active supply is 633 at 03:45, 3,193 at 08:45, 3,649 at 17:45, and 876 at 23:45 | The curve has a night trough and commute peaks, but its exact multipliers are synthetic and uncalibrated. |
+| Demand | Hourly requests are 2,250 at 00:00–00:59, 2,248 at 03:00–03:59, 5,202 at 12:00–12:59, and 8,881 at 18:00–18:59 | Shape includes commute/lunch/evening lifts, but the night floor remains about one quarter of the evening maximum and nearly saturates the smaller night fleet. Exact levels are synthetic. |
+| Heat burden | `heat_dose_120m` uses computed heat index and route load but not the recorded shortwave radiation; exposure minutes are identical in meaning day and night | Ambient heat remains valid at night, but solar/route heat contribution is not separated, so the health story is incomplete. |
+| Service/decision | Most hours match nearly all demand while mandatory `4h+` cohorts grow to most/all active drivers; corrected Hoàn Kiếm tick 2 remains `NO_FEASIBLE` for 19 eligible drivers | The clock mismatch was not the cause. The inflated mandatory cohort is a direct upstream contributor, so the decision cannot be certified as operationally meaningful. |
+| Driver health priors | Acclimatization is stable but synthetic; initial hydration gap, exposure, prior distance, and trip bit are independently seeded | Internally deterministic, not behaviorally calibrated or conditionally related to shift start, weather, workload, or recovery. |
+
+**Gate result:** `FAIL — NON_CERTIFIED`. Run
+`36a173c5a2d44e3a8f4da4eefae8709c` stays `PAUSED`, its four committed ticks are
+diagnostic evidence only, and it must not become a Replay bundle. No Scheduler,
+provider tick, full-day generation, or bundle export may proceed until the
+local gate below passes.
+
+##### Required realism profile and gates
+
+Create a versioned machine-readable realism profile beside the scenario. Every
+threshold must cite observed data or be labelled as a user-approved synthetic
+prior; changing a threshold changes the profile version and invalidates the
+old certification.
+
+1. **Dayparts:** audit at least `00:00–04:59`, `05:00–09:59`,
+   `10:00–13:59`, `14:00–16:59`, `17:00–20:59`, and `21:00–23:59`.
+2. **Demand shape:** prove a night trough, morning commute lift, lunch lift,
+   afternoon heat/weather interaction, evening/dinner peak, bounded
+   tick-to-tick variation, and zone-specific differences. Reject flat,
+   independently random, or anchor-only curves.
+3. **Supply and shifts:** prove lower overnight supply, morning/evening shift
+   entry, bounded shift lengths, minimum recovery between split shifts, and
+   explicit provenance for any pre-midnight carry-over driver.
+4. **Exposure and health:** derive continuous exposure from shift/work/rest
+   events. A fresh shift may not inherit the 13:00 cohort ratio. Adequate
+   cool/off-duty recovery resets continuous exposure; heat dose decays
+   separately. Ambient, solar/route, workload, hydration, acclimatization, and
+   recovery inputs remain named and independently inspectable.
+5. **Cross-variable relations:** high demand raises utilization/trips/workload;
+   constrained supply affects wait/fulfillment; daylight solar load can raise
+   heat dose relative to an otherwise similar night period; rest lowers
+   continuous exposure and later risk. Correlation direction and lag are
+   asserted, not inferred from a chart.
+6. **Service outcomes:** reject a day that is trivially 100% fulfilled at every
+   load or permanently overloaded. Pin plausible utilization, cancellation,
+   unfulfilled, and ETA bands by daypart and zone.
+7. **Decision behavior:** low-hazard/no-mandatory ticks produce monitoring or
+   no action; a genuinely constrained extreme tick may produce `NO_FEASIBLE`;
+   at least one eligible certified tick produces a feasible SafePause plan.
+   Every outcome must reconcile to the same recorded supply/demand/exposure
+   frame.
+8. **Sensitivity:** run at least three fixed seeds and bounded perturbations of
+   demand, supply, and weather. The daypart ordering and safety conclusions
+   must remain stable while exact counts vary.
+9. **Visual review:** generate an hourly audit table plus demand/supply,
+   temperature/solar/heat-dose, exposure cohorts, service outcomes, and
+   decision-status plots. User confirmation is required after automated gates.
+
+##### Two-mode target flow
+
+```text
+PRODUCTION (every 15 minutes)
+wall clock -> ingest/state -> BigQuery publish -> forecast/ML/decision
+           -> coherent immutable frame -> next cadence (no overlap)
+
+ONE-TIME CERTIFICATION/EXPORT (explicitly authorized)
+certified 96 ticks -> manifest + frames/000..095 + checksums + pinned lineage
+                   -> immutable ReplayBundle
+
+REPLAY (short demo)
+load + verify ReplayBundle once -> cache -> play/pause/seek/render
+                              -> zero provider inference or state mutation
+```
 
 #### Stage 0: Pre-Phase Research
 
-1. Review all prior phase evidence and unresolved test-infra notes.
-2. Prove whether scoring/control output changes the next simulation state and
-   freeze the per-tick versus batchable durability matrix.
-3. Verify that the existing historical tables can reconstruct all
-   `ZoneSnapshot` fields with one run/tick/snapshot lineage.
-4. Benchmark canonical ticks versus a back-to-back runner and candidate heavy
-   history batch sizes `1`, `4`, and `8`; compare checksums and row multisets.
-5. Create a dedicated evidence/backup dataset with default expiration longer than the evidence window. Before replay, copy exact heatwave rows from every overwritten current table (`zone_snapshots_current`, `driver_current_features`, and the coordinator/current-run rows) into run-tagged backup tables and store row counts plus canonical checksums.
-6. Confirm dynamic UI proof steps and expected changes at selected times.
-7. Stop if the 32-tick runtime projection exceeds the 30-minute full-run
-   target, canonical checksums diverge, or any prior required gate is red.
+1. Freeze the Production/Replay boundary and the `ReplayBundle` public schema.
+2. Inventory every operational prior and label it observed, derived, or
+   synthetic. No synthetic value may silently appear as empirical calibration.
+3. Correct shift initialization and exposure/recovery semantics before tuning
+   downstream optimizer guardrails.
+4. Define the versioned realism profile, evidence sources, approved synthetic
+   priors, and exact automated assertions for all named dayparts.
+5. Run the full local 96-tick audit for at least three seeds and sensitivity
+   cases; present the report and plots to the user and stop for confirmation.
+6. Only after `CERTIFIED`, verify exact 96-frame export/reload equivalence and
+   the zero-provider-call Replay contract with fakes/spies.
+7. Retain the existing backup and immutable image evidence. Do not resume the
+   paused app-bound run; a post-fix generation requires a new versioned run.
 
 #### Implementation and Validation
 
-1. Add repository queries for run list/progress, latest committed tick, and
-   exact tick reconstruction from existing history. Reject mixed or incomplete
-   run/tick/snapshot results.
-2. Add a bounded `fast-replay` command with explicit run, terminal tick,
-   batch-size, byte/runtime circuit breakers, and resume behavior. Keep the
-   existing single-tick command unchanged.
-3. If Stage 0 approves hybrid batching, batch only the named heavy append-only
-   histories. Keep checkpoint, tick ledger, current snapshot, controls, and
-   forecast barriers per the amendment contract.
-4. Replace manual-only refresh with Streamlit latest-follow and read-only
-   playback controls: play/pause, previous/next, tick slider, and 1/2/5-second
-   playback speed. Historical ticks may not queue a control.
-5. Pin and deploy the app plus fast-run Job from one immutable image digest.
-6. Pause Scheduler and execute one mandatory app-bound production-path replay of all 96 ticks, followed by a recorded 97th no-op invocation.
-7. Validate hourly demand/supply/exposure shapes, state invariants, and checksums.
-8. Exercise one no-action control interval and one SafePause interval.
-9. Simulate scoring failure and successful retry.
-10. Capture dynamic UI evidence at three distinct ticks:
+1. Add a versioned scenario realism profile, audit runner, three-seed
+   sensitivity suite, and golden relationship assertions.
+2. Replace anchor-scaled midnight exposure with explicit shift-history
+   initialization; separate continuous exposure reset from heat-dose decay and
+   separate ambient from solar/route burden.
+3. Calibrate demand, supply, utilization, and service relationships by
+   daypart/zone using documented evidence or approved synthetic priors.
+4. Re-run decision evidence across low/no-action, feasible, and constrained
+   `NO_FEASIBLE` ticks before changing any guardrail threshold.
+5. Define and implement `ReplayBundleManifest`, immutable frame serialization,
+   checksum verification, certification metadata, and atomic export.
+6. Replace BigQuery-backed historical playback with a bundle repository/cache.
+   Keep Production latest-state reads separate and fail closed on mode mixing.
+7. Add explicit Production/Replay UI selector. Replay supports play/pause,
+   previous/next, slider, and 1/2/5-second speeds but cannot queue a trusted
+   control or trigger provider compute.
+8. Verify Production one-tick execution completes inside the 15-minute cadence
+   with zero overlap. Do not optimize for 30-minute full-day generation.
+9. After a newly generated local report is `CERTIFIED` and the user separately
+   authorizes provider execution, create a new run, publish 96 ticks once,
+   prove invocation 97 is a no-op, and export the immutable bundle.
+10. Capture dynamic Replay UI evidence at three distinct frames:
    - early/low heat,
    - heat/demand escalation,
    - post-intervention.
-11. Run full tests, compile, and dependency checks.
-12. Update README architecture, runbook, commands, data provenance, and disclaimers.
-13. Validate logs with a versioned JSON-schema checker/query: every Cloud Run execution has execution/run/tick/snapshot IDs, lease outcome, row counts, checksum, `duration_ms`, scoring/invariant result, bounded redacted error fields, and exactly one terminal outcome.
-14. Record known gaps; do not relabel them as P0 completion.
-15. Cleanup in order: keep Scheduler paused, wait for executions, preserve the evidence manifest, and use one bounded transaction to delete only heatwave/current coordinator rows then restore them from the run-tagged backups when rollback is selected. Recompute pre/post row counts and canonical checksums; abort and retain backups on mismatch. Do not use `--seed-demo` as rollback because it also mutates demand history and GCS.
+11. Instrument Replay tests to assert zero BigQuery/ML/AI/job/control calls and
+   unchanged current-state checksums before/after a full playback.
+12. Run full tests, compile, dependency, bundle corruption, and mode-isolation
+   checks.
+13. Update README architecture, runbooks, commands, data provenance,
+   disclaimers, and bundle retention/rollback.
+14. Record known gaps; do not relabel synthetic calibration as real telemetry.
+15. Cleanup in order: keep Scheduler paused, wait for executions, preserve the
+   evidence manifest, and use the existing targeted restore procedure when
+   rollback is selected.
 
 #### Test Procedure
 
 ```bash
+venv/bin/python -m heatsafe.simulation.cli audit-realism \
+  --scenario-version hanoi_heatwave_v1 \
+  --seeds 42,77,91 \
+  --output-dir "<bounded-evidence-dir>"
+venv/bin/python -m unittest \
+  tests.test_simulation_realism \
+  tests.test_replay_bundle \
+  tests.test_replay_mode_isolation -v
 venv/bin/python -m unittest discover -s tests -v
 venv/bin/python -m compileall -q app.py heatsafe infra
 venv/bin/python -m pip check
@@ -3185,16 +3390,20 @@ venv/bin/python -m pip check
 
 Manual UI:
 
-1. Open the deployed HeatSafe service with `heatwave` selected.
-2. Select the active run and enable latest-follow while fast replay advances.
-3. Pause playback, move between ticks 0, 24, 48, and 95, then resume at
+1. Open the deployed HeatSafe service and select `Production`.
+2. Verify Production follows the latest coherent tick and does not expose the
+   Replay playhead.
+3. Switch to `Replay`, select the certified bundle, and verify its manifest,
+   certification, scenario time range, and pinned lineage are visible.
+4. Pause playback, move between frames 0, 24, 48, and 95, then resume at
    1/2/5-second speed.
-4. Verify changed weather, demand, supply, exposure, risk, and exact lineage.
-5. Confirm historical ticks cannot queue a trusted control.
-6. Authenticate to the current-tick operator path, queue a trusted simulated
-   SafePause, and advance through its lifecycle.
-7. Verify audit, driver state, zone capacity, and risk-input changes.
-8. Confirm no copy implies a medical diagnosis or real dispatch.
+5. Verify changed weather, demand, supply, exposure, risk, decision evidence,
+   and exact lineage while network/provider spies record zero prohibited calls.
+6. Confirm Replay cannot queue a trusted control and does not mutate the
+   Production playhead/current snapshot.
+7. Return to Production and verify the latest state/checksum is unchanged.
+8. Confirm no copy implies a medical diagnosis, real telemetry, or real
+   dispatch.
 
 #### Final Verification Queries
 
@@ -3255,16 +3464,201 @@ phase6_tick-48_peak.png
 phase6_tick-N_post-safepause.png
 ```
 
-The evidence table beside them records service revision/URL, capture time, run/tick/snapshot IDs, zone, temperature, demand, active/online supply, cumulative exposure cohorts, risk, and intervention state.
-Each screenshot row references a saved BigQuery result artifact and Cloud Logging execution query. A deployed negative-auth record proves the public principal cannot invoke the control job or create a control row; a trusted-operator positive record proves one valid row is created with matching Cloud Audit Log execution.
+The evidence table beside them records service revision/URL, bundle ID and
+checksum, capture time, run/tick/snapshot IDs, zone, temperature, solar load,
+demand, active/online supply, cumulative exposure cohorts, risk, and recorded
+intervention state. Each screenshot row references the immutable frame and its
+bundle checksum. BigQuery and Cloud Logging evidence belongs to the one-time
+certified generation, not playback. A Replay isolation record proves no
+provider call or state mutation occurred; a deployed negative-auth record
+proves the public principal cannot invoke the control job or create a control
+row.
 
 #### Done Criteria
 
 - Required automated, integration, data, error, and manual gates are green.
+- The realism report is `CERTIFIED`, user-confirmed, and pinned in the bundle.
+- Production and Replay mode-isolation checks are green.
 - User confirms the visible demo behavior.
 - Scheduler can be paused and replay state preserved.
 - README and closeout evidence match the deployed behavior.
 - P0 is marked ✅ VERIFIED only after user confirmation.
+
+#### Phase 6 Submission-Priority Accelerated Production Window Amendment — 26-07-2026
+
+**Approval and authority:** After reviewing the realism findings and the
+Production/Replay split, the user explicitly selected a one-day, URL-first
+submission strategy and entered execute mode for the Accelerated Production
+window. This authorizes local source implementation and local verification by
+one authoritative writer. It does not authorize provider queries/writes,
+deployment, run resume, Scheduler mutation, bundle export, or a commit.
+
+**Why this amendment exists:** The preceding handoff made the three-seed
+realism report the next universal gate. That wording was too broad and caused
+local Product-mode orchestration to be confused with provider full-day
+certification. The gates are now separated:
+
+| Gate | May proceed now? | Boundary |
+|---|---|---|
+| Corrected `stateful-replay-v2` local engine and synthetic-prior inputs | Yes | Preserve explicit synthetic provenance and do not weaken decision guardrails |
+| Accelerated Production window `K-8 → K → K+8` | Yes | Local/in-process only; no BigQuery, ML provider, Cloud Run Job, trusted cloud control, or mutable shared repository |
+| Local warm checkpoint, deterministic discovery, actual/shadow branching, UI and tests | Yes | Checkpoint is engine state, not pre-rendered UI frames |
+| Formal three-seed/sensitivity realism certification | Deferred until after the submission-critical window | Required before any full-day certification claim |
+| New provider 96-tick generation, invocation 97, ReplayBundle export | No | Requires `CERTIFIED`, user confirmation, and separate provider authorization |
+| Deployment or Scheduler/run mutation | No | Separate explicit authorization after local behavioral proof |
+
+##### Authoritative submission architecture
+
+```text
+Judge browser
+     |
+     v
+Streamlit service process
+     |
+     +--> verified warm checkpoint at K-8
+     |
+     +--> live engine ticks K-8 ... K
+     |         |
+     |         +--> predictive watch from about K-4
+     |         +--> auto-pause at exact-snapshot proposal K
+     |
+     +--> user chooses Activate SafePause or Continue without intervention
+               |
+               +--> actual branch: exact proposal -> PauseControl groups
+               +--> shadow branch: no intervention
+               |
+               +--> engine ticks K+1 ... K+8 and renders measured divergence
+```
+
+This mode is labelled `Production · Accelerated operational window` and
+`synthetic simulation`. It exercises the production domain engine and control
+lifecycle, but it is not recurring live fleet production and must not imply
+real telemetry, medical outcomes, driver notification, hydration dispatch, or
+provider-backed inference on each UI tick.
+
+##### Locked deterministic window
+
+The current corrected generator deterministically selects:
+
+| Field | Value |
+|---|---|
+| Scenario | `hanoi_heatwave_v1` |
+| Generator | `stateful-replay-v2` |
+| Seed | `42` |
+| Start tick | `37` (`K-8`) |
+| Decision tick | `45` (`K`) |
+| End tick | `53` (`K+8`) |
+| Selected zones | `hai-ba-trung`, `cau-giay`, `ha-dong` |
+
+The builder must rediscover and verify this result rather than accepting a
+hand-written manifest. If the corrected engine changes and no longer produces
+the same feasible exact-snapshot plan, execution stops for review; guardrails
+must not be tuned merely to preserve K.
+
+##### Submission-critical execution order
+
+1. **Window artifact:** add a deterministic builder, manifest, and lossless
+   warm checkpoint for the state immediately before start tick 37. Validate
+   scenario/generator/seed/tick/checksum and fail closed on stale/corrupt data.
+2. **Production session controller:** own actual state, shadow baseline state,
+   playhead, proposal evidence, user choice, controls, tick results, and event
+   markers. Actual and shadow checksums must remain identical until the first
+   recorded `PauseControl`.
+3. **Exact action:** at K, auto-pause and expose exactly two choices. Activation
+   converts the selected city proposals into deterministic control groups with
+   exact proposal/run/tick/snapshot/driver/risk lineage. Continue records an
+   explicit no-action choice.
+4. **Post-action comparison:** advance both branches through K+8. Show actual
+   lifecycle (`ASSIGNED`, `TO_COOLSTOP`, `PAUSED`, `COMPLETED` or an explicit
+   cancellation) and compare exposure, rest, supply, demand service, risk, and
+   intervention state with the shadow branch.
+5. **Streamlit integration:** add an explicit mode selector without creating a
+   second reduced dashboard. Both Current operations and Accelerated Production
+   must render through the same zone selector, decision workspace, city map,
+   tradeoff charts, driver evidence, Copilot/audit tab, and model-performance
+   tab. The selected mode changes the data/session controller and adds a
+   Production clock/decision/actual-shadow overlay; it does not replace the
+   established visualization composition. Provider-only Copilot or evaluation
+   evidence fails closed when it cannot be bound to the exact Production-window
+   tick. Production-window state is session-local; deterministic immutable
+   prefix/branch computation may be server-cached by
+   scenario/generator/checksum/control checksum.
+6. **Verification:** add builder/controller/UI tests, run the full local suite,
+   compile, dependency check, and `git diff --check`. Capture local behavioral
+   proof. Stop before deployment for the separate deployment authorization.
+
+##### P0 acceptance criteria
+
+- The app opens the verified state at K-8 without replaying from midnight.
+- Start, pause, advance 15 minutes, speed selection, and reset are available.
+- Predictive watch appears before K without claiming an intervention exists.
+- Auto-play stops at K and shows a coherent multi-zone city plan.
+- Both `Activate SafePause` and `Continue without intervention` are functional.
+- Before control consumption, actual and shadow state checksums are identical.
+- Activation consumes only controls derived from the exact K proposal.
+- At least one real engine lifecycle transition is visible after K.
+- The baseline branch receives no intervention; the actual branch divergence
+  reconciles to the recorded controls.
+- Reset returns to the exact warm-checkpoint checksum.
+- The complete mode runs without BigQuery credentials or provider calls.
+- Existing simulation, decision, snapshot, and historical playback tests remain
+  green.
+- The user manually confirms the visible K-8-to-K+8 story before the mode is
+  called `✅ VERIFIED`.
+
+##### Supersession and retained future work
+
+This amendment supersedes only the **execution order** that previously required
+the full three-seed report before any local Phase 6 UI work. It does not remove
+AD-012, AD-013, the realism profile/auditor, corrected shift/exposure/recovery
+semantics, or immutable ReplayBundle work. After the submission-critical
+Production window is locally green and user-reviewed, resume the deferred order:
+
+```text
+three-seed + sensitivity certification
+    -> user confirms realism report
+    -> separate provider authorization
+    -> one new 96+1 generation
+    -> immutable ReplayBundle export and zero-provider playback proof
+```
+
+##### Local execution evidence — 26-07-2026
+
+Status is `🧪 TESTING`, not `✅ VERIFIED`, until the user completes the visible
+K-8-to-K+8 flow.
+
+- Deterministic discovery reproduced seed `42`, K=`45`, window `37–53`, and
+  selected zones `hai-ba-trung`, `cau-giay`, `ha-dong`.
+- The checked-in lossless warm checkpoint is 1,060,925 bytes with logical state
+  checksum `011222c65df7ef8cc63ac8a3ea1e1d3fd9c27f0b28edddfbbd7534e6353ff3f9`
+  and payload SHA-256
+  `438e8e1b6882fb2ae35078958f519cbbb3e1e92c944d85cee356429c5125bc39`.
+- Controller tests prove reset, pre-control actual/shadow equality, exact
+  proposal/control lineage, Activate divergence, and Continue equality.
+- A complete local behavioral probe advanced the checked-in asset from tick 37
+  through K and K+8. Tick 46 recorded `ASSIGNED`, `TO_COOLSTOP`, `PAUSED`, and
+  explicit cancellations; ticks 48–50 recorded `COMPLETED`. Actual and shadow
+  end checksums diverged only after activation.
+- Streamlit AppTest loaded the explicit Accelerated Production selector and
+  verified the K=45 session without provider credentials. A follow-up
+  presentation correction removed the reduced standalone dashboard: both modes
+  now share the existing decision workspace, city visualization, evidence
+  tabs, and controls, while the Production mode contributes only its
+  clock/decision/actual-shadow overlays. The existing Current operations path
+  remained green.
+- Spatial Heat Index follow-up regression: 59 targeted Production,
+  scenario/core, and Streamlit AppTests passed. The regression test was observed
+  failing with all offsets at zero, then passing after the zone-weather fix.
+- Full regression: 223 tests passed in 581.136s.
+- `compileall`, `pip check`, plan artifact validation, and `git diff --check`
+  passed.
+- Local browser fallback selected Accelerated Production and verified the
+  rendered DOM contains district-specific Heat Index plus the explicit
+  `Baseline risk` label and map encoding caption; console/page-error capture
+  returned zero errors. The browser initially opened Current operations and
+  initialized local ADC before switching modes, so this is not asserted as a
+  zero-provider-read proof. No provider mutation command, deployment, run,
+  Scheduler, bundle export, or commit occurred.
 
 ## 10. Implementation Checklist
 
@@ -3329,18 +3723,33 @@ Each screenshot row references a saved BigQuery result artifact and Cloud Loggin
 - [ ] Run conditional serial/parallel forecast-versus-feature/ML A/B only when
   corrected `FULL` p95 is above `90s`; retain serial unless improvement is at
   least `15%` with identical outputs and lineage.
-- [ ] Prove representative accelerated-replay `FULL` tick p95 `<=105s`, every
-  dispatch-to-terminal interval `<120s`, and zero overlap before Scheduler
-  enablement.
+- [ ] Prove representative Production `FULL` ticks complete inside the
+  15-minute cadence with zero overlap before Scheduler enablement.
 - [ ] Run full test/compile/dependency gates.
 - [x] Add exact-tick history queries and mixed-lineage rejection.
 - [x] Add the bounded back-to-back fast-replay command.
-- [ ] Apply batch-8 only to Stage-0-approved heavy append-only rows; retain
-  per-tick fallback.
 - [x] Add latest-follow and read-only UI playback controls.
-- [ ] Run the one mandatory app-bound full 96-tick replay and invocation-97
-  no-op gate in `heatsafe_data`.
-- [ ] Complete dynamic UI and BigQuery evidence.
+- [ ] Add versioned realism profile and full-day audit report.
+- [ ] Correct shift initialization and exposure/recovery semantics.
+- [ ] Calibrate and test demand/supply/service/health relationships across all
+  named dayparts, three seeds, and sensitivity cases.
+- [ ] Obtain user confirmation of the local realism report before provider use.
+- [x] Build and verify the deterministic K=45 Production-window manifest and
+  lossless K-8 warm checkpoint.
+- [x] Add the dual actual/shadow Production session controller with exact
+  proposal-to-control lineage and reset.
+- [x] Add the Accelerated Production UI with pre-K watch, auto-pause at K,
+  activate/continue choice, post-K lifecycle, and branch comparison.
+- [x] Add builder/controller/Streamlit automated tests.
+- [ ] Obtain user visual confirmation of the K-8-to-K+8 behavior.
+- [ ] Add immutable Replay bundle manifest, frame export, checksums, and
+  fail-closed loader/cache.
+- [ ] Add explicit Production/Replay selector and strict repository isolation.
+- [ ] Prove a complete Replay makes zero provider calls and zero current-state
+  mutations.
+- [ ] Only after certification and separate provider authorization, run one new
+  96-tick generation plus invocation-97 no-op and export the bundle.
+- [ ] Complete dynamic Replay UI and one-time generation evidence.
 - [ ] Update README and phase evidence.
 - [ ] Obtain user confirmation.
 
@@ -3354,6 +3763,10 @@ Each screenshot row references a saved BigQuery result artifact and Cloud Loggin
 | Score fails after snapshot publish | UI temporarily lacks recommendation | Preserve coherent snapshot and fail closed; retry same score step |
 | Synthetic model appears scientifically validated | Misleading demo | Keep `is_simulated`, provenance, disclaimer, and no medical claims |
 | Demand/supply appears noisy or scripted | Low demo credibility | Shared latent shocks, autocorrelation, bounded transitions, distribution checks |
+| Midday exposure anchors are reused at midnight | False mandatory cohort and false `NO_FEASIBLE` | Initialize from explicit shift history, separate recovery/reset from heat-dose decay, and block on the realism report |
+| Internally consistent data is mistaken for real-world calibration | Misleading evidence | Label every prior observed/derived/synthetic and require user-approved bands where operational observations are unavailable |
+| Replay silently invokes Production services | Cost, latency, and mutable evidence | Separate repositories, cached immutable bundle, zero-call spies, and before/after current-state checksums |
+| Bundle mixes lineage or is partially replaced | False historical evidence | Immutable object/version, ordered per-frame checksums, aggregate checksum, pinned lineage, fail-closed loader |
 | SafePause changes aggregate only | No causal story | Persist per-driver lifecycle and compare selected versus control histories |
 | Scheduler creates unbounded cost | Operational cost | Opt-in flag, measured cadence gate, explicit byte ceilings, terminal alert, five-minute pause/delete SLA, and no-op after completion |
 | Public approval mutates simulator | Unauthorized state/cost change | Public identity is read-only; audit remains non-authoritative; only authenticated exact-lineage controls are consumed |
@@ -3395,6 +3808,7 @@ Each screenshot row references a saved BigQuery result artifact and Cloud Loggin
 ```text
 data/scenarios/hanoi_heatwave_v1/manifest.json
 data/scenarios/hanoi_heatwave_v1/weather_15m.csv
+data/scenarios/hanoi_heatwave_v1/realism_profile.json
 heatsafe/simulation/__init__.py
 heatsafe/simulation/models.py
 heatsafe/simulation/randomness.py
@@ -3402,6 +3816,8 @@ heatsafe/simulation/scenario.py
 heatsafe/simulation/demand.py
 heatsafe/simulation/transitions.py
 heatsafe/simulation/engine.py
+heatsafe/simulation/realism.py
+heatsafe/replay_bundle.py
 heatsafe/simulation/repository.py
 heatsafe/simulation/cli.py
 scripts/deploy_simulation.sh
@@ -3415,6 +3831,9 @@ tests/test_simulation_repository.py
 tests/test_simulation_cli.py
 tests/test_simulation_scoring.py
 tests/test_simulation_interventions.py
+tests/test_simulation_realism.py
+tests/test_replay_bundle.py
+tests/test_replay_mode_isolation.py
 ```
 
 The executor may consolidate test modules when that preserves the stated scenario coverage; any consolidation must be recorded before implementation.
@@ -3486,6 +3905,15 @@ requirements.txt
 10. **Medical-safety contract:** model output remains operational decision support, not diagnosis or proven health impact.
 11. **Control-authority contract:** public audit approval is evidence only; only the authenticated trusted-control path can influence simulator state.
 12. **Replay-time contract:** heatwave forecasting and scoring are anchored to the active run/tick/snapshot/simulation time; live remains wall-clock based.
+13. **Mode contract:** Production is the only mode allowed to ingest, advance,
+    forecast, score, decide, or write current state. Replay may only verify,
+    cache, and render a certified immutable bundle.
+14. **Replay bundle contract:** one manifest plus exactly 96 ordered frames,
+    pinned lineage/version fields, per-frame checksums, aggregate checksum, and
+    realism certification. A corrupt or non-certified bundle is not rendered.
+15. **Realism contract:** structural invariants are necessary but insufficient;
+    a provider generation cannot begin until the versioned local daypart/
+    relationship audit and user review pass.
 
 ## Blast Radius
 
@@ -3498,10 +3926,16 @@ requirements.txt
 | Driver scoring | New simulation feature source | Feature mismatch or missing predictions |
 | Intervention control | Authenticated exact-lineage control queue | Replay, expiry, cap, or wrong-driver targeting |
 | Cloud deployment | New job and optional schedule | Recurring cost/concurrent runs |
-| UI/repository | No intended interface rewrite | Regression only if projected semantics drift |
+| Driver exposure/health state | Shift initialization, recovery reset, heat-dose separation | Changes cohort sizes, model inputs, and decisions across all ticks |
+| Demand/supply profile | Daypart and zone calibration | Changes utilization, service outcomes, and counterfactual feasibility |
+| Replay bundle/export | New immutable manifest/frame artifact | Corruption, mixed lineage, retention, or oversized cache |
+| UI/repository | Explicit Production/Replay split | Mode leakage, stale current state, or accidental provider calls |
 | Live scenario | Intended unchanged | Must be covered by regression suite |
 
-Expected implementation footprint: approximately 15–25 source/test files plus one compact scenario fixture. No destructive table replacement, no production driver command surface, and no new public HTTP API.
+Expected Phase 6 amendment footprint: engine/demand/transitions, scenario
+realism profile and audit tooling, bundle models/export/repository/cache,
+Streamlit mode routing, tests, and runbooks. No destructive table replacement,
+no production driver command surface, and no new public HTTP API.
 
 ## Verification Evidence
 
@@ -3514,6 +3948,10 @@ Expected implementation footprint: approximately 15–25 source/test files plus 
 | Driver/order state transition matrix | Fully-Automated | AC-03, AC-04 |
 | Exposure bucket boundary and partition invariants | Fully-Automated | AC-07, AC-16 |
 | Demand/order aggregation reconciliation | Fully-Automated | AC-17 |
+| Six-daypart relationship audit over three seeds and sensitivity cases | Fully-Automated + Agent-Probe | AC-34, AC-35, AC-37 |
+| Explicit carry-over shift or fresh-shift exposure initialization | Fully-Automated | AC-35 |
+| Continuous exposure reset plus separate heat-dose decay | Fully-Automated | AC-35 |
+| Low/no-action, feasible, and constrained `NO_FEASIBLE` decision matrix | Fully-Automated + Hybrid | AC-36 |
 | Two real BigQuery ticks plus retry | Hybrid | AC-06, AC-10, AC-21 |
 | Mixed-snapshot query returns zero violations | Hybrid | AC-06 |
 | Simulation scoring references exact snapshot | Hybrid | AC-08, AC-11 |
@@ -3526,9 +3964,11 @@ Expected implementation footprint: approximately 15–25 source/test files plus 
 | Checkpoint upload/commit crash, corruption, and nearest-predecessor fallback | Hybrid | AC-06, AC-10, AC-21 |
 | Risk-mode boundaries, hysteresis, pre-warm, skip fail-closed behavior | Fully-Automated | AC-08, AC-11, AC-16 |
 | TimesFM seed-once plus forecast source-lineage and anomaly refresh | Hybrid | AC-25, AC-26 |
-| Minimum 20 representative FULL ticks with p95 at or below 105 seconds and max dispatch-to-terminal below 120 seconds | Hybrid | AC-14, AC-20, AC-23 |
-| Streamlit refresh across three ticks | Agent-Probe | AC-05, AC-06, AC-08 |
-| Mandatory 96-tick replay plus invocation-97 no-op | Hybrid | AC-12, AC-15, AC-16, AC-30 |
+| Representative Production FULL ticks finish inside 15-minute cadence with zero overlap | Hybrid | AC-14, AC-20, AC-23, AC-31 |
+| Replay manifest/frame/aggregate checksum and corruption matrix | Fully-Automated | AC-32, AC-33 |
+| Full 96-frame Replay with prohibited provider-call spies and unchanged current checksum | Fully-Automated + Agent-Probe | AC-32, AC-33 |
+| Streamlit Production/Replay switch and playback across three frames | Agent-Probe | AC-05, AC-06, AC-08, AC-32 |
+| Certified one-time 96-tick generation plus invocation-97 no-op and bundle export | Hybrid | AC-12, AC-15, AC-16, AC-30, AC-33, AC-34 |
 | Versioned structured-log schema and one-terminal-outcome query | Hybrid | AC-20, AC-22, AC-29 |
 | Pre-replay backup and targeted restore checksum equality | Hybrid | AC-23, AC-30 |
 | Disclaimer/provenance UI and row inspection | Agent-Probe | AC-18, AC-19 |
@@ -3548,6 +3988,19 @@ Phase 5R planning identified these required improvements:
 Retain the existing need for a disposable dataset fixture, golden replay
 checksums, Scheduler integration probe, and UI runtime evidence.
 
+Phase 6 adds:
+
+- a reusable full-day realism auditor that emits machine-readable daypart,
+  cross-variable, decision-status, and sensitivity results;
+- golden relationship fixtures that assert ordering/correlation without
+  freezing every stochastic count;
+- a Replay bundle corruption matrix for missing/duplicate/reordered frames,
+  wrong lineage, wrong checksum, and non-certified manifests;
+- provider-call spies/fakes proving full playback makes no BigQuery, forecast,
+  ML, Gemini, job, control, or current-write call;
+- a Production/Replay mode-isolation harness with before/after current-state
+  checksums.
+
 ## 13. Ops Runbook Requirements
 
 The implementation must document:
@@ -3564,6 +4017,10 @@ The implementation must document:
 - Disable/delete the scheduler without deleting BigQuery evidence.
 - Determine whether a failure occurred before or after snapshot publication.
 - Query latest successful checksum and exact prediction run.
+- Run and interpret the local realism audit; provider generation remains
+  blocked unless it reports `CERTIFIED` and the user confirms the evidence.
+- Export, verify, retain, and roll back an immutable Replay bundle.
+- Prove Replay playback uses no provider compute or mutable current state.
 
 ## 14. Change Management
 
@@ -3579,6 +4036,9 @@ Material changes include:
 - Training the model from replay output.
 - Making scheduler deployment default-on.
 - Changing the `live` scenario behavior.
+- Allowing Replay to query provider history or invoke inference at playback.
+- Changing a realism threshold, prior source, or exposure/recovery semantics
+  without versioning and recertifying the scenario profile.
 
 For each change record:
 
@@ -3605,19 +4065,23 @@ For each change record:
 1. **Selected plan file path:**
    `process/general-plans/active/heatsafe-p0-stateful-replay_23-07-26/heatsafe-p0-stateful-replay_PLAN_23-07-26.md`
 2. **Last completed phase or step:**
-   Original Phases 1–4 are user-confirmed `✅ VERIFIED`. Phase 5R Stages 1–4
-   are code-complete and locally green (168 tests plus compile/dependency/
-   syntax/diff checks), but deployed verification is incomplete. Disposable v7
-   passed ticks 0–3 and exposed a replay-clock correctness bug at tick 4:
-   ledger/tick time used July wall clock while engine/demand used the
-   26-05-2026 fixture. Candidate cloud resources were cleaned up and production
-   Scheduler remains `PAUSED`.
+   Original Phases 1–4 are user-confirmed `✅ VERIFIED`. The Phase 6 local
+   fast-run/UI slice was committed as `89b5b26`; provider evidence was recorded
+   in `c484f95`. Corrected app-bound run
+   `36a173c5a2d44e3a8f4da4eefae8709c` committed ticks 0–3 and is `PAUSED`; all
+   HeatSafe Schedulers remain `PAUSED`. A local full-day ten-zone audit then
+   passed structural invariants but failed realism certification because
+   midnight exposure was seeded from the 13:00 anchor and mandatory `4h+`
+   cohorts saturated the active fleet. Local `stateful-replay-v2` remediation
+   now exists in the worktree and focused tests are green. The Accelerated
+   Production foundation has deterministically found seed 42, K=45, window
+   37–53, and three selected zones, but no warm checkpoint, dual-state
+   controller, Production-window UI, or direct tests exist yet.
 3. **Validate-contract status:**
-   The original plan validation passed. The Phase 5R amendment also passed deep
-   VALIDATE on 24-07-2026 with `0 FAIL / 0 CONCERN / 10 PASS`. The V2
-   replay-clock/cadence/conditional-parallel amendment dated 25-07-2026 is
-   plan-written but its Validate Contract is still a placeholder; EXECUTE may
-   not resume until that amendment is validated.
+   The original plan validation and Phase 5R deep validation passed. The
+   submission-priority amendment dated 26-07-2026 is the current local
+   execution boundary. It separates local Production-window authority from the
+   still-blocked provider full-day/ReplayBundle gate.
 4. **Supporting context files loaded:**
    - Phase 5 research, report, and runbook artefacts
    - `phase5r_latency_remediation_RESEARCH_24-07-26.md`
@@ -3637,19 +4101,20 @@ For each change record:
    - `process/context/all-context.md` — absent
    - `process/context/tests/all-tests.md` — absent
 5. **Fresh-agent next step:**
-   Validate the V2 amendment, then—only with explicit Phase 5R EXECUTE
-   authority—implement the replay-clock correction, run its local gates, and
-   stop before provider mutation if any clock assertion is not exact. When
-   green, deploy a new disposable immutable candidate with Scheduler paused and
-   follow the Stage 5 sequence starting at ticks 0–4.
+   Re-read AD-012, AD-013, and both Phase 6 amendments. Resume the
+   submission-critical local slice at the deterministic window artifact:
+   generate and verify the K-8 warm checkpoint, then implement the dual-state
+   controller, UI, and direct tests. Do not resume run `36a...`, invoke a
+   provider job, enable Scheduler, export a certified bundle, or deploy.
 6. **Working-tree note:**
-   Preserve all user changes. Phase 5R source/tests/scripts and this plan are
-   already modified/untracked in the working tree; do not discard, overwrite,
-   rebase, or mix remote synchronization into the remediation.
+   Preserve all user changes. This Phase 6 plan amendment is the only current
+   working-tree change; do not discard, overwrite, rebase, or mix remote
+   synchronization into it.
 7. **Execution authority:**
-   This plan-writing turn authorizes no source/provider/Scheduler action.
-   Recurring execution remains a separate explicit decision even after all
-   automated and Hybrid gates pass.
+   The user explicitly authorized local source implementation of the
+   Accelerated Production window after this amendment. Provider generation,
+   deployment, bundle export, run mutation, commit, and Scheduler changes
+   remain behind separate explicit approval.
 
 ## Validate Contract
 
@@ -3878,6 +4343,45 @@ evidence, not waived plan defects.
 The original validation evidence below remains the historical contract for
 Phases 1–5.
 
+### Spatial Heat Index and Decision-Rank Clarification — 26-07-2026
+
+**User correction:** Showing the same Heat Index for all ten districts in the
+shared Production visualization is not acceptable. The earlier zero-offset
+decision at lines 1316–1317 is superseded for the local Accelerated Production
+window by this amendment.
+
+**Revised weather contract:**
+
+- Preserve the single source-derived Hanoi weather curve and its city-wide
+  mean; do not create independent random weather per district.
+- Apply stable, zero-mean temperature offsets from `-0.8°C` to `+0.9°C`.
+  The relative ordering comes from the checked-in `data/demo_snapshot.json`
+  zone temperature profile, compressed by `0.35` and rounded to `0.1°C`.
+- Recalculate each district's Heat Index from adjusted temperature and the
+  shared source humidity using `calculate_heat_index()`.
+- Label the offsets as deterministic synthetic microclimate inputs, not
+  district observations or forecasts, and bind their method to a new Production
+  evidence version so changed values cannot reuse an old snapshot identity.
+
+**Decision-rank contract:**
+
+- `Baseline expected escalations` is the sum of unique active-driver baseline
+  probabilities in a district. It is a severity/exposure measure.
+- `Expected escalations prevented` is the sum of action risk reductions for
+  drivers selected by a feasible SafePause proposal. It is an intervention
+  opportunity measure after duration, wave, budget, fulfillment, and ETA
+  constraints.
+- These are intentionally separate ranks. The UI must call them `Baseline risk
+  rank` and `Intervention rank`; it must not present either as an unlabeled
+  generic `Priority`.
+- Map fill encodes baseline expected escalations, circle radius encodes active
+  drivers, and an orange outline identifies the top three intervention
+  opportunities.
+- The current top-three Production activation remains opportunity-ranked for
+  this bounded window. A real city-wide allocation must add a safety floor and
+  shared-resource optimization before treating that top three as a dispatch
+  priority.
+
 **Validation date:** 23-07-2026
 **Net Gate:** **PASS** for plan entry; EXECUTE still requires the user's explicit phase authorization.
 **Strategy:** One authoritative sequential implementation stream with phase gates. Parallel agents were appropriate for read-only VALIDATE only.
@@ -3966,36 +4470,44 @@ No backlog artifact is used to waive these gates.
 
 ```text
 SESSION GOAL
-Complete Phase 5R Stage 5 by correcting the replay clock, proving the corrected Cloud Run Job path, conditionally evaluating parallel forecast versus feature/ML, and completing the two-minute 96+1 accelerated replay without weakening deterministic replay or current product contracts.
+Complete the submission-critical Accelerated Production window locally:
+verified K-8 warm start, exact-snapshot pause at K, user action, actual/shadow
+engine branches through K+8, and behavioral UI proof.
 
 AUTONOMY RULES
-- Follow the validated Phase 5R stages using one authoritative writer.
+- Follow AD-012, AD-013, and both Phase 6 amendments using one authoritative writer.
 - Make informed in-phase implementation decisions that do not expand scope or weaken a contract.
 - Preserve unrelated user changes and record any discovered drift in the plan before proceeding.
-- Treat the completed Stage 0R/0E evidence and Stages 1–4 code as the current baseline; execute the V2 sequence only after its Validate Contract is PASS.
+- Preserve realism v2 and work locally through the Production-window tests.
 
 HARD STOPS
-- No source edit, provider query, IAM/schema/job/bucket mutation, or deployment while the Phase 5R V2 Validate Contract remains a placeholder.
-- No shared demo resource for disposable Hybrid probes and no recurring Scheduler enablement before the corrected two-minute FULL-tick SLO, zero-overlap 96+1 proof, and user confirmation.
-- No runtime mutation of immutable control requests; use receipts only.
-- No checkpoint activation before frozen-manifest, oracle-equivalence, recovery, security, and control-migration gates pass.
-- No pre-control-migration rollback image, destructive migration, broad restore, or --seed-demo rollback.
-- No Cloud Run Service/RAM-cache migration, Storage Write API rewrite, removal of BigQuery current projections, or asynchronous fire-and-forget forecast job in Phase 5R V2.
+- Local Production-window source implementation is explicitly authorized.
+- No provider query/write, IAM/schema/job/bucket mutation, deployment, run resume, bundle export, commit, or Scheduler change.
+- Do not use run 36a173c5a2d44e3a8f4da4eefae8709c as certified evidence or a Replay bundle.
+- Do not tune decision guardrails to hide an upstream shift/exposure/demand defect.
+- Replay may not call BigQuery, forecast, ML, Gemini, Cloud Run Jobs, trusted controls, or mutable current-state repositories.
+- No new 96-tick provider generation until the local three-seed realism report is CERTIFIED and user-confirmed, followed by separate provider authorization.
 
 NEXT PHASE
-Validate the V2 amendment. After explicit EXECUTE authority, implement the fixture-owned replay epoch and local drift gates; then deploy a new disposable immutable candidate with Scheduler paused and prove ticks 0–4 before continuing.
+Build the deterministic window artifact and warm checkpoint, then implement
+the dual-state controller, Streamlit flow, and direct tests. Stop before
+deployment for user review and separate deployment authority.
 
 CONTRACT SUMMARY
-Stages 1–4 are code-complete/local green, while Stage 5 is blocked by a ledger-versus-fixture clock mismatch found at tick 4. Preserve replay-from-zero as oracle/fallback; use the 26-05-2026 fixture epoch for every simulation-time surface; keep lossless GCS checkpoints, immutable controls/receipts, exact forecast lineage, and deterministic FULL/RECOVERY/MONITOR execution. The accelerated profile is two minutes with FULL p95 <=105s, every dispatch-to-terminal interval <120s, zero overlap, and a 50 GB replay cap. Stage 3P is conditional and needs at least 15% complete-tick improvement.
+The Accelerated Production window is a synthetic, server-side engine run from
+K-8 through K+8, not Replay and not recurring live fleet production. It must
+warm-start from verified state, pause at exact-snapshot K, accept Activate or
+Continue, and prove any actual/shadow divergence comes only from recorded
+PauseControls. Full-day provider generation and ReplayBundle remain blocked on
+formal realism certification.
 
 EXECUTE START COMMAND
-After the V2 Validate Contract is PASS: ENTER PHASE 5R EXECUTE MODE — resume Stage 5 V2 in heatsafe-p0-stateful-replay_PLAN_23-07-26.md
+ENTER PHASE 6 ACCELERATED PRODUCTION WINDOW EXECUTE MODE — local-only implementation in heatsafe-p0-stateful-replay_PLAN_23-07-26.md
 ```
 
 ## Next Step — Cursor Plan / RIPER-5
 
-Validate the Phase 5R V2 amendment in this plan. The next valid implementation
-transition, only after that gate is PASS and explicit EXECUTE authority is
-received, begins with the replay-clock correction and its local tests. Provider
-work then starts from a new disposable candidate at ticks 0–4 with production
-Scheduler still paused.
+The 26-07-2026 amendment is approved and local EXECUTE authority is active.
+Resume at the deterministic K=45 window artifact, then controller, UI, and
+tests. Stop before deployment; provider work, ReplayBundle export, run mutation,
+commit, and Scheduler changes remain blocked.

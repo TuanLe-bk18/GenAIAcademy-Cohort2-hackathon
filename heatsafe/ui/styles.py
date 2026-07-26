@@ -8,22 +8,22 @@ PLOTLY_LAYOUT: dict[str, Any] = {
     "template": "plotly_dark",
     "paper_bgcolor": "rgba(0,0,0,0)",
     "plot_bgcolor": "rgba(0,0,0,0)",
-    "font": {"family": "Inter, sans-serif", "size": 13, "color": "#c3bbb0"},
+    "font": {"family": "Fira Sans, sans-serif", "size": 13, "color": "#cbd5e1"},
 }
 
 _CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap');
 :root {
-  --ops-bg:#181613; --ops-surface:#211f1c; --ops-surface-2:#292622;
-  --ops-border:#48423a; --ops-border-soft:#3b3731;
-  --ops-text:#fffaf0; --ops-muted:#c3bbb0;
-  --ops-heat:#e9863a; --ops-cool:#72cbd0; --ops-ok:#67cf9b;
-  --ops-warn:#e5b158; --ops-crit:#ec6b61;
+  --ops-bg:#020617; --ops-surface:#0f172a; --ops-surface-2:#1e293b;
+  --ops-border:#334155; --ops-border-soft:#273449;
+  --ops-text:#f8fafc; --ops-muted:#cbd5e1;
+  --ops-heat:#fb923c; --ops-cool:#38bdf8; --ops-ok:#22c55e;
+  --ops-warn:#fbbf24; --ops-crit:#f87171;
   --ops-radius-panel:12px; --ops-radius-card:9px;
 }
 html, body, [class*="css"] {
-  font-family:Inter,-apple-system,system-ui,sans-serif;
+  font-family:"Fira Sans",-apple-system,system-ui,sans-serif;
   font-size:16px; font-variant-numeric:tabular-nums;
 }
 .stApp { background:var(--ops-bg); color:var(--ops-text); }
