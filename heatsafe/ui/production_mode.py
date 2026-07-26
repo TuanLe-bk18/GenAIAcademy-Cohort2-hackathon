@@ -23,7 +23,7 @@ def render_production_mode() -> ProductionSession:
     """Render only clock controls; the shared planner renders all evidence."""
     session = get_production_session()
     window = session.window
-    st.markdown("## Production · Accelerated operational window")
+    st.markdown("## ACCELERATED PRODUCTION")
     st.caption(
         "Synthetic Hanoi operations · server-side stateful engine · "
         "1 tick = 15 operational minutes · no real dispatch"

@@ -189,7 +189,14 @@ class BigQueryBatchForecastTests(unittest.TestCase):
         self.assertIn("FROM latest_runs", captured["query"])
         self.assertIn("PARTITION BY zone_id ORDER BY forecast_timestamp", captured["query"])
         self.assertNotIn("MAX(prediction_run_id)", captured["query"])
-        self.assertIn("current.tick_id IS NOT DISTINCT FROM", captured["query"])
+        self.assertIn(
+            "current_snapshot.tick_id IS NOT DISTINCT FROM",
+            captured["query"],
+        )
+        self.assertNotIn(
+            f"`{repository.table}` current\n",
+            captured["query"],
+        )
         self.assertTrue(forecasts["available-zone"].forecast_reused)
         self.assertIn("reused from tick tick-0", forecasts["available-zone"].source)
 

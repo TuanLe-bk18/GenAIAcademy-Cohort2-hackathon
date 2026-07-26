@@ -23,6 +23,7 @@ from heatsafe.repository import (
 from heatsafe.services.preventive_planning import (
     FORECAST_PATH_COUNT,
     MICROCLIMATE_MODEL_VERSION,
+    ForecastInputError,
     build_accelerated_forecast_input,
     build_current_forecast_input,
     build_predictive_city_plan,
@@ -163,6 +164,34 @@ class CurrentForecastInputTests(TestCase):
             {"features": 1, "predictions": 1, "forecasts": 1},
         )
         future_weather.assert_not_called()
+
+    def test_current_adapter_accepts_exact_snapshot_forecast_reuse(self):
+        for zone_id, forecast in tuple(self.repository.forecasts.items()):
+            self.repository.forecasts[zone_id] = replace(
+                forecast,
+                forecast_reused=True,
+                forecast_source_tick_id="earlier-tick",
+                forecast_source_snapshot_id="earlier-snapshot",
+                forecast_age_minutes=45,
+            )
+
+        evidence = build_current_forecast_input(self.repository, self.zones)
+
+        self.assertEqual(len(evidence.zones), 10)
+
+    def test_current_adapter_rejects_non_reused_forecast_lineage_mismatch(self):
+        zone_id = self.zones[0].zone_id
+        self.repository.forecasts[zone_id] = replace(
+            self.repository.forecasts[zone_id],
+            forecast_reused=False,
+            forecast_source_snapshot_id="wrong-snapshot",
+        )
+
+        with self.assertRaisesRegex(
+            ForecastInputError,
+            f"demand forecast lineage mismatch for zone {zone_id}",
+        ):
+            build_current_forecast_input(self.repository, self.zones)
 
     def test_same_city_weather_gets_explicit_modeled_zone_heat(self):
         evidence = build_current_forecast_input(self.repository, self.zones)

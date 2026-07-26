@@ -279,7 +279,8 @@ def build_current_forecast_input(
         prediction_run_ids.update(runs)
         model_versions.update(versions)
         if (
-            forecast.forecast_source_snapshot_id is not None
+            not forecast.forecast_reused
+            and forecast.forecast_source_snapshot_id is not None
             and forecast.forecast_source_snapshot_id != snapshot_id
         ):
             raise ForecastInputError(

@@ -14,7 +14,7 @@ from heatsafe.operational_runtime import (
     activate_simulated_plan,
     continue_without_intervention,
 )
-from heatsafe.production_mode import build_production_evidence
+from heatsafe.production_mode import ProductionSession, build_production_evidence
 from heatsafe.repository import (
     HybridRepository,
     ReplayRunProgress,
@@ -170,26 +170,15 @@ def load_model_evaluation_history(
     return repository.load_model_evaluations(limit=10)
 
 
-def render_header() -> str:
-    brand_column, scenario_column = st.columns([5, 1], vertical_alignment="center")
-    with brand_column:
-        st.markdown(
-            '<div class="ops-brand"><div class="ops-mark">H</div><div>'
-            '<div class="ops-title">HeatSafe '
-            '<span style="color:var(--ops-muted);font-weight:500">AI Ops</span></div>'
-            '<div class="ops-subtitle">Hanoi fleet operations · extreme heat decision support</div>'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
-    with scenario_column:
-        return st.selectbox(
-            "Operating scenario",
-            ("heatwave", "live"),
-            format_func=lambda value: (
-                "Heatwave replay" if value == "heatwave" else "Live weather"
-            ),
-            label_visibility="collapsed",
-        )
+def render_header() -> None:
+    st.markdown(
+        '<div class="ops-brand"><div class="ops-mark">H</div><div>'
+        '<div class="ops-title">HeatSafe '
+        '<span style="color:var(--ops-muted);font-weight:500">AI Ops</span></div>'
+        '<div class="ops-subtitle">Hanoi fleet operations · extreme heat decision support</div>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_replay_controls(
@@ -325,23 +314,51 @@ def render_replay_controls(
     return run_id, int(selected_tick), progress
 
 
+def render_standard_production_mode() -> None:
+    """Render the fixed decision point from the canonical operational window."""
+    st.markdown("## PRODUCTION")
+    st.caption(
+        "Verified K=45 operational checkpoint · hanoi_heatwave_v1 · "
+        "same weather and decision evidence as Accelerated Production"
+    )
+
+
+@st.cache_resource(
+    show_spinner="Loading verified K=45 Production checkpoint..."
+)
+def load_standard_production_session():
+    """Advance the verified K-8 checkpoint to K once per app process."""
+    session = ProductionSession.create()
+    while session.current_tick < session.window.decision_tick:
+        session.advance()
+    if (
+        session.status != "AWAITING_DECISION"
+        or session.decision_evidence is None
+    ):
+        raise RuntimeError("verified Production checkpoint did not reach decision K")
+    return session
+
+
 def render_status(
     result,
-    ai_summary_ready: bool,
+    production_ready: bool,
     snapshot_id: str,
     *,
+    accelerated: bool = False,
+    readiness_issue: str | None = None,
     playback_tick_index: int | None = None,
 ) -> None:
+    mode_label = "ACCELERATED PRODUCTION" if accelerated else "PRODUCTION"
     if not result.data_fresh:
         tone = "warn"
-        label = "Snapshot stale · monitoring only"
-    elif ai_summary_ready:
+        label = f"{mode_label} NOT READY · stale snapshot"
+    elif production_ready:
         tone = "ok"
-        label = "Decision engine ready"
+        label = f"{mode_label} READY"
     else:
         tone = "warn"
-        label = "AI unavailable · monitoring only"
-    scenario_label = "Heatwave replay" if result.zones[0].scenario_id == "heatwave" else "Live weather"
+        label = f"{mode_label} NOT READY"
+    scenario_label = "hanoi_heatwave_v1"
     tick_pill = (
         f'<span class="ops-pill">Tick {playback_tick_index:02d}</span>'
         if playback_tick_index is not None
@@ -359,15 +376,23 @@ def render_status(
     )
     if result.freshness_warning:
         st.error(result.freshness_warning)
+    elif readiness_issue:
+        st.error(readiness_issue)
 
 
 def select_zone_from_control() -> None:
     st.session_state.selected_zone_id = st.session_state.zone_selector_id
 
 
-def render_decision_controls(ordered_zones, *, locked: bool = False) -> str:
+def render_decision_controls(
+    ordered_zones,
+    *,
+    locked: bool = False,
+    heat_by_zone: dict[str, float] | None = None,
+) -> str:
     rank_by_id = {zone.zone_id: index for index, zone in enumerate(ordered_zones, 1)}
     zone_by_id = {zone.zone_id: zone for zone in ordered_zones}
+    displayed_heat = heat_by_zone or {}
     selected_zone_id = str(st.session_state.selected_zone_id)
     if st.session_state.get("zone_selector_id") != selected_zone_id:
         st.session_state.zone_selector_id = selected_zone_id
@@ -384,7 +409,7 @@ def render_decision_controls(ordered_zones, *, locked: bool = False) -> str:
                 f"Baseline risk #{rank_by_id[zone_id]} · "
                 f"{zone_by_id[zone_id].name} · "
                 f"Policy priority {operational_priority(zone_by_id[zone_id])}/100 · "
-                f"{zone_by_id[zone_id].heat_index_c:.1f}°C"
+                f"{displayed_heat.get(zone_id, zone_by_id[zone_id].heat_index_c):.1f}°C"
             ),
         )
     with budget_column:
@@ -408,28 +433,27 @@ def render_decision_controls(ordered_zones, *, locked: bool = False) -> str:
     return selected_zone_id
 
 
-scenario = render_header()
+render_header()
+scenario = "heatwave"
 experience_mode = st.selectbox(
     "Experience mode",
     ("current", "accelerated-production"),
     format_func=lambda value: (
-        "Current operations"
+        "PRODUCTION"
         if value == "current"
-        else "Production · Accelerated window"
+        else "ACCELERATED PRODUCTION"
     ),
-    disabled=scenario != "heatwave",
 )
-production_active = (
-    scenario == "heatwave" and experience_mode == "accelerated-production"
-)
+production_active = experience_mode == "accelerated-production"
 production_session = render_production_mode() if production_active else None
 st.session_state.setdefault("refresh_token", uuid4().hex)
 refresh_token = str(st.session_state.refresh_token)
+replay_run_id = None
+replay_tick_index = None
+replay_progress = None
 if production_session is not None:
-    replay_run_id = None
-    replay_tick_index = None
-    replay_progress = None
     production_constraints = DecisionConstraints(horizon_minutes=120)
+    evidence_session = production_session
     production_evidence = (
         production_session.decision_evidence
         if production_session.status == "AWAITING_DECISION"
@@ -448,15 +472,15 @@ if production_session is not None:
     )
 else:
     production_constraints = None
-    production_evidence = None
-    replay_run_id, replay_tick_index, replay_progress = render_replay_controls(
-        scenario, refresh_token
-    )
-    result = load_snapshot(
-        scenario,
-        refresh_token,
-        replay_run_id,
-        replay_tick_index,
+    render_standard_production_mode()
+    evidence_session = load_standard_production_session()
+    production_evidence = evidence_session.decision_evidence
+    if production_evidence is None:
+        raise RuntimeError("Production evidence is unavailable at decision K")
+    result = SnapshotResult(
+        zones=list(production_evidence.zones),
+        mode="production",
+        source_label="Verified hanoi_heatwave_v1 K=45 checkpoint",
     )
 zones = result.zones
 if not zones:
@@ -465,6 +489,7 @@ if not zones:
 
 snapshot_id = zones[0].snapshot_id
 audit = None if production_active else HybridInterventionAuditStore()
+ai_summary_error: Exception | None = None
 try:
     zone_risk = (
         dict(production_evidence.zone_risk)
@@ -481,6 +506,7 @@ try:
 except Exception as exc:
     zone_risk = {}
     ai_summary_ready = False
+    ai_summary_error = exc
     log_event(
         "ai_zone_summary_unavailable",
         severity="WARNING",
@@ -505,25 +531,70 @@ initialize_state(
         else None
     ),
 )
-render_status(
-    result,
-    ai_summary_ready,
-    snapshot_id,
-    playback_tick_index=replay_tick_index,
-)
 if production_active:
     st.session_state.decision_budget_cap = 200.0
     st.session_state.decision_partner_credit = 0.32
-selected_zone_id = render_decision_controls(
-    ordered_zones,
-    locked=production_active,
-)
-selected = next(zone for zone in zones if zone.zone_id == selected_zone_id)
 constraints = (
     production_constraints
     if production_constraints is not None
-    else build_constraints(DECISION_HORIZON_MINUTES)
+    else build_constraints(120)
 )
+if not production_active:
+    production_evidence = build_production_evidence(
+        evidence_session.actual_result,
+        fixture=evidence_session.fixture,
+        zones=evidence_session.zones,
+        constraints=constraints,
+    )
+
+predictive_plan: PredictiveCityPlan | None = None
+planning_error: Exception | None = None
+try:
+    if production_evidence is not None:
+        accelerated_evidence = build_accelerated_forecast_input(
+            evidence_session.actual_result,
+            fixture=evidence_session.fixture,
+            zones=evidence_session.zones,
+        )
+        predictive_plan = build_predictive_city_plan(
+            project_city_forecast(accelerated_evidence), constraints
+        )
+    else:
+        predictive_plan = load_predictive_city_plan(
+            scenario,
+            snapshot_id,
+            constraints,
+            refresh_token,
+            replay_run_id,
+            replay_tick_index,
+        )
+    city_view = build_city_planner_view(predictive_plan, zones)
+except Exception as exc:
+    planning_error = exc
+    city_view = build_unavailable_city_planner_view(
+        zones,
+        mode="ACCELERATED PRODUCTION" if production_active else "PRODUCTION",
+        reason=(
+            "Snapshot-matched planning evidence is unavailable "
+            f"({type(exc).__name__})."
+        ),
+    )
+    log_event(
+        "predictive_city_plan_unavailable",
+        severity="WARNING",
+        error_type=type(exc).__name__,
+    )
+
+status_slot = st.empty()
+selected_zone_id = render_decision_controls(
+    ordered_zones,
+    locked=production_active,
+    heat_by_zone={
+        row.zone_id: row.heat_index_c
+        for row in city_view.rows
+    },
+)
+selected = next(zone for zone in zones if zone.zone_id == selected_zone_id)
 
 selected_decision: SelectedZoneDecision | None = None
 decision_error: Exception | None = None
@@ -564,40 +635,37 @@ except Exception as exc:
         error_type=type(exc).__name__,
     )
 
-predictive_plan: PredictiveCityPlan | None = None
-try:
-    if production_session is not None:
-        accelerated_evidence = build_accelerated_forecast_input(
-            production_session.actual_result,
-            fixture=production_session.fixture,
-            zones=production_session.zones,
-        )
-        predictive_plan = build_predictive_city_plan(
-            project_city_forecast(accelerated_evidence), constraints
-        )
-    else:
-        predictive_plan = load_predictive_city_plan(
-            scenario,
-            snapshot_id,
-            constraints,
-            refresh_token,
-            replay_run_id,
-            replay_tick_index,
-        )
-    city_view = build_city_planner_view(predictive_plan, zones)
-except Exception as exc:
-    city_view = build_unavailable_city_planner_view(
-        zones,
-        mode="ACCELERATED" if production_active else "CURRENT",
-        reason=(
-            "Snapshot-matched planning evidence is unavailable "
-            f"({type(exc).__name__})."
-        ),
+production_ready = (
+    result.data_fresh
+    and ai_summary_ready
+    and predictive_plan is not None
+    and city_view.unavailable_reason is None
+    and selected_decision is not None
+)
+readiness_issue = None
+if ai_summary_error is not None:
+    readiness_issue = (
+        "Production readiness failed at the risk-summary dependency "
+        f"({type(ai_summary_error).__name__})."
     )
-    log_event(
-        "predictive_city_plan_unavailable",
-        severity="WARNING",
-        error_type=type(exc).__name__,
+elif planning_error is not None:
+    readiness_issue = (
+        "Production readiness failed at the TimesFM/city-planning dependency "
+        f"({type(planning_error).__name__})."
+    )
+elif decision_error is not None:
+    readiness_issue = (
+        "Production readiness failed at the selected-zone decision dependency "
+        f"({type(decision_error).__name__})."
+    )
+with status_slot.container():
+    render_status(
+        result,
+        production_ready,
+        snapshot_id,
+        accelerated=production_active,
+        readiness_issue=readiness_issue,
+        playback_tick_index=replay_tick_index,
     )
 
 decision_available = (
@@ -678,19 +746,9 @@ render_decision_workspace(
     error=decision_error,
 )
 
-try:
-    evaluations = (
-        []
-        if production_active
-        else load_model_evaluation_history(scenario, refresh_token)
-    )
-except Exception as exc:
-    evaluations = []
-    log_event(
-        "model_evaluations_unavailable",
-        severity="WARNING",
-        error_type=type(exc).__name__,
-    )
+# Model-evaluation rows from the old cloud pointer do not share this exact K=45
+# lineage. Keep the tab fail-closed until matching evaluation evidence exists.
+evaluations = []
 
 proposal = selected_decision.proposal if selected_decision is not None else None
 city_tab, drivers_tab, copilot_tab, model_tab = st.tabs(

@@ -606,13 +606,14 @@ class BigQueryRepository:
         if self._selected_replay_lineage is None:
             return (
                 f"""EXISTS (
-                  SELECT 1 FROM `{self.table}` current
-                  WHERE current.scenario_id = @scenario_id
-                    AND current.zone_id = forecast.zone_id
-                    AND current.snapshot_id = forecast.snapshot_id
-                    AND current.simulation_run_id IS NOT DISTINCT FROM
+                  SELECT 1 FROM `{self.table}` current_snapshot
+                  WHERE current_snapshot.scenario_id = @scenario_id
+                    AND current_snapshot.zone_id = forecast.zone_id
+                    AND current_snapshot.snapshot_id = forecast.snapshot_id
+                    AND current_snapshot.simulation_run_id IS NOT DISTINCT FROM
                         forecast.simulation_run_id
-                    AND current.tick_id IS NOT DISTINCT FROM forecast.tick_id
+                    AND current_snapshot.tick_id IS NOT DISTINCT FROM
+                        forecast.tick_id
                 )""",
                 [],
             )
@@ -682,12 +683,20 @@ class BigQueryRepository:
         reused = bool(getattr(first, "forecast_reused", False))
         source_tick_id = getattr(first, "forecast_source_tick_id", None)
         age_minutes = getattr(first, "forecast_age_minutes", None)
+        if age_minutes is not None:
+            age_minutes = int(age_minutes)
+            if age_minutes < 0:
+                age_minutes = None
         source = "BigQuery ML · TimesFM AI.FORECAST"
         if reused:
             source = (
                 "BigQuery ML · TimesFM reused"
                 f" from tick {source_tick_id or 'unknown'}"
-                f" · age {int(age_minutes or 0)} min"
+                + (
+                    f" · age {age_minutes} min"
+                    if age_minutes is not None
+                    else ""
+                )
             )
         return DemandForecast(
             zone_id=zone_id,
@@ -704,9 +713,7 @@ class BigQueryRepository:
             forecast_source_prediction_run_id=getattr(
                 first, "forecast_source_prediction_run_id", None
             ),
-            forecast_age_minutes=(
-                int(age_minutes) if age_minutes is not None else None
-            ),
+            forecast_age_minutes=age_minutes,
             generated_at=getattr(first, "generated_at", None),
         )
 

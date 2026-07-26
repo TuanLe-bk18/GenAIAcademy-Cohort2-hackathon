@@ -486,9 +486,13 @@ def render_city_planner(
     selection_context: str,
 ) -> None:
     """Render the complete ten-district visualization used by both modes."""
+    display_mode = {
+        "CURRENT": "PRODUCTION",
+        "ACCELERATED": "ACCELERATED PRODUCTION",
+    }.get(view.mode.upper(), view.mode.upper())
     st.subheader("City-wide preventive plan")
     st.caption(
-        f"{view.mode.title()} · {view.observed_at_label} ICT · "
+        f"{display_mode} · {view.observed_at_label} ICT · "
         f"snapshot {view.snapshot_id[:12]}. Map fill is Heat Index; a green outline "
         "means the district is in the SafePause portfolio."
     )
