@@ -10,10 +10,17 @@ HANOI_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 class ReplayRunLabelSource(Protocol):
-    scenario_version: str
-    simulation_start_at: datetime
-    status: str
-    simulation_run_id: str
+    @property
+    def scenario_version(self) -> str: ...
+
+    @property
+    def simulation_start_at(self) -> datetime: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def simulation_run_id(self) -> str: ...
 
 
 def replay_scenario_start(run: ReplayRunLabelSource) -> datetime:

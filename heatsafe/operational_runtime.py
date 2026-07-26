@@ -22,6 +22,7 @@ from .models import (
 from .simulation.control import BigQueryControlWriter
 from .simulation.models import PauseControl, TickResult
 from .simulation.randomness import canonical_checksum
+from .simulation.scoring import SimulationScorer
 from .simulation.repository import (
     LeaseConflict,
     Publication,
@@ -49,6 +50,10 @@ class AcceleratedControlQueue(Protocol):
         *,
         execution_id: str,
     ) -> tuple[PauseControl, ...]: ...
+
+
+class ControlRepository(Protocol):
+    def queue_controls(self, controls: tuple[PauseControl, ...]) -> None: ...
 
 
 def _selected_rows(
@@ -158,7 +163,7 @@ def controls_from_predictive_plan(
 class RepositoryControlQueue:
     """Test/local adapter over the repository's idempotent control store."""
 
-    repository: object
+    repository: ControlRepository
 
     def queue_plan(
         self,
@@ -491,7 +496,7 @@ class DurableAcceleratedRuntime:
     """Advance exactly one caller-observed next tick through durable authority."""
 
     repository: SimulationRepository
-    scorer: object
+    scorer: SimulationScorer
     scenario_id: str = "heatwave"
 
     def _run(self) -> SimulationRun:
@@ -533,7 +538,7 @@ class DurableAcceleratedRuntime:
         tick = next(
             (
                 item
-                for item in getattr(self.repository, "ticks", {}).values()
+                for item in self.repository.ticks.values()
                 if item.run_id == run.run_id
                 and item.tick_index == expected_tick_index
             ),
@@ -559,7 +564,7 @@ class DurableAcceleratedRuntime:
         publication: Publication = self.repository.publish_tick(
             run.run_id, tick.tick_id, lease.fencing_token
         )
-        persisted = getattr(self.repository, "ticks")[tick.tick_id]
+        persisted = self.repository.ticks[tick.tick_id]
         if persisted.status != "SUCCEEDED":
             try:
                 scoring = self.scorer.score(run, publication)

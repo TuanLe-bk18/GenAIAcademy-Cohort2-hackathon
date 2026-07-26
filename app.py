@@ -9,12 +9,20 @@ import streamlit as st
 from heatsafe.audit import HybridInterventionAuditStore
 from heatsafe.config import Settings
 from heatsafe.currency import vnd_to_usd
-from heatsafe.models import DecisionConstraints, PredictiveCityPlan
+from heatsafe.models import (
+    DecisionConstraints,
+    PredictiveCityPlan,
+    SimulatedControlReceipt,
+)
 from heatsafe.operational_runtime import (
     activate_simulated_plan,
     continue_without_intervention,
 )
-from heatsafe.production_mode import ProductionSession, build_production_evidence
+from heatsafe.production_mode import (
+    ProductionSession,
+    SessionChoice,
+    build_production_evidence,
+)
 from heatsafe.repository import (
     HybridRepository,
     ReplayRunProgress,
@@ -680,6 +688,9 @@ city_action = render_city_plan_actions(
     decision_available=decision_available,
 )
 if city_action is not None and predictive_plan is not None:
+    if city_action not in ("ACTIVATE", "CONTINUE"):
+        raise RuntimeError(f"unsupported city plan action: {city_action!r}")
+    choice: SessionChoice = city_action
     if production_session is not None:
         selected_proposals = tuple(
             row.best_window.proposal
@@ -687,16 +698,18 @@ if city_action is not None and predictive_plan is not None:
             if row.zone_id in predictive_plan.selected_zone_ids
             and row.best_window is not None
         )
-        production_session.choose(city_action, proposals=selected_proposals)
+        production_session.choose(choice, proposals=selected_proposals)
         receipt = {
             "snapshot_id": snapshot_id,
             "status": (
                 "SIMULATED_QUEUED"
-                if city_action == "ACTIVATE"
+                if choice == "ACTIVATE"
                 else "CONTINUED"
             ),
         }
-    elif city_action == "ACTIVATE":
+    elif choice == "ACTIVATE":
+        if audit is None:
+            raise RuntimeError("production audit store is unavailable")
         receipt = activate_simulated_plan(
             predictive_plan,
             audit_store=audit,
@@ -713,13 +726,15 @@ if city_action is not None and predictive_plan is not None:
 receipt = st.session_state.get("city_plan_receipt")
 if isinstance(receipt, dict) and receipt.get("snapshot_id") == snapshot_id:
     st.success(f"City plan decision recorded: {receipt['status']}.")
-elif getattr(receipt, "evidence_lineage", None) is not None:
-    if receipt.evidence_lineage.snapshot_id == snapshot_id:
-        message = f"City plan decision recorded: {receipt.status}."
-        if receipt.status in {"STALE_PLAN", "FAILED"}:
-            st.warning(message)
-        else:
-            st.success(message)
+elif (
+    isinstance(receipt, SimulatedControlReceipt)
+    and receipt.evidence_lineage.snapshot_id == snapshot_id
+):
+    message = f"City plan decision recorded: {receipt.status}."
+    if receipt.status in {"STALE_PLAN", "FAILED"}:
+        st.warning(message)
+    else:
+        st.success(message)
 
 render_decision_workspace(
     selected,
@@ -792,6 +807,8 @@ with copilot_tab:
                 "Historical audit details stay hidden until they can be "
                 "filtered by exact run and tick lineage."
             )
+        elif audit is None:
+            st.info("Production audit is unavailable for this session.")
         else:
             try:
                 audit_rows = [
@@ -831,6 +848,7 @@ with policy_column:
     )
 
 if replay_run_id is not None and production_session is None:
+    active_replay_run_id = replay_run_id
     follow_latest = bool(st.session_state.get("playback_follow_latest"))
     playing = bool(st.session_state.get("playback_playing"))
     latest_tick = (
@@ -863,7 +881,7 @@ if replay_run_id is not None and production_session is None:
             st.session_state.playback_last_advance_at = now
             if st.session_state.get("playback_follow_latest"):
                 refreshed = load_replay_progress(
-                    scenario, replay_run_id, uuid4().hex
+                    scenario, active_replay_run_id, uuid4().hex
                 )
                 refreshed_latest = refreshed.latest_succeeded_tick_index
                 if (

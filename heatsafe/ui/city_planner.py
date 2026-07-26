@@ -9,7 +9,8 @@ future simulation evidence.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -223,7 +224,7 @@ def build_unavailable_city_planner_view(
     )
 
 
-def _number(value: float | int | None, digits: int = 1) -> str:
+def _number(value: float | None, digits: int = 1) -> str:
     if value is None:
         return "—"
     if isinstance(value, int):
@@ -352,14 +353,17 @@ def _render_map(view: CityPlannerView, *, selection_context: str) -> None:
                 latitude=21.025, longitude=105.81, zoom=10.1, pitch=35
             ),
             map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-            tooltip={
-                "html": (
-                    "<b>{name}</b><br/>Heat Index: {heat_index}°C "
-                    "({heat_source})<br/>Portfolio: {portfolio_status}"
-                    "<br/>{portfolio_reason}"
-                ),
-                "style": {"backgroundColor": "#111827", "color": "#f8fafc"},
-            },
+            tooltip=cast(
+                Any,
+                {
+                    "html": (
+                        "<b>{name}</b><br/>Heat Index: {heat_index}°C "
+                        "({heat_source})<br/>Portfolio: {portfolio_status}"
+                        "<br/>{portfolio_reason}"
+                    ),
+                    "style": {"backgroundColor": "#111827", "color": "#f8fafc"},
+                },
+            ),
         ),
         height=360,
         key=f"city-planner-map:{selection_context}",

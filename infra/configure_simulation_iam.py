@@ -48,7 +48,10 @@ def configure(
     }
     client.create_dataset(staging, exists_ok=True)
     staging = client.get_dataset(settings.simulation_staging_dataset_path)
-    if staging.location.lower() != settings.region.lower():
+    if (
+        staging.location is None
+        or staging.location.lower() != settings.region.lower()
+    ):
         raise RuntimeError(
             f"{staging.full_dataset_id} location conflict: "
             f"{staging.location!r} != {settings.region!r}"

@@ -12,6 +12,7 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
@@ -19,8 +20,8 @@ from google.cloud import bigquery, storage
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from heatsafe.bigquery_io import merge_rows  # noqa: E402
-from heatsafe.config import Settings  # noqa: E402
+from heatsafe.bigquery_io import merge_rows
+from heatsafe.config import Settings
 
 
 def _f(name: str, field_type: str, mode: str = "REQUIRED") -> bigquery.SchemaField:
@@ -423,7 +424,10 @@ def ensure_checkpoint_bucket(settings: Settings) -> storage.Bucket:
             bucket, project=settings.project_id, location=settings.region
         )
     bucket.reload()
-    if bucket.location.lower() != settings.region.lower():
+    if (
+        bucket.location is None
+        or bucket.location.lower() != settings.region.lower()
+    ):
         raise RuntimeError(
             "checkpoint bucket location conflicts with simulation region"
         )
@@ -436,7 +440,7 @@ def ensure_checkpoint_bucket(settings: Settings) -> storage.Bucket:
         "component": "simulation-checkpoint",
         "managed_by": "scripts",
     }
-    rules = [
+    rules: list[Any] = [
         rule
         for rule in bucket.lifecycle_rules
         if rule.get("action", {}).get("type") != "Delete"
@@ -570,7 +574,10 @@ def ensure_bigquery(
     dataset.labels = {"app": "heatsafe", "env": "demo", "managed_by": "scripts"}
     client.create_dataset(dataset, exists_ok=True)
     current_dataset = client.get_dataset(dataset_ref)
-    if current_dataset.location.lower() != settings.region.lower():
+    if (
+        current_dataset.location is None
+        or current_dataset.location.lower() != settings.region.lower()
+    ):
         raise RuntimeError(
             f"{dataset_ref} location conflict: existing={current_dataset.location!r} "
             f"desired={settings.region!r}"

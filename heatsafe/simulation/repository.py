@@ -7,13 +7,14 @@ the disposable-dataset probe remains the only proof of provider behaviour.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from .engine import (
@@ -143,6 +144,8 @@ class TickInputManifest:
 
 
 class SimulationRepository(Protocol):
+    ticks: dict[str, PersistedTick]
+
     def start(self, *, scenario_id: str, scenario_version: str, seed: int) -> SimulationRun: ...
     def status(self, scenario_id: str) -> SimulationRun | None: ...
     def refresh_status(self, scenario_id: str) -> SimulationRun | None: ...
@@ -151,6 +154,9 @@ class SimulationRepository(Protocol):
     def acquire_tick_lease(self, run_id: str, tick_id: str, owner: str) -> TickLease: ...
     def publish_tick(self, run_id: str, tick_id: str, owner: str) -> Publication: ...
     def mark_scored(self, run_id: str, tick_id: str) -> PersistedTick: ...
+    def record_scoring_lineage(
+        self, run_id: str, tick_id: str, prediction_run_id: str
+    ) -> PersistedTick: ...
     def finalize_score(self, run_id: str, tick_id: str, *, succeeded: bool) -> SimulationRun: ...
     def acknowledge_scoring_commit(
         self, run_id: str, tick_id: str, prediction_run_id: str
@@ -282,10 +288,13 @@ def replay_to_tick(
             state = advance_tick(
                 state, fixture=fixture, zones=zones, controls=controls
             ).state
+    result: TickResult | None = None
     with component_span("advance_tick"):
         result = advance_tick(
             state, fixture=fixture, zones=zones, controls=controls
         )
+    if result is None:
+        raise SimulationRepositoryError("tick execution did not produce a result")
     return state, result
 
 
@@ -699,6 +708,7 @@ class InMemorySimulationRepository:
                 )
         else:
             frozen_at = self.now()
+            controls: tuple[PauseControl, ...] = ()
             with component_span("controls_load") as controls_span:
                 controls = self._controls_for_run(
                     run, tick, authorization_time=frozen_at
@@ -732,6 +742,9 @@ class InMemorySimulationRepository:
             return None
         if any(value is None for value in required):
             raise SimulationRepositoryError("checkpoint metadata is incomplete")
+        assert tick.checkpoint_generation is not None
+        assert tick.checkpoint_compressed_size is not None
+        assert tick.checkpoint_expanded_size is not None
         return CheckpointMetadata(
             object_name=str(tick.checkpoint_object_name),
             format_version=str(tick.checkpoint_format_version),
@@ -760,12 +773,13 @@ class InMemorySimulationRepository:
             reverse=True,
         )
         for candidate in candidates:
+            restored_state: SimulationState | None = None
             try:
                 metadata = self._checkpoint_metadata(candidate)
                 assert metadata is not None
                 with component_span("checkpoint_restore"):
                     data = self.checkpoint_store.get(metadata)
-                    state = decode_checkpoint(
+                    restored_state = decode_checkpoint(
                         data,
                         expected_payload_sha256=metadata.payload_sha256,
                         expected_state_checksum=metadata.state_checksum,
@@ -773,10 +787,12 @@ class InMemorySimulationRepository:
                     _validate_checkpoint_state(
                         run,
                         candidate,
-                        state,
+                        restored_state,
                         fixture=load_scenario(run.scenario_version),
                     )
-                return state, candidate.tick_index
+                if restored_state is None:
+                    raise SimulationRepositoryError("checkpoint decode returned no state")
+                return restored_state, candidate.tick_index
             except (CheckpointError, SimulationRepositoryError):
                 emit_component(
                     "checkpoint_restore",
@@ -871,6 +887,7 @@ class InMemorySimulationRepository:
                     zones=zones,
                     controls=historical_manifest.controls,
                 ).state
+        result: TickResult | None = None
         with component_span("advance_tick"):
             result = advance_tick(
                 state,
@@ -878,9 +895,9 @@ class InMemorySimulationRepository:
                 zones=zones,
                 controls=manifest.controls,
             )
-        _validate_run_tick_clock(
-            run, tick, fixture=fixture, result=result
-        )
+        if result is None:
+            raise SimulationRepositoryError("tick execution did not produce a result")
+        _validate_run_tick_clock(run, tick, fixture=fixture, result=result)
         return state, result
 
     def store_checkpoint(
@@ -892,16 +909,14 @@ class InMemorySimulationRepository:
     ) -> CheckpointMetadata | None:
         if self.checkpoint_store is None:
             return None
-        with component_span("checkpoint_encode"):
-            encoded = encode_checkpoint(state)
+        encoded = encode_checkpoint(state)
         name = checkpoint_object_name(
             run_id=run.run_id,
             tick_index=tick.tick_index,
             input_checksum=manifest.checksum,
         )
         with component_span("checkpoint_upload"):
-            metadata = self.checkpoint_store.put(name, encoded)
-        return metadata
+            return self.checkpoint_store.put(name, encoded)
 
     def plan_execution(
         self,
@@ -1054,8 +1069,8 @@ class InMemorySimulationRepository:
             # A restarted worker reloads ticks from durable storage but does not
             # carry the previous process's in-memory Publication cache.  Rebuild
             # the deterministic projection for the caller without issuing writes.
-            publication = self.published.get(tick_id)
-            if publication is None:
+            cached_publication = self.published.get(tick_id)
+            if cached_publication is None:
                 if self.state_mode == "checkpoint":
                     base_state, restored_tick_index = self._restore_predecessor(
                         run, tick
@@ -1070,12 +1085,18 @@ class InMemorySimulationRepository:
                     base_state=base_state,
                     restored_tick_index=restored_tick_index,
                 )
+                rebuilt_publication: Publication | None = None
                 with component_span("publication_projection"):
-                    publication = publication_rows(
+                    rebuilt_publication = publication_rows(
                         run, tick, result, controls=manifest.controls
                     )
-                self.published[tick_id] = publication
-            return publication
+                if rebuilt_publication is None:
+                    raise SimulationRepositoryError(
+                        "publication rebuild did not produce a result"
+                    )
+                self.published[tick_id] = rebuilt_publication
+                return rebuilt_publication
+            return cached_publication
         if tick.status != "LEASED" or not tick.lease_owner or tick.lease_expires_at is None:
             raise LeaseConflict("tick must have a current lease before publication")
         if tick.lease_expires_at <= self.now():
@@ -1086,10 +1107,9 @@ class InMemorySimulationRepository:
             base_state, restored_tick_index = self._restore_predecessor(run, tick)
         else:
             base_state, restored_tick_index = None, -1
-        with component_span("input_freeze"):
-            manifest = self.freeze_tick_inputs(run, tick)
+        manifest = self.freeze_tick_inputs(run, tick)
         tick = self._require_tick(run_id, tick_id)
-        state, result = self.compute_from_manifest(
+        _state, result = self.compute_from_manifest(
             run,
             tick,
             manifest,
@@ -1181,10 +1201,13 @@ class InMemorySimulationRepository:
                 else None
             ),
         )
+        publication: Publication | None = None
         with component_span("publication_projection"):
             publication = publication_rows(
                 run, updated, result, controls=manifest.controls
             )
+        if publication is None:
+            raise SimulationRepositoryError("publication did not produce a result")
         self.ticks[tick.tick_id] = updated
         self.published[tick.tick_id] = publication
         self._replace_run(
@@ -1390,6 +1413,7 @@ class BigQuerySimulationRepository(InMemorySimulationRepository):
         if tick.input_manifest_json:
             return super().freeze_tick_inputs(run, tick)
         frozen_at = self.now()
+        controls: tuple[PauseControl, ...] = ()
         with component_span("controls_load") as controls_span:
             controls = self._controls_for_run(
                 run, tick, authorization_time=frozen_at
@@ -2217,6 +2241,7 @@ COMMIT TRANSACTION;
             maximum_bytes_billed=MAXIMUM_BYTES_BILLED,
             labels={"app": "heatsafe", "component": "simulation_publisher"},
         )
+        result: Any = []
         if component is None:
             result = self.client.query(sql, job_config=configuration).result()
         else:
