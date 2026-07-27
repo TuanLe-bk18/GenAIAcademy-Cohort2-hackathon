@@ -13,49 +13,48 @@ Driver state + action + outcome --------------------> BigQuery ML risk classifie
                                                          |
                                       action-conditioned counterfactual scores
                                                          |
-                                      constrained optimizer -> Cloud Run UI
+                                      constrained optimizer -> Cloud Run UI (Streamlit)
                                                          |
-                                      Gemini explanation + BigQuery audit
+                                      Gemini explanation + BigQuery audit log
 ```
 
-The services have concrete responsibilities:
+### System Components
 
-- **Cloud Storage** stores immutable provider payloads and replay scenarios. BigQuery rows retain the `raw_gcs_uri` lineage.
-- **BigQuery** stores history, driver features, outcomes, forecasts, model evaluations, predictions and audits.
-- **BigQuery ML** uses TimesFM for demand and a boosted-tree classifier for individual 60-minute operational heat-risk escalation.
-- **Counterfactual scoring** evaluates no action and eight SafePause timing/duration actions per driver; without matching predictions the app provides no recommendation.
-- **Vertex AI Gemini** explains allowlisted model evidence; it never writes SQL or approves actions.
-- **Decision audit** records simulated interventions only. The demo never sends an operational command to drivers.
-- **Cloud Run** hosts Streamlit and a separate weather-ingestion job; structured stdout events flow to Cloud Logging.
+- **Cloud Storage**: Stores immutable provider payloads, replay scenarios, and checkpoint snapshots (`raw_gcs_uri` lineage).
+- **BigQuery**: Stores operational history, driver features, intervention outcomes, demand forecasts, model evaluations, predictions, and decision audit logs.
+- **BigQuery ML**: Uses TimesFM (`AI.FORECAST`) for demand forecasting and a boosted-tree classifier for individual 60-minute heat-risk escalation predictions.
+- **Stateful Production Engine**: Simulates driver exposure, order fulfillment, and staggered SafePause intervention waves (Actual vs. Shadow counterfactual baseline).
+- **SafePause Decision Engine**: Evaluates baseline risk against 8 SafePause timing/duration actions per driver under strict SLA, cost, and mandatory exposure constraints.
+- **Vertex AI Gemini Copilot**: Explains allowlisted model evidence via structured function calling; operates under strict fail-closed security boundaries.
+- **Cloud Run & Docker**: Hosts the Streamlit control panel and automated weather ingestion jobs.
 
-## Decision engine
+## Operational & Interactive Modes
 
-SafePause combines learned risk with deterministic safety constraints. For every zone the engine:
+HeatSafe supports two primary operational views:
 
-1. loads snapshot-matched BigQuery ML risk predictions for every driver and action;
-2. treats every driver with at least four hours of continuous exposure as mandatory, independent of estimated action benefit;
-3. fills the earliest waves with mandatory drivers ordered by baseline risk and exposure, then uses predicted waiting cost and action benefit for the remaining slots;
-4. enumerates pause duration, coverage and staggered-wave candidates, including a mandatory-only candidate;
-5. simulates incremental supply, backlog, fulfillment and ETA against TimesFM median and upper demand;
-6. returns a recommendation only when all mandatory drivers are covered and cost and incremental SLA guardrails pass; otherwise it reports the safety conflict.
+1. **Production Window (Checkpoint K=45)**: Stateful simulation mode allowing operators to advance ticks (15-min increments), observe actual vs. shadow counterfactual branches, and execute SafePause interventions.
+2. **Heatwave Replay Snapshot**: Static cloud-first replay mode using pre-computed GCS & BigQuery snapshots for quick inspection and offline fallback.
 
-The proposal retains before/after risk, feature attributions, model version,
-prediction run, wave timeline, stress outcomes, costs and a deterministic proposal ID.
-`MODEL_UNAVAILABLE` and `NO_FEASIBLE` states never contain a recommendation.
-The four-hour rule is a demo policy threshold, not a medical or regulatory limit.
+## Decision Engine & Guardrails
 
-## GCP resources
+SafePause combines machine-learned risk predictions with deterministic safety rules:
 
-`infra/provision_gcp.py` creates or migrates resources without changing data:
+1. **Mandatory Protection Threshold**: Drivers with $\ge 4$ hours of continuous extreme heat exposure are flagged as mandatory for pause, regardless of estimated cost.
+2. **Staggered Wave Allocation**: Fills initial waves with mandatory drivers (ordered by baseline risk/exposure), then allocates remaining slots based on predicted action benefit.
+3. **Multi-Candidate Simulation**: Evaluates pause duration, coverage, and wave timelines against TimesFM median and upper-bound demand estimates.
+4. **Constraint Enforcement**: Recommends an intervention only when mandatory coverage is 100% and incremental cost, fulfillment, and ETA guardrails pass.
+5. **Fail-Closed Guarantee**: Returns `MODEL_UNAVAILABLE` or `NO_FEASIBLE` states with no recommendation whenever evidence is incomplete or constraints are violated.
 
-- Bucket: `${GOOGLE_CLOUD_PROJECT}-heatsafe-raw`
-- BigQuery sources: `weather_observations`, `zone_operations`, `demand_history`, `driver_state_history`, `driver_intervention_outcomes`
-- BigQuery AI outputs: `driver_current_features`, `driver_risk_predictions`, `zone_demand_forecasts`, `model_evaluations`
-- BigQuery audit: `intervention_proposals`, `intervention_events`
-- Current snapshot: `zone_snapshots_current`
-- Views: `zone_snapshots_live`, `zone_snapshots_heatwave`
+## GCP Resources & Infrastructure
 
-Demo data is opt-in and uses idempotent `MERGE`; provisioning never truncates live or intervention data.
+Provision GCP resources using `infra/provision_gcp.py`:
+
+- **Bucket**: `${GOOGLE_CLOUD_PROJECT}-heatsafe-raw`
+- **BigQuery Datasets**:
+  - Raw Sources: `weather_observations`, `zone_operations`, `demand_history`, `driver_state_history`, `driver_intervention_outcomes`
+  - ML Outputs: `driver_current_features`, `driver_risk_predictions`, `zone_demand_forecasts`, `model_evaluations`
+  - Audit Trail: `intervention_proposals`, `intervention_events`
+- **Views**: `zone_snapshots_current`, `zone_snapshots_live`, `zone_snapshots_heatwave`
 
 ```bash
 source venv/bin/activate
@@ -65,11 +64,9 @@ python infra/provision_gcp.py --seed-demo
 python infra/ml_pipeline.py --all --scenario heatwave
 ```
 
-`generate_data.py` obtains real Open-Meteo weather and combines it with clearly labelled simulated fleet operations in one coherent live `snapshot_id`. For the prototype, the deployed Cloud Run Job is run manually when the live snapshot needs refreshing; no recurring scheduler is required.
+## Running Locally
 
-## Run
-
-Cloud-first with heatwave replay selected by default:
+Run Cloud-first mode with Heatwave Replay enabled:
 
 ```bash
 HEATSAFE_MODE=cloud \
@@ -78,41 +75,33 @@ HEATSAFE_ENABLE_AI=1 \
 streamlit run app.py
 ```
 
-The sidebar can switch between the GCS heatwave replay and current Open-Meteo weather. Offline mode is monitoring-only because AI recommendations fail closed:
+Run Offline Snapshot mode (monitoring-only, fail-closed):
 
 ```bash
 HEATSAFE_MODE=snapshot HEATSAFE_ENABLE_AI=0 streamlit run app.py
 ```
 
-## Gemini evidence tools
+## Gemini Evidence Tools
 
-- `get_operational_snapshot`
-- `rank_heat_hotspots`
-- `explain_zone_risk`
-- `forecast_zone_demand`
-- `compare_safepause_options`
-- `recommend_intervention`
+Allowlisted function tools for Gemini Copilot:
 
-Tool selection uses Gemini function calling with an explicit allowlist. Destructive requests are blocked before the tool layer. TimesFM reads a bounded 21-day context and forecast errors are surfaced instead of silently reused.
+- `get_operational_snapshot`: Retrieves current weather, risk, and supply status across zones.
+- `rank_heat_hotspots`: Ranks operational zones by Heat Index and driver exposure density.
+- `explain_zone_risk`: Surfaces key risk drivers and feature attributions for a specific zone.
+- `forecast_zone_demand`: Fetches TimesFM demand forecasts and uncertainty bounds.
+- `compare_safepause_options`: Evaluates counterfactual SafePause timing and duration candidates.
+- `recommend_intervention`: Formulates guardrail-validated intervention proposals.
 
-## Deploy
+## Deployment & Verification
 
-The deployment script provisions schema, deploys the public Streamlit demo and creates manually invoked ingestion, model-training and scoring jobs. It creates no recurring Scheduler.
+Deploy to Google Cloud Run:
 
 ```bash
 chmod +x scripts/deploy_gcp.sh
-./scripts/deploy_gcp.sh
-```
-
-To explicitly seed or refresh the heatwave replay during deployment:
-
-```bash
 ./scripts/deploy_gcp.sh --seed-demo
 ```
 
-The public action is intentionally labelled `SIMULATED` with `dispatch_status=NOT_APPLICABLE`. Public access is suitable only for the hackathon demo; production approval would require authenticated users and a real downstream command consumer.
-
-## Verify
+Run test suite and verification checks:
 
 ```bash
 python -m unittest discover -s tests -v
