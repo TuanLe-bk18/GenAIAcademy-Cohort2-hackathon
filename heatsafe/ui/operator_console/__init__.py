@@ -69,7 +69,10 @@ if TYPE_CHECKING:
         render_operator_header,
     )
     from .presentation import (
+        OperatorDashboardResult,
+        build_current_dashboard_payload,
         load_presentation_timeline,
+        render_operator_dashboard,
         render_presentation_playback,
     )
     from .shell import OperatorConsoleResult, render_operator_console
@@ -98,6 +101,15 @@ _LAZY_EXPORTS = {
     "load_presentation_timeline": (
         "presentation",
         "load_presentation_timeline",
+    ),
+    "OperatorDashboardResult": ("presentation", "OperatorDashboardResult"),
+    "build_current_dashboard_payload": (
+        "presentation",
+        "build_current_dashboard_payload",
+    ),
+    "render_operator_dashboard": (
+        "presentation",
+        "render_operator_dashboard",
     ),
     "render_presentation_playback": (
         "presentation",
@@ -144,6 +156,7 @@ __all__ = [
     "OperatorCityKpis",
     "OperatorConsoleResult",
     "OperatorConsoleView",
+    "OperatorDashboardResult",
     "OperatorDecisionInsightsView",
     "OperatorEvidenceSummary",
     "OperatorGuardrailView",
@@ -161,6 +174,7 @@ __all__ = [
     "as_hanoi_time",
     "build_area_evidence_table",
     "build_city_kpis",
+    "build_current_dashboard_payload",
     "build_decision_insights",
     "build_driver_evidence_table",
     "build_history_evidence_table",
@@ -191,6 +205,7 @@ __all__ = [
     "render_monitoring_state",
     "render_no_safe_plan",
     "render_operations",
+    "render_operator_dashboard",
     "render_operator_console",
     "render_operator_header",
     "render_presentation_playback",

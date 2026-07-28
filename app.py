@@ -40,7 +40,7 @@ from heatsafe.ui.operator_console import (
     format_hanoi_range,
     format_hanoi_time,
     render_evidence,
-    render_operations,
+    render_operator_dashboard,
     render_presentation_playback,
     render_sidebar,
     render_styles,
@@ -341,22 +341,6 @@ if isinstance(active_session, ProductionSession) and sidebar_result.playback_act
         _advance_once(active_session, 0.0, force=True)
     st.rerun()
 
-speed_seconds = {
-    "Slow": 5,
-    "Normal": 3,
-    "Fast": 2,
-}.get(str(st.session_state.get(SPEED_KEY, "Normal")), 3)
-auto_refresh = (
-    f"{speed_seconds}s"
-    if surface == "Operations"
-    and isinstance(active_session, ProductionSession)
-    and active_session.status == "RUNNING"
-    else None
-)
-
-
-
-@st.fragment(run_every=auto_refresh)
 def live_operator_workspace() -> None:
     mode = str(st.session_state.get(MODE_KEY, "current"))
     accelerated = mode == "accelerated-production"
@@ -446,12 +430,12 @@ def live_operator_workspace() -> None:
     recorded = _recorded_action(mode, session, snapshot_id)
     operations_result = None
     if surface == "Operations":
-        operations_result = render_operations(
+        operations_result = render_operator_dashboard(
             view,
             decision_available=decision_available,
             recording=bool(st.session_state.get("operator_recording")),
             recorded_action=recorded,
-            key_prefix="operator-console:operations",
+            key="operator-dashboard",
         )
     else:
         render_evidence(

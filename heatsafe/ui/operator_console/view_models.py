@@ -109,6 +109,8 @@ class OperatorAreaView:
     selected: bool
     included_in_plan: bool
     priority_order: int | None = None
+    exposed_2h: int = 0
+    forecast_requests_30m: int = 0
 
 
 @dataclass(frozen=True)
@@ -368,6 +370,8 @@ def _operator_areas(
                     plan is not None and zone.zone_id in set(plan.selected_zone_ids)
                 ),
                 priority_order=(row.future_safety_rank if row is not None else None),
+                exposed_2h=max(0, int(zone.exposed_2h)),
+                forecast_requests_30m=max(0, int(zone.forecast_requests_30m)),
             )
         )
     return tuple(result)

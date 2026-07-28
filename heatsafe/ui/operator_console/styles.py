@@ -8,18 +8,18 @@ import streamlit as st
 
 # Shared semantic chart colors are deliberately mid-tone so traces remain legible
 # on both configured Streamlit themes.
-CYAN = "#2786a6"
-GREEN = "#43b66e"
-AMBER = "#c69700"
-RED = "#d94a3a"
+CYAN = "#4da7b3"
+GREEN = "#53c68c"
+AMBER = "#f0a35a"
+RED = "#ef6a5b"
 GRAY = "#728079"
-ORANGE = "#e67e32"
+ORANGE = "#f0a35a"
 
 PLOTLY_LAYOUT: dict[str, Any] = {
     "paper_bgcolor": "rgba(0,0,0,0)",
     "plot_bgcolor": "rgba(0,0,0,0)",
-    "font": {"family": "Inter, system-ui, sans-serif", "size": 13},
-    "hoverlabel": {"font": {"family": "Inter, system-ui, sans-serif"}},
+    "font": {"family": "Inter, system-ui, sans-serif", "size": 15},
+    "hoverlabel": {"font": {"family": "Inter, system-ui, sans-serif", "size": 14}},
 }
 
 _CSS = """
@@ -39,28 +39,28 @@ _CSS = """
   --operator-unavailable: var(--st-gray-text-color);
   --operator-context: var(--st-blue-text-color);
 }
-.block-container { max-width: 1600px; padding-top: 1rem; }
+.block-container { max-width: 1600px; padding-top: 1rem; padding-bottom: 2.25rem; }
 [data-testid="stSidebar"] { border-right: 1px solid var(--operator-border); }
 .operator-header {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .65rem .8rem; margin-bottom: .65rem; border: 1px solid var(--operator-border);
   border-radius: 12px; background: var(--operator-surface);
 }
-.operator-brand { color: var(--operator-text); font-size: 1.1rem; font-weight: 750; }
-.operator-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem .8rem; color: var(--operator-muted); font-size: .82rem; }
+.operator-brand { color: var(--operator-text); font-size: 1.25rem; font-weight: 750; letter-spacing: -.01em; }
+.operator-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem .8rem; color: var(--operator-muted); font-size: .9rem; }
 .operator-status { color: var(--operator-safe); font-weight: 700; }
-.operator-disclosure { color: var(--operator-muted); font-size: .78rem; margin: -.3rem 0 .65rem .15rem; }
-.operator-area-title { color: var(--operator-text); font-size: 1.35rem; font-weight: 750; }
-.operator-area-context { color: var(--operator-muted); font-size: .88rem; margin: .15rem 0 .8rem; }
+.operator-disclosure { color: var(--operator-muted); font-size: .9rem; margin: -.3rem 0 .75rem .15rem; }
+.operator-area-title { color: var(--operator-text); font-size: 1.5rem; font-weight: 750; overflow-wrap: anywhere; }
+.operator-area-context { color: var(--operator-muted); font-size: .95rem; margin: .15rem 0 .8rem; overflow-wrap: anywhere; }
 .operator-recommendation {
   border-left: 3px solid var(--operator-primary); padding: .7rem .8rem;
   background: var(--operator-primary-bg); border-radius: 0 9px 9px 0; margin: .4rem 0 .75rem;
 }
-.operator-recommendation strong { color: var(--operator-text); font-size: 1.08rem; }
-.operator-recommendation p { color: var(--operator-muted); font-size: .84rem; margin: .25rem 0 0; }
+.operator-recommendation strong { color: var(--operator-text); font-size: 1.2rem; overflow-wrap: anywhere; }
+.operator-recommendation p { color: var(--operator-muted); font-size: .96rem; margin: .25rem 0 0; overflow-wrap: anywhere; }
 .operator-guard {
   display: flex; justify-content: space-between; gap: .8rem; padding: .52rem 0;
-  border-bottom: 1px solid var(--operator-border); font-size: .84rem;
+  border-bottom: 1px solid var(--operator-border); font-size: .94rem; align-items: flex-start;
 }
 .operator-guard:last-child { border-bottom: 0; }
 .operator-guard-label { color: var(--operator-muted); }
@@ -70,8 +70,10 @@ _CSS = """
   display: flex; justify-content: space-between; gap: .8rem; color: var(--operator-muted);
   font-size: .82rem; padding: .25rem 0;
 }
-[data-testid="stMetric"] { border-color: var(--operator-border); background: var(--operator-surface); }
+[data-testid="stMetric"] { border-color: var(--operator-border); background: var(--operator-surface); min-height: 118px; }
 [data-testid="stMetric"] label { color: var(--operator-muted); }
+[data-testid="stMetricValue"] { font-size: clamp(1.75rem, 2vw, 2.2rem); overflow-wrap: anywhere; }
+[data-testid="stMetricDelta"] { font-size: .95rem; white-space: normal; overflow-wrap: anywhere; }
 [data-testid="stDataFrame"] { border: 1px solid var(--operator-border); border-radius: 10px; overflow: hidden; }
 button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
   outline: 2px solid var(--operator-primary) !important; outline-offset: 2px;
@@ -85,6 +87,12 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 @media (max-width: 1100px) {
   .operator-header { align-items: flex-start; flex-direction: column; }
   .operator-meta { justify-content: flex-start; }
+}
+@media (max-width: 700px) {
+  .block-container { padding-left: .8rem; padding-right: .8rem; }
+  .operator-header { padding: .75rem; }
+  .operator-guard { flex-direction: column; gap: .2rem; }
+  [data-testid="stMetric"] { min-height: 104px; }
 }
 </style>
 """

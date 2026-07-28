@@ -60,26 +60,30 @@ def render_operations(
     """Render map-first operations with no data table and at most two columns."""
     render_operator_header(view)
     render_city_kpis(view)
-    map_column, decision_column = st.columns([1.85, 1], gap="medium")
+    # Keep the geographic situation and its decision evidence in the same visual
+    # scan. The decision/action card follows below so it never displaces the
+    # explanation chart into a separate row.
+    map_column, insight_column = st.columns([1.15, 1], gap="medium")
     with map_column:
         selected_zone_id = render_city_map(
             view.map_areas,
             view.priority_areas,
             key_prefix=f"{key_prefix}:map",
         )
-    with decision_column:
-        decision_action = render_decision_card(
-            view.selected_area,
-            view.recommendation,
-            decision_available=decision_available,
-            recording=recording,
-            recorded_action=recorded_action,
-            key_prefix=f"{key_prefix}:decision",
+    with insight_column:
+        insight_view = render_decision_insights(
+            view.decision_insights,
+            areas=view.map_areas,
+            selected_view=selected_insight,
+            key_prefix=f"{key_prefix}:insights",
         )
-    insight_view = render_decision_insights(
-        view.decision_insights,
-        selected_view=selected_insight,
-        key_prefix=f"{key_prefix}:insights",
+    decision_action = render_decision_card(
+        view.selected_area,
+        view.recommendation,
+        decision_available=decision_available,
+        recording=recording,
+        recorded_action=recorded_action,
+        key_prefix=f"{key_prefix}:decision",
     )
     return OperatorOperationsResult(
         selected_zone_id=selected_zone_id,

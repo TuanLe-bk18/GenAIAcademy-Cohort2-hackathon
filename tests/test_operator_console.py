@@ -301,6 +301,10 @@ class PresentationTimelineTests(unittest.TestCase):
         self.assertEqual(timeline["range_label"], "09:15–13:15")
         self.assertEqual(timeline["decision_time_label"], "11:15")
         self.assertEqual(timeline["plan_status"], "READY")
+        self.assertEqual(
+            {feature["properties"]["zone_id"] for feature in timeline["district_boundaries"]["features"]},
+            {zone["id"] for zone in pre[0]["zones"]},
+        )
         self.assertEqual(timeline["presentation_limits"]["budget_usd"], 500)
         self.assertEqual(
             timeline["presentation_limits"]["support_per_driver_usd"],
