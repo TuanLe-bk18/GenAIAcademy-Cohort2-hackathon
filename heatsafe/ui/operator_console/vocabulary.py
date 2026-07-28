@@ -24,10 +24,10 @@ FORBIDDEN_OPERATOR_TERMS = (
 )
 
 _MODE_LABELS = {
-    "CURRENT": "Current plan",
-    "PRODUCTION": "Current plan",
-    "ACCELERATED": "Simulation playback",
-    "ACCELERATED-PRODUCTION": "Simulation playback",
+    "CURRENT": "PRODUCTION",
+    "PRODUCTION": "PRODUCTION",
+    "ACCELERATED": "EVENT REPLAY",
+    "ACCELERATED-PRODUCTION": "EVENT REPLAY",
 }
 
 _READINESS_LABELS = {
@@ -103,7 +103,7 @@ def format_currency_vnd(value_vnd: float | None, *, decimals: bool = False) -> s
 
 def format_mode_label(mode: str) -> str:
     normalized = str(mode).strip().replace("_", "-").upper()
-    return _MODE_LABELS.get(normalized, "Current plan")
+    return _MODE_LABELS.get(normalized, "PRODUCTION")
 
 
 def format_readiness_label(status: str | None) -> str:

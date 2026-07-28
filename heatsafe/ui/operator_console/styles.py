@@ -41,6 +41,10 @@ _CSS = """
 }
 .block-container { max-width: 1600px; padding-top: 1rem; padding-bottom: 2.25rem; }
 [data-testid="stSidebar"] { border-right: 1px solid var(--operator-border); }
+.operator-sidebar-brand {
+  color: var(--operator-text); font-size: 1.35rem; font-weight: 800;
+  letter-spacing: -.03em; line-height: 1.05; white-space: nowrap;
+}
 .operator-header {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .65rem .8rem; margin-bottom: .65rem; border: 1px solid var(--operator-border);

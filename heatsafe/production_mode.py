@@ -779,15 +779,35 @@ class ProductionSession:
                 )
             if not proposals:
                 raise ValueError("production window has no selected proposals")
-            self.controls = controls_from_proposals(
-                proposals,
-                source_tick_index=self.current_tick,
+            queued = self.queue_controls(
+                controls_from_proposals(
+                    proposals,
+                    source_tick_index=self.current_tick,
+                )
             )
-            if not self.controls:
+            if not queued:
                 raise ValueError("production proposal produced no controls")
         else:
             self.controls = ()
         self.status = "RUNNING"
+
+    def queue_controls(
+        self,
+        controls: tuple[PauseControl, ...],
+    ) -> tuple[PauseControl, ...]:
+        """Append deterministic controls while making retries idempotent."""
+        existing = {control.control_id: control for control in self.controls}
+        queued: list[PauseControl] = []
+        for control in controls:
+            prior = existing.get(control.control_id)
+            if prior is not None:
+                if prior != control:
+                    raise ValueError("control id was reused with a different payload")
+                continue
+            existing[control.control_id] = control
+            queued.append(control)
+        self.controls = tuple(sorted(existing.values(), key=lambda item: item.control_id))
+        return tuple(sorted(queued, key=lambda item: item.control_id))
 
     def advance(self) -> TickResult:
         if self.status == "AWAITING_DECISION":

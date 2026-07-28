@@ -376,6 +376,8 @@ def recommend_ai_intervention(
     sponsor_per_driver_vnd: int = 8_000,
     candidate_start_delays: tuple[int, ...] = (0,),
     preventive_ids: frozenset[str] = frozenset(),
+    allowed_driver_ids: frozenset[str] | None = None,
+    candidate_waves: tuple[int, ...] = (1, 2, 3, 4),
 ) -> RecommendationResult:
     if not predictions:
         return RecommendationResult(
@@ -405,12 +407,29 @@ def recommend_ai_intervention(
     exposure_by_driver: dict[str, int] = {}
     for item in predictions:
         exposure_by_driver[item.driver_id_hash] = item.exposure_minutes
+    if allowed_driver_ids is not None:
+        allowed = set(allowed_driver_ids)
+        baseline = {
+            driver_id: risk
+            for driver_id, risk in baseline.items()
+            if driver_id in allowed
+        }
+        actions = {
+            key: value for key, value in actions.items() if key[0] in allowed
+        }
+        exposure_by_driver = {
+            driver_id: exposure
+            for driver_id, exposure in exposure_by_driver.items()
+            if driver_id in allowed
+        }
     mandatory_ids = {
         driver_id
         for driver_id, exposure in exposure_by_driver.items()
         if exposure >= MANDATORY_EXPOSURE_MINUTES
     }
-    preventive_ids = frozenset(preventive_ids) - mandatory_ids
+    preventive_ids = (
+        frozenset(preventive_ids) & frozenset(exposure_by_driver)
+    ) - mandatory_ids
     missing_mandatory_actions = {
         driver_id
         for driver_id in mandatory_ids
@@ -481,7 +500,7 @@ def recommend_ai_intervention(
         selected_counts.add(len(mandatory_ids | set(preventive_ids)))
     for pause_minutes in ACTION_DURATIONS:
         for start_delay in candidate_start_delays:
-            for waves in (1, 2, 3, 4):
+            for waves in candidate_waves:
                 for selected_count in sorted(selected_counts):
                     candidate = _build_candidate(
                         zone,

@@ -62,7 +62,7 @@ HeatSafe xử lý trade-off này theo nguyên tắc:
 | **Actual branch** | Nhánh mô phỏng sau khi operator chọn `ACTIVATE` hoặc `CONTINUE`. Đây không phải real-world actual outcome. |
 | **Shadow baseline** | Nhánh counterfactual luôn không có PauseControl, dùng làm baseline đối chiếu. |
 | **Current/Production** | Chế độ đứng tại checkpoint K=45 đã kiểm chứng, hiển thị evidence và đề xuất tại một thời điểm quyết định cố định. |
-| **Simulation playback** | Chế độ trình bày K−8 → K+8 cho giám khảo. Timeline đã được tính trước từ stateful engine; Play/Next/area selection chạy trong browser, không rerun Streamlit hay chạy lại optimizer. |
+| **Simulation playback** | Chế độ trình bày 09:15–13:15 cho giám khảo, với preventive decision tại tick 40 (10:00) và policy rolling đánh giá lại mỗi 15 phút. Planner chỉ bổ sung driver chưa được reserve, ưu tiên cohort có thể vượt 4 giờ trước tick kế tiếp và giữ ngân sách riêng cho mandatory. Timeline đã được tính trước từ stateful engine; Play/Next/area selection chạy trong browser, không rerun Streamlit hay chạy lại optimizer. |
 | **Durable runtime** | Đường simulation dùng BigQuery/GCS/lease/checkpoint/control writer. Có trong code/hạ tầng, nhưng Simulation playback không gọi trực tiếp đường này. |
 
 ---
@@ -149,15 +149,20 @@ trên đường nóng của UI. Script
 `scripts/build_operator_presentation_timeline.py` chạy deterministic engine và optimizer
 trước, rồi ghi một artifact JSON có giới hạn:
 
-- 9 frame từ 09:15 đến điểm quyết định 11:15;
-- 8 frame hậu quyết định cho `With SafePause`;
-- 8 frame hậu quyết định cho `Without SafePause`;
+- 4 frame từ 09:15 đến preventive decision lúc 10:00;
+- 13 frame hậu quyết định cho `With SafePause`;
+- 13 frame hậu quyết định cho `Without SafePause`;
 - đúng 10 khu vực, một bộ decision views dùng chung và không lặp trong từng frame.
 
-Artifact dùng bộ giới hạn presentation cố định `$500` và `$0.32` support/driver. Kết quả
-authoritative tại decision frame là `READY`, cover `275 / 275` urgent drivers và còn
-`$99` budget reserve, vì vậy giám khảo có thể xem cả hai nhánh. Các giới hạn này không
-ghi đè control editable hay quyết định trong Current plan.
+Artifact dùng bộ giới hạn presentation cố định `$500` và `$0.32` support/driver. Tại
+10:00, forecast +15 phút chọn đúng 43 preventive drivers thay vì pause toàn bộ cohort
++120 phút. Policy đánh giá lại mỗi tick, reserve driver ngay khi lập lịch để không chọn
+trùng, và giữ `$100` cho mandatory. Tick 10:15 giảm cohort mandatory quan sát được từ
+43 ở nhánh `Without SafePause` xuống 7 ở nhánh `With SafePause`; KPI tách riêng
+mandatory coverage, preventive delivery và rolling budget. Khi cap cạn mà vẫn còn
+mandatory chưa cover, replay ghi `SAFETY_CAPACITY_BREACH` thay vì tiếp tục hiển thị
+monitoring giả. Các giới hạn này không ghi đè control editable hay quyết định trong
+Current plan.
 
 Khi người xem bấm Play hoặc Next 15 min, Custom Component v2 giữ nguyên một DOM và chỉ
 cập nhật text, SVG bubble map, KPI, cursor và clip của line/area chart. Không có
@@ -657,8 +662,9 @@ Cách diễn đạt đúng:
 | `scripts/deploy_gcp.sh` | Cloud Run UI + ingest/train/score job deployment. |
 | `scripts/deploy_simulation_gcp.sh` | Durable simulation/control jobs và scheduler safety gates. |
 | `scripts/build_production_window.py` | Rebuild/review production-window artifact (seed 42, K=45). |
-| `scripts/build_operator_presentation_timeline.py` | Tạo bounded display timeline từ Production window; không chạy trong request path. |
-| `data/scenarios/hanoi_heatwave_v1/operator_presentation_timeline.json` | 9 frame trước decision và 8 frame cho mỗi nhánh trình bày sau decision. |
+| `heatsafe/event_replay.py` | Rolling controller 15 phút, driver reservation, supplemental controls và cumulative budget ledger cho Event Replay. |
+| `scripts/build_operator_presentation_timeline.py` | Tạo bounded display timeline và rolling event ledger từ Production window; không chạy trong request path. |
+| `data/scenarios/hanoi_heatwave_v1/operator_presentation_timeline.json` | 4 frame đến preventive decision 10:00 và 13 frame cho mỗi nhánh trình bày sau decision. |
 | `tests/` | Unit/contract tests cho core, simulation, checkpoint, replay, production mode, UI and deployment contracts. |
 
 ---

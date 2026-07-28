@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import streamlit as st
 
@@ -11,6 +12,8 @@ from heatsafe.currency import usd_to_vnd, vnd_to_usd
 from heatsafe.models import DecisionConstraints
 
 from .view_models import OperatorConsoleView
+
+_LOGO_PATH = Path(__file__).with_name("assets") / "HeatsafeAIOps-logo.png"
 
 
 @dataclass(frozen=True)
@@ -47,20 +50,29 @@ def render_sidebar(
     """Render app-level controls and return intents without executing domain commands."""
     current_mode = mode if mode in {"current", "accelerated-production"} else (
         "accelerated-production"
-        if view is not None and view.mode_label == "Simulation playback"
+        if view is not None and view.mode_label == "EVENT REPLAY"
         else "current"
     )
     with st.sidebar:
+        logo_column, brand_column = st.columns([1.2, 2.0], vertical_alignment="center")
+        with logo_column:
+            st.image(str(_LOGO_PATH), width=90)
+        with brand_column:
+            st.markdown(
+                '<div class="operator-sidebar-brand" style="line-height: 1.1; margin-bottom: 4px;">'
+                '<span style="color: #ff8c00;">Heat</span><span style="color: #00e5ff;">Safe</span><span style="color: #ffffff;">AI</span><br>'
+                '<span style="color: #ffffff;">OPS</span></div>'
+                '<div style="font-size: 0.65em; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px;">MONITOR — ALERT — PROTECT</div>',
+                unsafe_allow_html=True,
+            )
+
         st.subheader("Operator controls")
-        st.caption(
-            "Appearance: switch Light / Dark in the app menu → Settings → Theme."
-        )
         mode = st.segmented_control(
             "Mode",
             ("current", "accelerated-production"),
             default=current_mode,
             format_func=lambda item: (
-                "Current plan" if item == "current" else "Simulation playback"
+                "PRODUCTION" if item == "current" else "EVENT REPLAY"
             ),
             key=f"{key_prefix}:mode",
         )

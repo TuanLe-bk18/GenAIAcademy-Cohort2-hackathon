@@ -254,7 +254,8 @@ class CurrentForecastInputTests(TestCase):
             build_current_forecast_input(self.repository, self.zones)
         )
         for zone in city.zones:
-            now, _, future = zone.horizons
+            now = next(item for item in zone.horizons if item.minutes_ahead == 0)
+            future = next(item for item in zone.horizons if item.minutes_ahead == 120)
             self.assertEqual(now.mandatory_now, 0)
             self.assertEqual(future.projected_mandatory, 0)
             self.assertEqual(future.watchlist, 0)
@@ -295,6 +296,10 @@ class AcceleratedForecastInputTests(TestCase):
         self.assertIsInstance(evidence, AcceleratedForecastInput)
         self.assertEqual(len(evidence.zones), 10)
         self.assertEqual(len(projection.zones), 10)
+        self.assertEqual(
+            [item.minutes_ahead for item in projection.zones[0].horizons],
+            [0, 15, 60, 120],
+        )
         self.assertEqual(len(projection.path_ids), FORECAST_PATH_COUNT)
         self.assertEqual(self.result.state, original_state)
         self.assertGreater(

@@ -124,7 +124,7 @@ _HTML = """
     <div class="playback-clock">
       <span class="live-dot" aria-hidden="true"></span>
       <div>
-        <div class="toolbar-kicker">Simulation playback · <span data-range></span></div>
+        <div class="toolbar-kicker">EVENT REPLAY · <span data-range></span></div>
         <div class="toolbar-time">Now <strong data-time></strong> · Recommendation at <span data-decision-time></span></div>
       </div>
     </div>
@@ -154,6 +154,9 @@ _HTML = """
     </article>
     <article class="kpi-card coverage">
       <span data-kpi-label-1>Safety coverage</span><strong data-kpi-coverage>Monitoring</strong><small data-kpi-note-1>Available at decision time</small>
+    </article>
+    <article class="kpi-card preventive" data-kpi-preventive-card hidden>
+      <span>Preventive delivery</span><strong data-kpi-preventive>—</strong><small data-kpi-preventive-note>Available at decision time</small>
     </article>
     <article class="kpi-card budget">
       <span data-kpi-label-2>Budget remaining after this plan</span><strong data-kpi-budget>—</strong><small data-kpi-note-2>High-demand reserve included</small>
@@ -281,6 +284,7 @@ button, select { font: inherit; }
 .status-strip { display:flex; align-items:center; flex-wrap:wrap; gap:9px; color:var(--muted); font-size:12px; padding:0 4px; }
 .status-pill { border:1px solid var(--primary); border-radius:999px; color:var(--safe); background:var(--primary-bg); padding:3px 9px; font-weight:700; }
 .kpi-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.playback-root[data-has-preventive="true"] .kpi-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
 .kpi-card { min-height:104px; padding:13px 15px; border:1px solid var(--border); border-radius:12px; background:var(--surface); display:flex; flex-direction:column; justify-content:center; overflow:hidden; position:relative; }
 .kpi-card::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--primary); }
 .kpi-card.critical::before { background:var(--critical); }.kpi-card.budget::before { background:var(--heat); }
@@ -954,7 +958,11 @@ function render(state) {
   const root = state.root
   const frames = displayFrames(state)
   if (!state.selectedZone) state.selectedZone = frame.zones?.[0]?.id
-  q(root, ".playback-root").dataset.mode = state.data.mode || "replay"
+  const playbackRoot = q(root, ".playback-root")
+  playbackRoot.dataset.mode = state.data.mode || "replay"
+  const preventiveCoverage = frame.city?.coverage?.preventive
+  playbackRoot.dataset.hasPreventive = String(!isCurrent(state) && Boolean(preventiveCoverage))
+  q(root, "[data-kpi-preventive-card]").hidden = isCurrent(state) || !preventiveCoverage
   setText(root, "[data-range]", state.data.range_label)
   setText(root, "[data-time]", frame.time_label)
   setText(root, "[data-decision-time]", state.data.decision_time_label)
@@ -979,13 +987,23 @@ function render(state) {
   } else {
     setText(root, "[data-kpi-label-0]", "Drivers needing a break now")
     setText(root, "[data-kpi-note-0]", "Across Hanoi")
-    setText(root, "[data-kpi-label-1]", "Safety coverage")
-    setText(root, "[data-kpi-label-2]", "Budget remaining after this plan")
-    setText(root, "[data-kpi-note-2]", "High-demand reserve included")
+    setText(root, "[data-kpi-label-1]", "Mandatory coverage")
+    setText(root, "[data-kpi-label-2]", "Rolling budget remaining")
+    setText(root, "[data-kpi-note-2]", "Includes mandatory reserve")
     tweenNumber(q(root, "[data-kpi-urgent]"), Number(frame.city.urgent_drivers || 0))
-    const covered = Number(frame.city.covered_drivers || 0), required = Number(frame.city.required_drivers || 0)
+    const mandatory = frame.city.coverage?.mandatory
+    const covered = Number(mandatory?.covered_drivers ?? frame.city.covered_drivers ?? 0)
+    const required = Number(mandatory?.required_drivers ?? frame.city.required_drivers ?? 0)
     setText(root, "[data-kpi-coverage]", atDecision ? `${covered.toLocaleString()} / ${required.toLocaleString()}` : "Monitoring")
-    setText(root, "[data-kpi-note-1]", atDecision ? (covered >= required ? "All covered" : `${Math.max(0, required-covered).toLocaleString()} still uncovered`) : "Available at decision time")
+    setText(root, "[data-kpi-note-1]", atDecision ? (mandatory?.status || (covered >= required ? "All covered" : `${Math.max(0, required-covered).toLocaleString()} still uncovered`)) : "Available at decision time")
+    const preventiveCard = q(root, "[data-kpi-preventive-card]")
+    preventiveCard.hidden = !preventiveCoverage
+    if (preventiveCoverage) {
+      const started = Number(preventiveCoverage.started_drivers || 0)
+      const planned = Number(preventiveCoverage.planned_drivers || 0)
+      setText(root, "[data-kpi-preventive]", `${started.toLocaleString()} / ${planned.toLocaleString()}`)
+      setText(root, "[data-kpi-preventive-note]", preventiveCoverage.status || "Rolling evaluation")
+    }
     const budget = frame.city.budget_remaining_usd
     setText(root, "[data-kpi-budget]", atDecision && budget != null ? `${budget < 0 ? "−" : ""}$${Math.abs(Number(budget)).toLocaleString()}` : "—")
   }

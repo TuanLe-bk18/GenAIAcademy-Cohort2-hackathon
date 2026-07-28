@@ -51,7 +51,7 @@ from ..simulation.models import ACTIVE_STATUSES, TickResult, ZonePrior
 from ..simulation.randomness import stable_int
 from ..simulation.scenario import ScenarioFixture
 
-FORECAST_HORIZONS = (0, 60, 120)
+FORECAST_HORIZONS = (0, 15, 60, 120)
 FORECAST_PATH_COUNT = 64
 FORECAST_SEED = 20_260_726
 PROJECTED_MANDATORY_PROBABILITY = 0.50
@@ -950,6 +950,89 @@ def _driver_horizon(
     return next(item for item in driver.horizons if item.minutes_ahead == horizon)
 
 
+def _exclude_reserved_drivers(
+    zone: ZoneForecastProjection,
+    reserved_driver_ids: frozenset[str],
+) -> ZoneForecastProjection:
+    """Return internally consistent forecast metrics for the unreserved cohort."""
+    if not reserved_driver_ids or zone.source is None:
+        return zone
+    source_by_id = {
+        driver.driver_id_hash: driver for driver in zone.source.drivers
+    }
+    drivers = tuple(
+        driver
+        for driver in zone.drivers
+        if driver.driver_id_hash not in reserved_driver_ids
+    )
+    horizons: list[ForecastHorizon] = []
+    for horizon in zone.horizons:
+        if horizon.minutes_ahead == 0:
+            mandatory_now = sum(
+                source_by_id[driver.driver_id_hash].continuous_exposure_minutes
+                >= MANDATORY_EXPOSURE_MINUTES
+                for driver in drivers
+            )
+            horizons.append(
+                replace(
+                    horizon,
+                    mandatory_now=mandatory_now,
+                    projected_mandatory=0,
+                    watchlist=0,
+                    expected_crossers=0.0,
+                    baseline_expected_risk=round(
+                        sum(_driver_horizon(driver, 0).projected_risk for driver in drivers),
+                        6,
+                    ),
+                )
+            )
+            continue
+        eligible_probabilities = [
+            _driver_horizon(driver, horizon.minutes_ahead).crossing_probability
+            for driver in drivers
+            if source_by_id[driver.driver_id_hash].continuous_exposure_minutes
+            < MANDATORY_EXPOSURE_MINUTES
+        ]
+        online_probabilities = [
+            _driver_horizon(driver, horizon.minutes_ahead).online_probability
+            for driver in drivers
+        ]
+        horizons.append(
+            replace(
+                horizon,
+                mandatory_now=sum(
+                    source_by_id[driver.driver_id_hash].continuous_exposure_minutes
+                    >= MANDATORY_EXPOSURE_MINUTES
+                    for driver in drivers
+                ),
+                projected_mandatory=sum(
+                    probability >= PROJECTED_MANDATORY_PROBABILITY
+                    for probability in eligible_probabilities
+                ),
+                watchlist=sum(
+                    0.0 < probability < PROJECTED_MANDATORY_PROBABILITY
+                    for probability in eligible_probabilities
+                ),
+                expected_crossers=round(sum(eligible_probabilities), 6),
+                online_continuation_probability=round(
+                    sum(online_probabilities) / len(online_probabilities), 6
+                )
+                if online_probabilities
+                else 0.0,
+                baseline_expected_risk=round(
+                    sum(
+                        _driver_horizon(
+                            driver, horizon.minutes_ahead
+                        ).projected_risk
+                        for driver in drivers
+                    ),
+                    6,
+                ),
+            )
+        )
+    return replace(zone, drivers=drivers, horizons=tuple(horizons))
+
+
 def _window_outcome(
     city: CityForecastProjection,
     zone: ZoneForecastProjection,
@@ -1454,9 +1537,17 @@ def build_predictive_city_plan(
     *,
     expected_zone_count: int = 10,
     seed: int = FORECAST_SEED,
+    preventive_horizon_minutes: int = 120,
+    reserved_driver_ids: frozenset[str] = frozenset(),
+    actionable_only: bool = False,
+    include_preventive: bool = True,
+    candidate_start_delays: tuple[int, ...] = ACTION_DELAYS,
+    candidate_waves: tuple[int, ...] = (1, 2, 3, 4),
 ) -> PredictiveCityPlan:
     """Build one deterministic, cap-compliant city plan from all-zone evidence."""
     constraints = constraints.normalized()
+    if preventive_horizon_minutes not in FORECAST_HORIZONS or preventive_horizon_minutes == 0:
+        raise ValueError("preventive horizon must be one of the projected future horizons")
     if len(city.zones) != expected_zone_count:
         raise ForecastInputError(
             f"expected {expected_zone_count} projected zones; found {len(city.zones)}"
@@ -1466,6 +1557,7 @@ def build_predictive_city_plan(
     rejected_zone_options: list[_RejectedZoneOption] = []
     evidence_unavailable = False
     for zone in sorted(city.zones, key=lambda item: item.zone_id):
+        zone = _exclude_reserved_drivers(zone, reserved_driver_ids)
         source = zone.source
         now = next(item for item in zone.horizons if item.minutes_ahead == 0)
         future_120 = next(
@@ -1478,18 +1570,30 @@ def build_predictive_city_plan(
             driver_id
             for driver_id, driver in projections.items()
             if (
-                source is not None
+                include_preventive
+                and source is not None
                 and next(
                     item
                     for item in source.drivers
                     if item.driver_id_hash == driver_id
                 ).continuous_exposure_minutes
                 < MANDATORY_EXPOSURE_MINUTES
-                and _driver_horizon(driver, 120).crossing_probability
+                and _driver_horizon(
+                    driver, preventive_horizon_minutes
+                ).crossing_probability
                 >= PROJECTED_MANDATORY_PROBABILITY
             )
         )
         predictions = _driver_predictions(city, zone)
+        mandatory_ids = frozenset(
+            driver.driver_id_hash
+            for driver in source.drivers
+            if driver.driver_id_hash not in reserved_driver_ids
+            and driver.continuous_exposure_minutes >= MANDATORY_EXPOSURE_MINUTES
+        ) if source is not None else frozenset()
+        allowed_driver_ids = (
+            mandatory_ids | preventive_ids if actionable_only else None
+        )
         windows: list[InterventionWindow] = []
         timing_options: list[TimingOption] = []
         alternative_options: dict[str, TimingOption] = {}
@@ -1504,7 +1608,7 @@ def build_predictive_city_plan(
 
 
 
-            for start in ACTION_DELAYS:
+            for start in candidate_start_delays:
                 result = recommend_ai_intervention(
                     source.zone,
                     predictions,
@@ -1514,6 +1618,8 @@ def build_predictive_city_plan(
                     sponsor_per_driver_vnd=constraints.sponsor_per_driver_vnd,
                     candidate_start_delays=(start,),
                     preventive_ids=preventive_ids,
+                    allowed_driver_ids=allowed_driver_ids,
+                    candidate_waves=candidate_waves,
                 )
                 representative = result.recommended or next(
                     iter(result.alternatives), None

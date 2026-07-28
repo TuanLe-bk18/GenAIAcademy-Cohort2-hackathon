@@ -14,13 +14,15 @@ from pathlib import Path
 from typing import Any
 
 from heatsafe.currency import usd_to_vnd
+from heatsafe.event_replay import RollingEventReplayController, RollingReplayEvent
 from heatsafe.models import DecisionConstraints, PredictiveCityPlan
-from heatsafe.production_mode import ProductionSession, build_production_evidence
-from heatsafe.services.preventive_planning import (
-    build_accelerated_forecast_input,
-    build_predictive_city_plan,
-    project_city_forecast,
+from heatsafe.production_mode import (
+    ProductionSession,
+    build_production_evidence,
+    load_production_window,
 )
+from heatsafe.services.preventive_planning import MANDATORY_EXPOSURE_MINUTES
+from heatsafe.simulation.models import ACTIVE_STATUSES
 from heatsafe.ui.operator_console.view_models import build_operator_console_view
 from heatsafe.ui.operator_console.vocabulary import format_heat_state
 
@@ -32,6 +34,8 @@ OUTPUT = (
     / "hanoi_heatwave_v1"
     / "operator_presentation_timeline.json"
 )
+PRESENTATION_DECISION_TICK = 40  # 10:00, before the first observed 4h breach.
+
 CONSTRAINTS = DecisionConstraints(
     horizon_minutes=120,
     # Presentation-only limits keep all ten areas feasible so judges can inspect
@@ -87,6 +91,10 @@ def _frame(
     branch: str,
     plan: PredictiveCityPlan | None,
     comparison_result: Any | None = None,
+    preventive_planned: int = 0,
+    preventive_started: int = 0,
+    budget_remaining_vnd: int | None = None,
+    rolling_event: RollingReplayEvent | None = None,
 ) -> dict[str, Any]:
     evidence = build_production_evidence(
         result,
@@ -128,13 +136,46 @@ def _frame(
         comparison_urgent = sum(
             item.exposed_4h for item in comparison_result.zones
         )
-    covered = int(plan.mandatory_now_covered) if plan is not None else 0
-    required = (
-        covered + int(plan.mandatory_now_uncovered) if plan is not None else urgent
+    actual_urgent_ids = {
+        driver.driver_id_hash
+        for driver in result.state.drivers
+        if driver.status in ACTIVE_STATUSES
+        and driver.continuous_exposure_minutes >= MANDATORY_EXPOSURE_MINUTES
+    }
+    comparison_urgent_ids = (
+        {
+            driver.driver_id_hash
+            for driver in comparison_result.state.drivers
+            if driver.status in ACTIVE_STATUSES
+            and driver.continuous_exposure_minutes >= MANDATORY_EXPOSURE_MINUTES
+        }
+        if comparison_result is not None
+        else actual_urgent_ids
     )
+    required = len(comparison_urgent_ids)
+    covered = (
+        len(comparison_urgent_ids - actual_urgent_ids)
+        if branch == "ACTIVATE"
+        else 0
+    )
+    mandatory_status = (
+        f"{covered} protected · {max(0, required - covered)} still need a break"
+        if required
+        else "No mandatory breach at this tick"
+    )
+    if branch == "CONTINUE":
+        preventive_status = "Not activated"
+    elif preventive_planned == 0:
+        preventive_status = "No incremental action"
+    elif preventive_started >= preventive_planned:
+        preventive_status = "Delivered"
+    elif preventive_started:
+        preventive_status = "Rolling delivery in progress"
+    else:
+        preventive_status = "Ready to activate"
     budget_remaining = (
-        round((plan.budget_cap_vnd - plan.p95_reserved_cost_vnd) / 25_000)
-        if plan is not None
+        round(budget_remaining_vnd / 25_000)
+        if budget_remaining_vnd is not None
         else None
     )
     return {
@@ -147,6 +188,10 @@ def _frame(
             if result.tick_index == session.window.decision_tick
             else "Playback complete"
             if result.tick_index == session.window.end_tick
+            else "Safety capacity breach"
+            if rolling_event is not None and "BREACH" in rolling_event.outcome
+            else "SafePause supplemented"
+            if rolling_event is not None and rolling_event.outcome == "SUPPLEMENTED"
             else "Monitoring"
         ),
         "city": {
@@ -161,28 +206,46 @@ def _frame(
             "required_drivers": required,
             "budget_remaining_usd": budget_remaining,
             "comparison_urgent_drivers": comparison_urgent,
+            "coverage": {
+                "mandatory": {
+                    "covered_drivers": covered,
+                    "required_drivers": required,
+                    "status": mandatory_status,
+                },
+                "preventive": {
+                    "started_drivers": preventive_started,
+                    "planned_drivers": preventive_planned,
+                    "status": preventive_status,
+                },
+            },
         },
+        "rolling_event": _json_value(rolling_event) if rolling_event else None,
         "zones": zones,
     }
 
 
 def build_timeline() -> dict[str, Any]:
-    session = ProductionSession.create()
+    # Production remains fixed at its reviewed K=45 checkpoint. The replay uses
+    # a preventive decision at 10:00 so delay-0 controls can begin before the
+    # first mandatory 4h cohort appears at 10:15.
+    presentation_window = dataclasses.replace(
+        load_production_window(),
+        decision_tick=PRESENTATION_DECISION_TICK,
+    )
+    session = ProductionSession.create(window=presentation_window)
+    controller = RollingEventReplayController(CONSTRAINTS)
     pre_decision: list[dict[str, Any]] = []
     plan: PredictiveCityPlan | None = None
+    proposals = ()
     views: dict[str, dict[str, Any]] | None = None
 
     while True:
+        event = None
         if session.current_tick == session.window.decision_tick:
-            forecast_input = build_accelerated_forecast_input(
-                session.actual_result,
-                fixture=session.fixture,
-                zones=session.zones,
-            )
-            plan = build_predictive_city_plan(
-                project_city_forecast(forecast_input),
-                CONSTRAINTS,
-            )
+            initial = controller.evaluate_and_queue(session, queue_controls=False)
+            plan = initial.plan
+            proposals = initial.proposals
+            event = initial.event
             assert session.decision_evidence is not None
             views = _decision_views(plan, session.decision_evidence.zones)
         pre_decision.append(
@@ -191,6 +254,9 @@ def build_timeline() -> dict[str, Any]:
                 session,
                 branch="PRE_DECISION",
                 plan=plan,
+                preventive_planned=len(controller.preventive_driver_ids),
+                budget_remaining_vnd=controller.budget_remaining_vnd,
+                rolling_event=event,
             )
         )
         if session.current_tick >= session.window.decision_tick:
@@ -198,20 +264,21 @@ def build_timeline() -> dict[str, Any]:
         session.advance()
 
     assert plan is not None
-    proposals = tuple(
-        row.best_window.proposal
-        for row in plan.rows
-        if row.zone_id in plan.selected_zone_ids and row.best_window is not None
-    )
-    if proposals:
-        session.choose("ACTIVATE", proposals=proposals)
-    else:
-        session.choose("CONTINUE")
+    if plan.status != "READY" or not proposals:
+        raise RuntimeError(
+            "preventive presentation decision must produce an actionable READY plan"
+        )
+    session.choose("ACTIVATE", proposals=proposals)
 
     with_safepause: list[dict[str, Any]] = []
     without_safepause: list[dict[str, Any]] = []
     while session.current_tick < session.window.end_tick:
         session.advance()
+        rolling_event = None
+        if session.current_tick < session.window.end_tick:
+            rolling = controller.evaluate_and_queue(session)
+            rolling_event = rolling.event
+        controller.observe(session.actual_result)
         with_safepause.append(
             _frame(
                 session.actual_result,
@@ -219,6 +286,10 @@ def build_timeline() -> dict[str, Any]:
                 branch="ACTIVATE",
                 plan=plan,
                 comparison_result=session.shadow_result,
+                preventive_planned=len(controller.preventive_driver_ids),
+                preventive_started=len(controller.started_preventive_driver_ids),
+                budget_remaining_vnd=controller.budget_remaining_vnd,
+                rolling_event=rolling_event,
             )
         )
         without_safepause.append(
@@ -228,6 +299,7 @@ def build_timeline() -> dict[str, Any]:
                 branch="CONTINUE",
                 plan=plan,
                 comparison_result=session.actual_result,
+                budget_remaining_vnd=CONSTRAINTS.budget_cap_vnd,
             )
         )
 
@@ -255,6 +327,20 @@ def build_timeline() -> dict[str, Any]:
             "support_per_driver_usd": 0.32,
         },
         "decision_views": views or {},
+        "rolling_policy": {
+            "evaluation_interval_minutes": 15,
+            "action_horizon_minutes": 15,
+            "reserved_driver_count": len(controller.reserved_driver_ids),
+            "preventive_driver_count": len(controller.preventive_driver_ids),
+            "mandatory_budget_reserve_usd": round(
+                controller.mandatory_budget_reserve_vnd / 25_000
+            ),
+            "cumulative_p95_cost_usd": round(
+                controller.cumulative_p95_cost_vnd / 25_000
+            ),
+            "budget_remaining_usd": round(controller.budget_remaining_vnd / 25_000),
+        },
+        "rolling_events": _json_value(controller.events),
         "pre_decision": pre_decision,
         "branches": {
             "ACTIVATE": with_safepause,

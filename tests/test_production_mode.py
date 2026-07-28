@@ -151,6 +151,41 @@ class ProductionModeTests(unittest.TestCase):
             )
         )
 
+    def test_supplemental_controls_append_idempotently(self):
+        session = ProductionSession.create(
+            window=self.window,
+            warm_state=self.warm,
+            fixture=self.fixture,
+            zones=self.zones,
+        )
+        session.start()
+        session.advance()
+        evidence = build_accelerated_forecast_input(
+            session.actual_result,
+            fixture=session.fixture,
+            zones=session.zones,
+        )
+        plan = build_predictive_city_plan(
+            project_city_forecast(evidence),
+            DecisionConstraints(horizon_minutes=120),
+        )
+        proposal = next(
+            row.best_window.proposal
+            for row in plan.rows
+            if row.zone_id in plan.selected_zone_ids
+            and row.best_window is not None
+        )
+        control = controls_from_proposals(
+            (proposal,), source_tick_index=session.current_tick
+        )[0]
+
+        self.assertEqual(session.queue_controls((control,)), (control,))
+        self.assertEqual(session.queue_controls((control,)), ())
+        with self.assertRaisesRegex(ValueError, "different payload"):
+            session.queue_controls(
+                (replace(control, max_start_delay_minutes=44),)
+            )
+
     def test_continue_keeps_actual_equal_to_shadow(self):
         session = ProductionSession.create(
             window=self.window,

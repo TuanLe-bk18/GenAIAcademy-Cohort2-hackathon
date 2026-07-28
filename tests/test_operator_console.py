@@ -260,10 +260,8 @@ class VocabularyAndTimeTests(unittest.TestCase):
         )
 
     def test_operator_vocabulary_maps_internal_states(self):
-        self.assertEqual(format_mode_label("CURRENT"), "Current plan")
-        self.assertEqual(
-            format_mode_label("accelerated-production"), "Simulation playback"
-        )
+        self.assertEqual(format_mode_label("CURRENT"), "PRODUCTION")
+        self.assertEqual(format_mode_label("accelerated-production"), "EVENT REPLAY")
         self.assertEqual(format_plan_status_label("SELECTED"), "Included")
         self.assertEqual(format_plan_status_label("DEFERRED"), "Watch")
         self.assertEqual(
@@ -299,8 +297,53 @@ class PresentationTimelineTests(unittest.TestCase):
             [frame["tick"] for frame in activate],
         )
         self.assertEqual(timeline["range_label"], "09:15–13:15")
-        self.assertEqual(timeline["decision_time_label"], "11:15")
+        self.assertEqual(timeline["decision_time_label"], "10:00")
         self.assertEqual(timeline["plan_status"], "READY")
+        self.assertEqual(timeline["decision_tick"], 40)
+        decision_frame = timeline["pre_decision"][-1]
+        self.assertEqual(decision_frame["city"]["urgent_drivers"], 0)
+        self.assertEqual(decision_frame["city"]["budget_remaining_usd"], 454)
+        selected_zone_ids = {
+            zone["id"] for zone in decision_frame["zones"] if zone["included"]
+        }
+        self.assertEqual(len(selected_zone_ids), 10)
+        self.assertEqual(
+            sum(
+                timeline["decision_views"][zone_id]["recommendation"]["driver_count"]
+                for zone_id in selected_zone_ids
+            ),
+            43,
+        )
+        first_activated = timeline["branches"]["ACTIVATE"][0]
+        first_continued = timeline["branches"]["CONTINUE"][0]
+        self.assertEqual(first_activated["time_label"], "10:15")
+        self.assertEqual(first_activated["city"]["urgent_drivers"], 7)
+        self.assertEqual(first_continued["city"]["urgent_drivers"], 43)
+        self.assertEqual(
+            first_activated["city"]["coverage"]["mandatory"],
+            {
+                "covered_drivers": 36,
+                "required_drivers": 43,
+                "status": "36 protected · 7 still need a break",
+            },
+        )
+        self.assertEqual(
+            first_activated["city"]["coverage"]["preventive"]["started_drivers"],
+            34,
+        )
+        self.assertEqual(timeline["rolling_policy"]["action_horizon_minutes"], 15)
+        self.assertEqual(timeline["rolling_policy"]["mandatory_budget_reserve_usd"], 100)
+        events = timeline["rolling_events"]
+        self.assertEqual([event["tick"] for event in events], list(range(40, 53)))
+        cumulative = 0
+        for event in events:
+            cumulative += event["new_driver_count"]
+            self.assertEqual(event["cumulative_driver_count"], cumulative)
+            self.assertLessEqual(event["cumulative_p95_cost_vnd"], 12_500_000)
+        self.assertEqual(events[0]["new_preventive_count"], 43)
+        self.assertTrue(
+            any("SAFETY_CAPACITY_BREACH" in event["outcome"] for event in events)
+        )
         self.assertEqual(
             {feature["properties"]["zone_id"] for feature in timeline["district_boundaries"]["features"]},
             {zone["id"] for zone in pre[0]["zones"]},

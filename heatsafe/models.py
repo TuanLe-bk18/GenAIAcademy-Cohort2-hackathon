@@ -203,14 +203,14 @@ class ForecastZoneInput:
 class CurrentForecastInput:
     lineage: ForecastEvidenceLineage
     zones: tuple[ForecastZoneInput, ...]
-    horizons: tuple[int, ...] = (0, 60, 120)
+    horizons: tuple[int, ...] = (0, 15, 60, 120)
 
 
 @dataclass(frozen=True)
 class AcceleratedForecastInput:
     lineage: ForecastEvidenceLineage
     zones: tuple[ForecastZoneInput, ...]
-    horizons: tuple[int, ...] = (0, 60, 120)
+    horizons: tuple[int, ...] = (0, 15, 60, 120)
 
 
 @dataclass(frozen=True)
