@@ -290,6 +290,63 @@ class PredictiveZonePlanRow:
 
 
 @dataclass(frozen=True)
+class TimingOption:
+    proposal_id: str = ""
+    start_delay_minutes: int = 0
+    start_time: datetime | None = None
+    pause_minutes: int = 0
+    waves: int = 0
+    drivers_protected: int = 0
+    projected_drivers_at_limit_120m: float = 0.0
+    residual_risk_120m: float = 0.0
+    expected_cost_vnd: int = 0
+    high_demand_reserved_cost_vnd: int = 0
+    expected_fulfillment_rate: float = 0.0
+    high_demand_fulfillment_rate: float = 0.0
+    expected_pickup_delay_minutes: float = 0.0
+    high_demand_pickup_delay_minutes: float = 0.0
+    expected_demand_requests: int = 0
+    high_demand_requests: int = 0
+    feasible: bool = False
+    rejection_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ZoneOptimizationOptions:
+    zone_id: str = ""
+    selected_proposal_id: str | None = None
+    timing_options: tuple[TimingOption, ...] = ()
+    proposal_alternatives: tuple[TimingOption, ...] = ()
+
+
+@dataclass(frozen=True)
+class PortfolioTradeoffPoint:
+    option_id: str = ""
+    label: str = ""
+    selected: bool = False
+    feasible: bool = False
+    selected_zone_ids: tuple[str, ...] = ()
+    protected_drivers: int = 0
+    urgent_drivers_covered: int = 0
+    urgent_drivers_required: int = 0
+    exposure_hours_avoided: float = 0.0
+    projected_drivers_at_limit_120m: float = 0.0
+    expected_cost_vnd: int = 0
+    high_demand_reserved_cost_vnd: int = 0
+    worst_area_pickup_delay_minutes: float = 0.0
+    rejection_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CityOptimizationEvidence:
+    evaluated_portfolio_count: int = 0
+    budget_compliant_portfolio_count: int = 0
+    selected_portfolio_id: str | None = None
+    portfolio_options: tuple[PortfolioTradeoffPoint, ...] = ()
+    zone_options: tuple[ZoneOptimizationOptions, ...] = ()
+
+
+@dataclass(frozen=True)
 class PredictiveCityPlan:
     portfolio_id: str
     mode: str
@@ -305,6 +362,7 @@ class PredictiveCityPlan:
     expires_at: datetime
     mandatory_now_covered: int = 0
     mandatory_now_uncovered: int = 0
+    optimization_evidence: CityOptimizationEvidence | None = None
 
 
 @dataclass(frozen=True)

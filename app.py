@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from dataclasses import replace
+from datetime import timedelta
+from typing import Any, cast
 from uuid import uuid4
 
 import streamlit as st
 
 from heatsafe.audit import HybridInterventionAuditStore
-from heatsafe.config import Settings
-from heatsafe.currency import vnd_to_usd
 from heatsafe.models import (
     DecisionConstraints,
     PredictiveCityPlan,
@@ -23,880 +23,485 @@ from heatsafe.production_mode import (
     SessionChoice,
     build_production_evidence,
 )
-from heatsafe.repository import (
-    HybridRepository,
-    ReplayRunProgress,
-    ReplayRunSummary,
-    SnapshotResult,
-)
-from heatsafe.risk import operational_priority
-from heatsafe.services.decision_service import (
-    SelectedZoneDecision,
-    build_selected_zone_decision,
-)
+from heatsafe.services.decision_service import SelectedZoneDecision
 from heatsafe.services.preventive_planning import (
     build_accelerated_forecast_input,
-    build_current_forecast_input,
     build_predictive_city_plan,
     project_city_forecast,
 )
+from heatsafe.simulation.engine import load_zone_priors
 from heatsafe.telemetry import log_event
-from heatsafe.ui import (
-    advance_refresh_token,
-    build_city_planner_view,
-    build_constraints,
-    build_unavailable_city_planner_view,
-    initialize_state,
-    render_city_plan_actions,
-    render_city_plan_copilot,
-    render_city_planner,
-    render_decision_workspace,
-    render_driver_evidence,
-    render_model_performance,
-    render_production_mode,
-    replay_run_label,
-    replay_tick_time,
+from heatsafe.ui import advance_refresh_token
+from heatsafe.ui.operator_console import (
+    OperatorPlaybackView,
+    OperatorRecommendationView,
+    build_operator_console_view,
+    build_safepause_outcome_view,
+    format_hanoi_range,
+    format_hanoi_time,
+    render_evidence,
+    render_operations,
+    render_presentation_playback,
+    render_sidebar,
     render_styles,
 )
+from heatsafe.ui.production_mode import get_production_session
+from heatsafe.ui.state import (
+    DEFAULT_BUDGET_USD,
+    DEFAULT_SPONSOR_USD,
+    build_constraints,
+)
 
-DECISION_HORIZON_MINUTES = 240
+DECISION_HORIZON_MINUTES = 120
+MODE_KEY = "operator-console:sidebar:mode"
+AREA_KEY = "operator-console:sidebar:area"
+SPEED_KEY = "operator-console:sidebar:speed"
+SURFACE_KEY = "operator-console:surface"
+SESSION_KEY = "production_window_session"
 
 st.set_page_config(
     page_title="HeatSafe AI Ops",
     page_icon=":material/health_and_safety:",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
-render_styles()
+
+st.session_state.setdefault("refresh_token", uuid4().hex)
+st.session_state.setdefault("decision_budget_cap", DEFAULT_BUDGET_USD)
+st.session_state.setdefault("decision_partner_credit", DEFAULT_SPONSOR_USD)
+st.session_state.setdefault("selected_zone_id", None)
+st.session_state.setdefault("operator_recording", False)
+
+pending_zone = st.session_state.pop("operator_pending_zone", None)
+if pending_zone is not None:
+    st.session_state.selected_zone_id = pending_zone
+    st.session_state[AREA_KEY] = pending_zone
 
 
-def repository_snapshot(
-    scenario: str,
-    *,
-    run_id: str | None = None,
-    tick_index: int | None = None,
-):
-    repository = HybridRepository(scenario=scenario)
-    if run_id is not None and tick_index is not None:
-        return repository, repository.load_replay_tick(run_id, tick_index)
-    return repository, repository.load()
+def _constraints() -> DecisionConstraints:
+    return build_constraints(DECISION_HORIZON_MINUTES)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_snapshot(
-    scenario: str,
-    refresh_token: str,
-    run_id: str | None = None,
-    tick_index: int | None = None,
-):
-    del refresh_token
-    return repository_snapshot(
-        scenario, run_id=run_id, tick_index=tick_index
-    )[1]
-
-
-@st.cache_data(ttl=10, show_spinner=False)
-def load_replay_runs(
-    scenario: str, refresh_token: str
-) -> list[ReplayRunSummary]:
-    del refresh_token
-    return HybridRepository(scenario=scenario).list_replay_runs(limit=20)
-
-
-@st.cache_data(ttl=10, show_spinner=False)
-def load_replay_progress(
-    scenario: str, run_id: str, refresh_token: str
-) -> ReplayRunProgress:
-    del refresh_token
-    return HybridRepository(scenario=scenario).load_replay_progress(run_id)
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def load_zone_ai_summary(
-    scenario: str,
-    snapshot_id: str,
-    refresh_token: str,
-    run_id: str | None = None,
-    tick_index: int | None = None,
-) -> dict[str, float]:
-    del refresh_token
-    repository, _ = repository_snapshot(
-        scenario, run_id=run_id, tick_index=tick_index
-    )
-    return repository.load_zone_risk_summary(snapshot_id)
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def load_selected_decision(
-    scenario: str,
-    zone_id: str,
-    snapshot_id: str,
-    constraints: DecisionConstraints,
-    refresh_token: str,
-    run_id: str | None = None,
-    tick_index: int | None = None,
-) -> SelectedZoneDecision:
-    del refresh_token
-    repository, result = repository_snapshot(
-        scenario, run_id=run_id, tick_index=tick_index
-    )
-    zone = next(
-        zone
-        for zone in result.zones
-        if zone.zone_id == zone_id and zone.snapshot_id == snapshot_id
-    )
-    return build_selected_zone_decision(repository, zone, constraints)
-
-
-@st.cache_data(ttl=900, show_spinner="Building all-district preventive plan...")
-def load_predictive_city_plan(
-    scenario: str,
-    snapshot_id: str,
-    constraints: DecisionConstraints,
-    refresh_token: str,
-    run_id: str | None = None,
-    tick_index: int | None = None,
-) -> PredictiveCityPlan:
-    del refresh_token
-    repository, result = repository_snapshot(
-        scenario, run_id=run_id, tick_index=tick_index
-    )
-    if result.zones[0].snapshot_id != snapshot_id:
-        raise RuntimeError("current city evidence does not match the requested snapshot")
-    evidence = build_current_forecast_input(repository, result.zones)
-    return build_predictive_city_plan(
-        project_city_forecast(evidence), constraints
-    )
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def load_model_evaluation_history(
-    scenario: str, refresh_token: str
-) -> list[dict[str, Any]]:
-    del refresh_token
-    repository = HybridRepository(scenario=scenario)
-    repository.load()
-    return repository.load_model_evaluations(limit=10)
-
-
-def render_header() -> None:
-    st.markdown(
-        '<div class="ops-brand"><div class="ops-mark">H</div><div>'
-        '<div class="ops-title">HeatSafe '
-        '<span style="color:var(--ops-muted);font-weight:500">AI Ops</span></div>'
-        '<div class="ops-subtitle">Hanoi fleet operations · extreme heat decision support</div>'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
-
-
-def render_replay_controls(
-    scenario: str, refresh_token: str
-) -> tuple[str | None, int | None, ReplayRunProgress | None]:
-    if scenario != "heatwave" or Settings.from_env().mode == "snapshot":
-        return None, None, None
-    try:
-        runs = load_replay_runs(scenario, refresh_token)
-    except Exception as exc:
-        log_event(
-            "replay_run_list_unavailable",
-            severity="WARNING",
-            error_type=type(exc).__name__,
-        )
-        return None, None, None
-    if not runs:
-        return None, None, None
-
-    run_by_id = {run.simulation_run_id: run for run in runs}
-    run_id = st.selectbox(
-        "Replay run",
-        options=list(run_by_id),
-        format_func=lambda value: replay_run_label(run_by_id[value]),
-        key="playback_run_id",
-    )
-    try:
-        progress = load_replay_progress(scenario, run_id, refresh_token)
-    except Exception as exc:
-        st.warning(f"Replay progress unavailable ({type(exc).__name__}).")
-        return None, None, None
-
-    latest = progress.latest_succeeded_tick_index
-    if latest is None:
-        st.info("This replay has not committed its first tick yet.")
-        st.stop()
-    if progress.succeeded_ticks != latest + 1:
-        st.error(
-            "Replay history is non-contiguous; playback stopped to avoid "
-            "showing the wrong tick."
-        )
-        st.stop()
-    context = f"{scenario}:{run_id}"
-    if st.session_state.get("playback_context") != context:
-        st.session_state.playback_context = context
-        st.session_state.playback_tick_index = latest
-        st.session_state.playback_follow_latest = True
-        st.session_state.playback_playing = False
-        st.session_state.playback_speed_seconds = 2
-        st.session_state.playback_last_advance_at = time.monotonic()
-
-    follow_latest = st.toggle(
-        "Follow latest committed tick",
-        key="playback_follow_latest",
-    )
-    if follow_latest:
-        st.session_state.playback_tick_index = latest
-        st.session_state.playback_playing = False
-
-    previous_column, play_column, next_column, live_column, speed_column = (
-        st.columns([0.7, 1, 0.7, 1, 1.4], vertical_alignment="bottom")
-    )
-    with previous_column:
-        if st.button(
-            "← Previous",
-            key="playback_previous",
-            disabled=follow_latest
-            or st.session_state.playback_tick_index <= 0,
-            help="Previous committed tick",
-            width="stretch",
-        ):
-            st.session_state.playback_tick_index -= 1
-    with play_column:
-        playing = bool(st.session_state.playback_playing)
-        if st.button(
-            "Pause" if playing else "Play",
-            key="playback_toggle",
-            disabled=follow_latest,
-            width="stretch",
-        ):
-            st.session_state.playback_playing = not playing
-    with next_column:
-        if st.button(
-            "Next →",
-            key="playback_next",
-            disabled=follow_latest
-            or st.session_state.playback_tick_index >= latest,
-            help="Next committed tick",
-            width="stretch",
-        ):
-            st.session_state.playback_tick_index += 1
-    with live_column:
-        if st.button(
-            "Latest",
-            key="playback_latest",
-            disabled=follow_latest,
-            width="stretch",
-        ):
-            st.session_state.playback_tick_index = latest
-    with speed_column:
-        st.selectbox(
-            "Playback speed",
-            options=(1, 2, 5),
-            format_func=lambda value: f"{value}s / tick",
-            key="playback_speed_seconds",
-            disabled=follow_latest,
-        )
-
-    selected_tick = st.slider(
-        "Replay timeline",
-        min_value=0,
-        max_value=latest,
-        key="playback_tick_index",
-        disabled=follow_latest,
-        help="Each tick represents 15 minutes of simulated Hanoi operations.",
-    )
-    selected_time = replay_tick_time(run_by_id[run_id], int(selected_tick))
-    st.markdown(
-        '<div class="ops-playback-strip">'
-        f'<span>Tick <b>{selected_tick:02d}</b> / 95</span>'
-        f'<span><b>{selected_time:%d %b %H:%M}</b> ICT (GMT+7)</span>'
-        f'<span>{progress.succeeded_ticks} committed</span>'
-        f'<span>{progress.failed_ticks} failed</span>'
-        f'<span>{"LIVE FOLLOW" if follow_latest else "READ-ONLY PLAYBACK"}</span>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-    if not follow_latest:
-        st.caption(
-            "Historical playback is read-only. Playback speed changes only "
-            "the presentation; stored simulation data is unchanged."
-        )
-    return run_id, int(selected_tick), progress
-
-
-def render_standard_production_mode() -> None:
-    """Render the fixed decision point from the canonical operational window."""
-    st.markdown("## PRODUCTION")
-    st.caption(
-        "Verified K=45 operational checkpoint · hanoi_heatwave_v1 · "
-        "same weather and decision evidence as Accelerated Production"
-    )
-
-
-@st.cache_resource(
-    show_spinner="Loading verified K=45 Production checkpoint..."
-)
-def load_standard_production_session():
-    """Advance the verified K-8 checkpoint to K once per app process."""
+@st.cache_resource(show_spinner="Loading verified current conditions…")
+def load_current_session() -> ProductionSession:
+    """Load the canonical decision point once without exposing simulation internals."""
     session = ProductionSession.create()
     while session.current_tick < session.window.decision_tick:
         session.advance()
-    if (
-        session.status != "AWAITING_DECISION"
-        or session.decision_evidence is None
-    ):
-        raise RuntimeError("verified Production checkpoint did not reach decision K")
+    if session.status != "AWAITING_DECISION" or session.decision_evidence is None:
+        raise RuntimeError("verified current conditions did not reach a decision state")
     return session
 
 
-def render_status(
-    result,
-    production_ready: bool,
-    snapshot_id: str,
+def _playback_view(session: ProductionSession) -> OperatorPlaybackView:
+    current = session.actual_result.simulation_time
+    start = current - timedelta(
+        minutes=(session.current_tick - session.window.start_tick) * 15
+    )
+    end = current + timedelta(
+        minutes=(session.window.end_tick - session.current_tick) * 15
+    )
+    decision = current + timedelta(
+        minutes=(session.window.decision_tick - session.current_tick) * 15
+    )
+    return OperatorPlaybackView(
+        range_label=format_hanoi_range(start, end),
+        current_time_label=format_hanoi_time(current),
+        decision_time_label=format_hanoi_time(decision),
+        running=session.status == "RUNNING",
+        complete=session.status == "COMPLETED",
+    )
+
+
+def _advance_once(
+    session: ProductionSession,
+    minimum_interval: float,
     *,
-    accelerated: bool = False,
-    readiness_issue: str | None = None,
-    playback_tick_index: int | None = None,
+    force: bool = False,
 ) -> None:
-    mode_label = "ACCELERATED PRODUCTION" if accelerated else "PRODUCTION"
-    if not result.data_fresh:
-        tone = "warn"
-        label = f"{mode_label} NOT READY · stale snapshot"
-    elif production_ready:
-        tone = "ok"
-        label = f"{mode_label} READY"
-    else:
-        tone = "warn"
-        label = f"{mode_label} NOT READY"
-    scenario_label = "hanoi_heatwave_v1"
-    tick_pill = (
-        f'<span class="ops-pill">Tick {playback_tick_index:02d}</span>'
-        if playback_tick_index is not None
-        else ""
-    )
-    st.markdown(
-        '<div class="ops-status-row">'
-        f'<span class="ops-pill {tone}">● {label}</span>'
-        f'<span class="ops-pill">{scenario_label}</span>'
-        f'<span class="ops-pill">Snapshot {snapshot_id[:12]}</span>'
-        f"{tick_pill}"
-        f'<span class="ops-pill">{result.mode.upper()}</span>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-    if result.freshness_warning:
-        st.error(result.freshness_warning)
-    elif readiness_issue:
-        st.error(readiness_issue)
-
-
-def select_zone_from_control() -> None:
-    st.session_state.selected_zone_id = st.session_state.zone_selector_id
-
-
-def render_decision_controls(
-    ordered_zones,
-    *,
-    locked: bool = False,
-    heat_by_zone: dict[str, float] | None = None,
-) -> str:
-    rank_by_id = {zone.zone_id: index for index, zone in enumerate(ordered_zones, 1)}
-    zone_by_id = {zone.zone_id: zone for zone in ordered_zones}
-    displayed_heat = heat_by_zone or {}
-    selected_zone_id = str(st.session_state.selected_zone_id)
-    if st.session_state.get("zone_selector_id") != selected_zone_id:
-        st.session_state.zone_selector_id = selected_zone_id
-    zone_column, budget_column, sponsor_column = st.columns(
-        [2.2, 1, 1], gap="medium", vertical_alignment="bottom"
-    )
-    with zone_column:
-        selected_zone_id = st.selectbox(
-            "Decision zone",
-            options=[zone.zone_id for zone in ordered_zones],
-            key="zone_selector_id",
-            on_change=select_zone_from_control,
-            format_func=lambda zone_id: (
-                f"Baseline risk #{rank_by_id[zone_id]} · "
-                f"{zone_by_id[zone_id].name} · "
-                f"Policy priority {operational_priority(zone_by_id[zone_id])}/100 · "
-                f"{displayed_heat.get(zone_id, zone_by_id[zone_id].heat_index_c):.1f}°C"
-            ),
+    """Serialize an expensive simulation advance and keep the last good frame visible."""
+    if session.status in {"AWAITING_DECISION", "COMPLETED"}:
+        return
+    if (session.status != "RUNNING" and not force) or st.session_state.get(
+        "operator_advancing"
+    ):
+        return
+    now = time.monotonic()
+    last = float(st.session_state.get("production_window_last_advance", now))
+    if now - last < minimum_interval * 0.8:
+        return
+    st.session_state.operator_advancing = True
+    try:
+        session.advance()
+        st.session_state.production_window_last_advance = now
+        st.session_state.pop("operator_advance_error", None)
+    except Exception as exc:  # monitoring must remain visible on an advance failure
+        st.session_state.operator_advance_error = type(exc).__name__
+        log_event(
+            "operator_playback_advance_failed",
+            severity="ERROR",
+            error_type=type(exc).__name__,
         )
-    with budget_column:
-        st.number_input(
-            "Cost cap ($)",
-            min_value=0.0,
-            step=10.0,
-            key="decision_budget_cap",
-            disabled=locked,
-        )
-    with sponsor_column:
-        st.number_input(
-            "Partner / driver ($)",
-            min_value=0.0,
-            step=0.04,
-            key="decision_partner_credit",
-            disabled=locked,
-        )
-    selected_zone_id = str(selected_zone_id)
-    st.session_state.selected_zone_id = selected_zone_id
-    return selected_zone_id
+        session.pause()
+    finally:
+        st.session_state.operator_advancing = False
 
 
-render_header()
-scenario = "heatwave"
-experience_mode = st.selectbox(
-    "Experience mode",
-    ("current", "accelerated-production"),
-    format_func=lambda value: (
-        "PRODUCTION"
-        if value == "current"
-        else "ACCELERATED PRODUCTION"
-    ),
-)
-production_active = experience_mode == "accelerated-production"
-production_session = render_production_mode() if production_active else None
-st.session_state.setdefault("refresh_token", uuid4().hex)
-refresh_token = str(st.session_state.refresh_token)
-replay_run_id = None
-replay_tick_index = None
-replay_progress = None
-if production_session is not None:
-    production_constraints = DecisionConstraints(horizon_minutes=120)
-    evidence_session = production_session
-    production_evidence = (
-        production_session.decision_evidence
-        if production_session.status == "AWAITING_DECISION"
-        and production_session.decision_evidence is not None
-        else build_production_evidence(
-            production_session.actual_result,
-            fixture=production_session.fixture,
-            zones=production_session.zones,
-            constraints=production_constraints,
-        )
-    )
-    result = SnapshotResult(
-        zones=list(production_evidence.zones),
-        mode="accelerated-production",
-        source_label="Stateful Production window",
-    )
-else:
-    production_constraints = None
-    render_standard_production_mode()
-    evidence_session = load_standard_production_session()
-    production_evidence = evidence_session.decision_evidence
-    if production_evidence is None:
-        raise RuntimeError("Production evidence is unavailable at decision K")
-    result = SnapshotResult(
-        zones=list(production_evidence.zones),
-        mode="production",
-        source_label="Verified hanoi_heatwave_v1 K=45 checkpoint",
-    )
-zones = result.zones
-if not zones:
-    st.error("No operational zones are available for this scenario.")
-    st.stop()
-
-snapshot_id = zones[0].snapshot_id
-audit = None if production_active else HybridInterventionAuditStore()
-ai_summary_error: Exception | None = None
-try:
-    zone_risk = (
-        dict(production_evidence.zone_risk)
-        if production_evidence is not None
-        else load_zone_ai_summary(
-            scenario,
-            snapshot_id,
-            refresh_token,
-            replay_run_id,
-            replay_tick_index,
-        )
-    )
-    ai_summary_ready = True
-except Exception as exc:
-    zone_risk = {}
-    ai_summary_ready = False
-    ai_summary_error = exc
-    log_event(
-        "ai_zone_summary_unavailable",
-        severity="WARNING",
-        error_type=type(exc).__name__,
-    )
-
-ordered_zones = sorted(
-    zones,
-    key=lambda zone: zone_risk.get(
-        zone.zone_id, float(operational_priority(zone))
-    ),
-    reverse=True,
-)
-initialize_state(
-    scenario,
-    snapshot_id,
-    zones,
-    ordered_zones=ordered_zones,
-    selection_context=(
-        f"{scenario}:{replay_run_id}"
-        if replay_run_id is not None
-        else None
-    ),
-)
-if production_active:
-    st.session_state.decision_budget_cap = 200.0
-    st.session_state.decision_partner_credit = 0.32
-constraints = (
-    production_constraints
-    if production_constraints is not None
-    else build_constraints(120)
-)
-if not production_active:
-    production_evidence = build_production_evidence(
-        evidence_session.actual_result,
-        fixture=evidence_session.fixture,
-        zones=evidence_session.zones,
+def _selected_decision(
+    evidence: Any,
+    zones: tuple[Any, ...],
+    selected_zone_id: str,
+    constraints: DecisionConstraints,
+) -> SelectedZoneDecision | None:
+    zone = next((item for item in zones if item.zone_id == selected_zone_id), None)
+    if zone is None:
+        return None
+    forecast = evidence.forecast_for(selected_zone_id)
+    recommendation = evidence.recommendation_for(selected_zone_id)
+    if forecast is None or recommendation is None:
+        return None
+    return SelectedZoneDecision(
+        zone=zone,
         constraints=constraints,
-    )
-
-predictive_plan: PredictiveCityPlan | None = None
-planning_error: Exception | None = None
-try:
-    if production_evidence is not None:
-        accelerated_evidence = build_accelerated_forecast_input(
-            evidence_session.actual_result,
-            fixture=evidence_session.fixture,
-            zones=evidence_session.zones,
-        )
-        predictive_plan = build_predictive_city_plan(
-            project_city_forecast(accelerated_evidence), constraints
-        )
-    else:
-        predictive_plan = load_predictive_city_plan(
-            scenario,
-            snapshot_id,
-            constraints,
-            refresh_token,
-            replay_run_id,
-            replay_tick_index,
-        )
-    city_view = build_city_planner_view(predictive_plan, zones)
-except Exception as exc:
-    planning_error = exc
-    city_view = build_unavailable_city_planner_view(
-        zones,
-        mode="ACCELERATED PRODUCTION" if production_active else "PRODUCTION",
-        reason=(
-            "Snapshot-matched planning evidence is unavailable "
-            f"({type(exc).__name__})."
+        forecast=forecast,
+        predictions=tuple(
+            item for item in evidence.predictions if item.zone_id == selected_zone_id
         ),
-    )
-    log_event(
-        "predictive_city_plan_unavailable",
-        severity="WARNING",
-        error_type=type(exc).__name__,
+        recommendation=recommendation,
+        rule_reference=None,
     )
 
-status_slot = st.empty()
-selected_zone_id = render_decision_controls(
-    ordered_zones,
-    locked=production_active,
-    heat_by_zone={
-        row.zone_id: row.heat_index_c
-        for row in city_view.rows
-    },
-)
-selected = next(zone for zone in zones if zone.zone_id == selected_zone_id)
 
-selected_decision: SelectedZoneDecision | None = None
-decision_error: Exception | None = None
-try:
-    if production_evidence is not None:
-        forecast = production_evidence.forecast_for(selected.zone_id)
-        recommendation = production_evidence.recommendation_for(selected.zone_id)
-        if forecast is None or recommendation is None:
-            raise RuntimeError("Production evidence is incomplete for selected zone")
-        selected_decision = SelectedZoneDecision(
-            zone=selected,
-            constraints=constraints,
-            forecast=forecast,
-            predictions=tuple(
-                item
-                for item in production_evidence.predictions
-                if item.zone_id == selected.zone_id
-            ),
-            recommendation=recommendation,
-            rule_reference=None,
-        )
-    else:
-        selected_decision = load_selected_decision(
-            scenario,
-            selected.zone_id,
-            selected.snapshot_id,
-            constraints,
-            refresh_token,
-            replay_run_id,
-            replay_tick_index,
-        )
-except Exception as exc:
-    decision_error = exc
-    log_event(
-        "ai_decision_context_unavailable",
-        severity="WARNING",
-        zone_id=selected.zone_id,
-        error_type=type(exc).__name__,
+def _monitoring_recommendation(decision_time: str) -> OperatorRecommendationView:
+    return OperatorRecommendationView(
+        state="monitoring",
+        headline="Monitoring conditions",
+        explanation=f"The next recommendation will be available at {decision_time}.",
+        driver_count=0,
+        start_time_label="—",
+        group_summary="No action required yet",
+        break_length_label="—",
+        coverage_summary="Monitoring continues",
+        order_impact_summary="—",
+        pickup_delay_summary="—",
+        cost_summary="—",
+        guardrails=(),
+        can_activate=False,
+        blocking_reason="",
     )
 
-production_ready = (
-    result.data_fresh
-    and ai_summary_ready
-    and predictive_plan is not None
-    and city_view.unavailable_reason is None
-    and selected_decision is not None
-)
-readiness_issue = None
-if ai_summary_error is not None:
-    readiness_issue = (
-        "Production readiness failed at the risk-summary dependency "
-        f"({type(ai_summary_error).__name__})."
+
+def _history_for_choice(
+    session: ProductionSession | None,
+    plan: PredictiveCityPlan | None,
+) -> tuple[dict[str, object], ...]:
+    if session is None or session.choice is None or plan is None:
+        return ()
+    protected = sum(
+        row.best_window.proposal.selected_drivers
+        for row in plan.rows
+        if row.zone_id in plan.selected_zone_ids and row.best_window is not None
     )
-elif planning_error is not None:
-    readiness_issue = (
-        "Production readiness failed at the TimesFM/city-planning dependency "
-        f"({type(planning_error).__name__})."
-    )
-elif decision_error is not None:
-    readiness_issue = (
-        "Production readiness failed at the selected-zone decision dependency "
-        f"({type(decision_error).__name__})."
-    )
-with status_slot.container():
-    render_status(
-        result,
-        production_ready,
-        snapshot_id,
-        accelerated=production_active,
-        readiness_issue=readiness_issue,
-        playback_tick_index=replay_tick_index,
+    return (
+        {
+            "recorded_at": session.actual_result.simulation_time,
+            "choice": session.choice,
+            "protected_driver_count": protected if session.choice == "ACTIVATE" else 0,
+            "result": "Running" if session.status == "RUNNING" else session.status,
+            "coverage": "City plan",
+        },
     )
 
-decision_available = (
-    not production_active
-    or (
-        production_session is not None
-        and production_session.status == "AWAITING_DECISION"
-    )
-)
-city_action = render_city_plan_actions(
-    city_view,
-    decision_available=decision_available,
-)
-if city_action is not None and predictive_plan is not None:
-    if city_action not in ("ACTIVATE", "CONTINUE"):
-        raise RuntimeError(f"unsupported city plan action: {city_action!r}")
-    choice: SessionChoice = city_action
-    if production_session is not None:
-        selected_proposals = tuple(
+
+def _recorded_action(
+    mode: str,
+    session: ProductionSession | None,
+    snapshot_id: str,
+) -> str | None:
+    if session is not None:
+        return session.choice
+    record = st.session_state.get("operator_recorded_decision")
+    if (
+        mode == "current"
+        and isinstance(record, dict)
+        and record.get("snapshot_id") == snapshot_id
+        and record.get("action") in {"ACTIVATE", "CONTINUE"}
+    ):
+        return str(record["action"])
+    return None
+
+
+def _apply_action(
+    action: str,
+    *,
+    mode: str,
+    session: ProductionSession | None,
+    plan: PredictiveCityPlan,
+    snapshot_id: str,
+) -> None:
+    if action not in {"ACTIVATE", "CONTINUE"}:
+        raise RuntimeError(f"unsupported city plan action: {action!r}")
+    if session is not None:
+        choice = cast(SessionChoice, action)
+        proposals = tuple(
             row.best_window.proposal
-            for row in predictive_plan.rows
-            if row.zone_id in predictive_plan.selected_zone_ids
-            and row.best_window is not None
+            for row in plan.rows
+            if row.zone_id in plan.selected_zone_ids and row.best_window is not None
         )
-        production_session.choose(choice, proposals=selected_proposals)
-        receipt = {
-            "snapshot_id": snapshot_id,
-            "status": (
-                "SIMULATED_QUEUED"
-                if choice == "ACTIVATE"
-                else "CONTINUED"
-            ),
-        }
-    elif choice == "ACTIVATE":
-        if audit is None:
-            raise RuntimeError("production audit store is unavailable")
+        session.choose(choice, proposals=proposals)
+        st.session_state.production_window_last_advance = time.monotonic()
+        return
+
+    audit = HybridInterventionAuditStore()
+    receipt: SimulatedControlReceipt
+    if action == "ACTIVATE":
         receipt = activate_simulated_plan(
-            predictive_plan,
+            plan,
             audit_store=audit,
             current_snapshot_id=snapshot_id,
         )
     else:
         receipt = continue_without_intervention(
-            predictive_plan,
+            plan,
             current_snapshot_id=snapshot_id,
         )
-    st.session_state["city_plan_receipt"] = receipt
+    st.session_state.operator_recorded_decision = {
+        "snapshot_id": snapshot_id,
+        "action": action,
+        "status": receipt.status,
+    }
+
+
+active_mode = str(st.session_state.get(MODE_KEY, "current"))
+active_session: ProductionSession | None = None
+render_styles()
+sidebar_result = render_sidebar(
+    None,
+    _constraints(),
+    playback=None,
+    mode=active_mode,
+    area_options=tuple(
+        (area.zone_id, area.name) for area in load_zone_priors()
+    ),
+    system_details={
+        "Environment": "Synthetic Hanoi operations",
+        "Appearance": f"{(st.context.theme.type or 'dark').title()} theme",
+        "Decision state": (
+            "Display-only replay"
+            if active_mode == "accelerated-production"
+            else "Ready"
+        ),
+    },
+    key_prefix="operator-console:sidebar",
+)
+selected_surface = st.segmented_control(
+    "Console view",
+    ("Operations", "Evidence & history"),
+    default="Operations",
+    key=SURFACE_KEY,
+)
+surface = (
+    selected_surface
+    if selected_surface in {"Operations", "Evidence & history"}
+    else "Operations"
+)
+presentation_mode = (
+    sidebar_result.mode == "accelerated-production"
+    and surface == "Operations"
+)
+if sidebar_result.mode == "accelerated-production" and not presentation_mode:
+    active_session = get_production_session()
+
+if sidebar_result.limits_applied:
+    st.session_state.decision_budget_cap = (
+        sidebar_result.constraints.budget_cap_vnd / 25_000
+    )
+    st.session_state.decision_partner_credit = (
+        sidebar_result.constraints.sponsor_per_driver_vnd / 25_000
+    )
+    st.session_state.pop("operator_recorded_decision", None)
+    st.rerun()
+if sidebar_result.refresh_requested:
+    advance_refresh_token()
+    st.rerun()
+if sidebar_result.reset_requested:
+    st.session_state.pop("operator_recorded_decision", None)
+    st.session_state.pop("operator_advance_error", None)
+    if isinstance(active_session, ProductionSession):
+        active_session.reset()
+        st.session_state.production_window_last_advance = time.monotonic()
+    st.rerun()
+if isinstance(active_session, ProductionSession) and sidebar_result.playback_action:
+    if sidebar_result.playback_action == "PLAY":
+        active_session.start()
+        st.session_state.production_window_last_advance = time.monotonic()
+    elif sidebar_result.playback_action == "PAUSE":
+        active_session.pause()
+    elif sidebar_result.playback_action == "NEXT":
+        _advance_once(active_session, 0.0, force=True)
     st.rerun()
 
-receipt = st.session_state.get("city_plan_receipt")
-if isinstance(receipt, dict) and receipt.get("snapshot_id") == snapshot_id:
-    st.success(f"City plan decision recorded: {receipt['status']}.")
-elif (
-    isinstance(receipt, SimulatedControlReceipt)
-    and receipt.evidence_lineage.snapshot_id == snapshot_id
-):
-    message = f"City plan decision recorded: {receipt.status}."
-    if receipt.status in {"STALE_PLAN", "FAILED"}:
-        st.warning(message)
+speed_seconds = {
+    "Slow": 5,
+    "Normal": 3,
+    "Fast": 2,
+}.get(str(st.session_state.get(SPEED_KEY, "Normal")), 3)
+auto_refresh = (
+    f"{speed_seconds}s"
+    if surface == "Operations"
+    and isinstance(active_session, ProductionSession)
+    and active_session.status == "RUNNING"
+    else None
+)
+
+
+
+@st.fragment(run_every=auto_refresh)
+def live_operator_workspace() -> None:
+    mode = str(st.session_state.get(MODE_KEY, "current"))
+    accelerated = mode == "accelerated-production"
+    session = get_production_session() if accelerated else None
+    evidence_session = session if session is not None else load_current_session()
+
+    if session is not None and session.status == "RUNNING":
+        interval = {
+            "Slow": 5,
+            "Normal": 3,
+            "Fast": 2,
+        }.get(str(st.session_state.get(SPEED_KEY, "Normal")), 3)
+        _advance_once(session, interval)
+
+    constraints = _constraints()
+    evidence = (
+        evidence_session.decision_evidence
+        if evidence_session.status == "AWAITING_DECISION"
+        and evidence_session.decision_evidence is not None
+        else build_production_evidence(
+            evidence_session.actual_result,
+            fixture=evidence_session.fixture,
+            zones=evidence_session.zones,
+            constraints=constraints,
+        )
+    )
+    zones = tuple(evidence.zones)
+    valid_zone_ids = {zone.zone_id for zone in zones}
+    selected_zone_id = str(
+        st.session_state.get(AREA_KEY)
+        or st.session_state.get("selected_zone_id")
+        or zones[0].zone_id
+    )
+    if selected_zone_id not in valid_zone_ids:
+        selected_zone_id = zones[0].zone_id
+    st.session_state.selected_zone_id = selected_zone_id
+
+    plan: PredictiveCityPlan | None = None
+    planning_issue: str | None = None
+    try:
+        forecast_input = build_accelerated_forecast_input(
+            evidence_session.actual_result,
+            fixture=evidence_session.fixture,
+            zones=evidence_session.zones,
+        )
+        plan = build_predictive_city_plan(
+            project_city_forecast(forecast_input), constraints
+        )
+    except Exception as exc:
+        planning_issue = type(exc).__name__
+        log_event(
+            "predictive_city_plan_unavailable",
+            severity="WARNING",
+            error_type=planning_issue,
+        )
+
+    selected_decision = _selected_decision(
+        evidence, zones, selected_zone_id, constraints
+    )
+    outcome = None
+    if session is not None and session.choice == "ACTIVATE":
+        outcome = build_safepause_outcome_view(
+            session.actual_history,
+            session.shadow_history,
+            decision_tick=session.window.decision_tick,
+        )
+    history = _history_for_choice(session, plan)
+    view = build_operator_console_view(
+        plan,
+        zones,
+        constraints,
+        selected_zone_id=selected_zone_id,
+        selected_decision=selected_decision,
+        outcome=outcome,
+        history=history,
+    )
+
+    decision_available = session is None or session.status == "AWAITING_DECISION"
+    if session is not None and not decision_available and session.choice is None:
+        view = replace(
+            view,
+            recommendation=_monitoring_recommendation(
+                _playback_view(session).decision_time_label
+            ),
+        )
+    snapshot_id = zones[0].snapshot_id
+    recorded = _recorded_action(mode, session, snapshot_id)
+    operations_result = None
+    if surface == "Operations":
+        operations_result = render_operations(
+            view,
+            decision_available=decision_available,
+            recording=bool(st.session_state.get("operator_recording")),
+            recorded_action=recorded,
+            key_prefix="operator-console:operations",
+        )
     else:
-        st.success(message)
-
-render_decision_workspace(
-    selected,
-    selected_decision,
-    constraints,
-    expected_escalations=zone_risk.get(selected.zone_id),
-    audit_store=audit,
-    data_fresh=(
-        result.data_fresh
-        and (
-            replay_run_id is None
-            or bool(st.session_state.get("playback_follow_latest"))
+        render_evidence(
+            view.evidence_summary,
+            key_prefix="operator-console:evidence",
         )
-    ),
-    show_execution=False,
-    show_recommendation=(
-        not production_active
-        or (
-            production_session is not None
-            and production_session.current_tick
-            >= production_session.window.decision_tick
+
+    if planning_issue:
+        st.warning(
+            "Recommendation data is updating; monitoring remains available. "
+            "Action is paused until the latest evidence is verified.",
+            icon=":material/warning:",
         )
-    ),
-    error=decision_error,
-)
+    advance_error = st.session_state.get("operator_advance_error")
+    if advance_error:
+        st.warning(
+            "Playback paused because the next interval could not be prepared. "
+            "The last completed conditions remain visible.",
+            icon=":material/pause_circle:",
+        )
 
-# Model-evaluation rows from the old cloud pointer do not share this exact K=45
-# lineage. Keep the tab fail-closed until matching evaluation evidence exists.
-evaluations = []
-
-proposal = selected_decision.proposal if selected_decision is not None else None
-city_tab, drivers_tab, copilot_tab, model_tab = st.tabs(
-    ["City intelligence", "Driver evidence", "Copilot & audit", "Model performance"]
-)
-with city_tab:
-    render_city_planner(
-        city_view,
-        selection_context=f"{scenario}:{snapshot_id}:{city_view.mode}",
-    )
-with drivers_tab:
-    render_driver_evidence(proposal)
-with copilot_tab:
-    copilot_column, audit_column = st.columns([1.2, 1], gap="large")
-    with copilot_column:
-        render_city_plan_copilot(city_view)
-    with audit_column:
-        st.markdown(f"#### {selected.name} simulation audit")
-        if production_session is not None:
-            st.markdown(
-                f"**Window:** tick {production_session.window.start_tick}–"
-                f"{production_session.window.end_tick} · "
-                f"decision K={production_session.window.decision_tick}"
-            )
-            st.markdown(
-                f"**Choice:** {production_session.choice or 'Pending'} · "
-                f"**Controls:** {len(production_session.controls)} · "
-                f"**Actual checksum:** "
-                f"`{production_session.actual_result.checksum[:16]}`"
-            )
-            if production_session.choice == "ACTIVATE":
-                st.caption(
-                    "Actual-vs-shadow divergence is derived from exact proposal "
-                    "controls; no driver notification or dispatch was sent."
-                )
-        elif (
-            replay_run_id is not None
-            and not st.session_state.get("playback_follow_latest")
-        ):
-            st.info(
-                "Historical audit details stay hidden until they can be "
-                "filtered by exact run and tick lineage."
-            )
-        elif audit is None:
-            st.info("Production audit is unavailable for this session.")
-        else:
-            try:
-                audit_rows = [
-                    row
-                    for row in audit.list_recent()
-                    if row.get("zone_id") == selected.zone_id
-                ]
-            except Exception as exc:
-                st.warning(
-                    "Simulation audit is temporarily unavailable "
-                    f"({type(exc).__name__})."
-                )
-            else:
-                if audit_rows:
-                    st.dataframe(
-                        audit_rows, hide_index=True, width="stretch"
-                    )
-                else:
-                    st.info("No simulated intervention recorded.")
-with model_tab:
-    render_model_performance(evaluations, proposal)
-
-refresh_column, policy_column = st.columns([1, 5], vertical_alignment="center")
-with refresh_column:
-    refresh_label = "Reset window" if production_session is not None else "Refresh data"
-    if st.button(refresh_label, width="stretch"):
-        if production_session is not None:
-            production_session.reset()
-        else:
-            advance_refresh_token()
-        st.rerun()
-with policy_column:
-    st.caption(
-        "AI failure policy: fail closed; monitoring remains available. "
-        f"Current controls: ${vnd_to_usd(constraints.budget_cap_vnd):,.0f} cap · "
-        f"${vnd_to_usd(constraints.sponsor_per_driver_vnd):,.2f} partner credit."
-    )
-
-if replay_run_id is not None and production_session is None:
-    active_replay_run_id = replay_run_id
-    follow_latest = bool(st.session_state.get("playback_follow_latest"))
-    playing = bool(st.session_state.get("playback_playing"))
-    latest_tick = (
-        replay_progress.latest_succeeded_tick_index
-        if replay_progress is not None
-        else None
-    )
     if (
-        playing
-        and latest_tick is not None
-        and replay_tick_index is not None
-        and replay_tick_index >= latest_tick
+        operations_result is not None
+        and operations_result.selected_zone_id is not None
+        and operations_result.selected_zone_id != selected_zone_id
     ):
-        st.session_state.playback_playing = False
-    elif follow_latest or playing:
-        refresh_seconds = (
-            2
-            if follow_latest
-            else int(st.session_state.get("playback_speed_seconds", 2))
-        )
+        st.session_state.operator_pending_zone = operations_result.selected_zone_id
+        st.rerun()
 
-        @st.fragment(run_every=f"{refresh_seconds}s")
-        def replay_heartbeat() -> None:
-            now = time.monotonic()
-            last_advance = float(
-                st.session_state.get("playback_last_advance_at", now)
+    if (
+        operations_result is not None
+        and operations_result.decision_action is not None
+        and plan is not None
+        and recorded is None
+    ):
+        st.session_state.operator_recording = True
+        try:
+            _apply_action(
+                operations_result.decision_action,
+                mode=mode,
+                session=session,
+                plan=plan,
+                snapshot_id=snapshot_id,
             )
-            if now - last_advance < refresh_seconds * 0.8:
-                return
-            st.session_state.playback_last_advance_at = now
-            if st.session_state.get("playback_follow_latest"):
-                refreshed = load_replay_progress(
-                    scenario, active_replay_run_id, uuid4().hex
-                )
-                refreshed_latest = refreshed.latest_succeeded_tick_index
-                if (
-                    refreshed_latest is not None
-                    and refreshed_latest
-                    != st.session_state.playback_tick_index
-                ):
-                    st.session_state.playback_tick_index = refreshed_latest
-                    advance_refresh_token()
-                    st.rerun()
-            if st.session_state.get("playback_playing"):
-                current = int(st.session_state.playback_tick_index)
-                if latest_tick is not None and current < latest_tick:
-                    st.session_state.playback_tick_index = current + 1
-                    st.rerun()
-                st.session_state.playback_playing = False
+        finally:
+            st.session_state.operator_recording = False
+        st.rerun()
 
-        replay_heartbeat()
+
+if presentation_mode:
+    render_presentation_playback()
+else:
+    live_operator_workspace()

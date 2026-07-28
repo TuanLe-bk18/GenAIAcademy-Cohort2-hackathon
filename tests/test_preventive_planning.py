@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 import math
 from types import SimpleNamespace
@@ -9,10 +9,14 @@ from unittest import TestCase, mock
 
 from heatsafe.models import (
     AcceleratedForecastInput,
+    CityOptimizationEvidence,
     CurrentForecastInput,
     DecisionConstraints,
     DriverActionPrediction,
     DriverCurrentFeature,
+    PortfolioTradeoffPoint,
+    TimingOption,
+    ZoneOptimizationOptions,
 )
 from heatsafe.repository import (
     BigQueryRepository,
@@ -334,6 +338,80 @@ class PreventiveCityPlanTests(TestCase):
             build_current_forecast_input(self.repository, self.zones)
         )
 
+    def test_diagnostic_dataclasses_default_to_empty_backward_compatible_values(self):
+        self.assertEqual(CityOptimizationEvidence(), CityOptimizationEvidence())
+        self.assertEqual(PortfolioTradeoffPoint().selected_zone_ids, ())
+        self.assertEqual(ZoneOptimizationOptions().timing_options, ())
+        self.assertEqual(TimingOption().rejection_reasons, ())
+
+    def test_optimization_evidence_is_bounded_counted_and_detail_free(self):
+        plan = build_predictive_city_plan(
+            self._city(),
+            DecisionConstraints(budget_cap_vnd=250_000),
+        )
+        evidence = plan.optimization_evidence
+
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(evidence.evaluated_portfolio_count, 1_024)
+        self.assertEqual(evidence.budget_compliant_portfolio_count, 1_018)
+        self.assertEqual(evidence.selected_portfolio_id, plan.portfolio_id)
+        self.assertLessEqual(len(evidence.portfolio_options), 12)
+        self.assertEqual(len(evidence.zone_options), 10)
+        self.assertEqual(
+            [point.option_id for point in evidence.portfolio_options if point.selected],
+            [plan.portfolio_id],
+        )
+        self.assertIn(
+            "Cheapest feasible",
+            {point.label for point in evidence.portfolio_options},
+        )
+        self.assertIn(
+            "Highest protection",
+            {point.label for point in evidence.portfolio_options},
+        )
+        self.assertTrue(
+            all(
+                len(point.rejection_reasons) <= 2
+                for point in evidence.portfolio_options
+            )
+        )
+        self.assertTrue(
+            all(
+                len(options.timing_options) <= 4
+                and len(options.proposal_alternatives) <= 8
+                and all(
+                    len(option.rejection_reasons) <= 2
+                    for option in (
+                        *options.timing_options,
+                        *options.proposal_alternatives,
+                    )
+                )
+                for options in evidence.zone_options
+            )
+        )
+
+        diagnostic_keys = set()
+
+        def collect_keys(value):
+            if isinstance(value, dict):
+                diagnostic_keys.update(value)
+                for item in value.values():
+                    collect_keys(item)
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    collect_keys(item)
+
+        collect_keys(asdict(evidence))
+        self.assertTrue(
+            {
+                "driver_decisions",
+                "path_costs_vnd",
+                "wave_plan",
+                "top_factors",
+            }.isdisjoint(diagnostic_keys)
+        )
+
     def test_current_plan_covers_all_zones_without_a_fixed_top_three(self):
         plan = build_predictive_city_plan(
             self._city(),
@@ -391,6 +469,32 @@ class PreventiveCityPlanTests(TestCase):
                 for row in plan.rows
             )
         )
+        evidence = plan.optimization_evidence
+        assert evidence is not None
+        rows_by_zone = {row.zone_id: row for row in plan.rows}
+        for options in evidence.zone_options:
+            row = rows_by_zone[options.zone_id]
+            assert row.best_window is not None
+            self.assertEqual(
+                [item.start_delay_minutes for item in options.timing_options],
+                [0, 15, 30, 45],
+            )
+            self.assertEqual(
+                options.selected_proposal_id,
+                row.best_window.proposal.proposal_id,
+            )
+            selected_timing = next(
+                item
+                for item in options.timing_options
+                if item.proposal_id == options.selected_proposal_id
+            )
+            self.assertEqual(selected_timing.start_delay_minutes, 15)
+            self.assertEqual(
+                selected_timing.start_time,
+                plan.evidence_lineage.observed_at + timedelta(minutes=15),
+            )
+            self.assertTrue(selected_timing.feasible)
+            self.assertEqual(selected_timing.rejection_reasons, ())
 
     def test_city_p95_is_taken_after_aligned_path_aggregation(self):
         plan = build_predictive_city_plan(
@@ -431,17 +535,85 @@ class PreventiveCityPlanTests(TestCase):
                 for row in plan.rows
             )
         )
+        evidence = plan.optimization_evidence
+        assert evidence is not None
+        self.assertEqual(evidence.evaluated_portfolio_count, 1)
+        self.assertEqual(evidence.budget_compliant_portfolio_count, 1)
+        self.assertTrue(
+            all(
+                len(options.timing_options) == 4
+                and all(not option.feasible for option in options.timing_options)
+                and all(
+                    option.rejection_reasons
+                    and "cost exceeds" in option.rejection_reasons[0].lower()
+                    for option in options.timing_options
+                )
+                for options in evidence.zone_options
+            )
+        )
+        rejected = [
+            point for point in evidence.portfolio_options if not point.feasible
+        ]
+        self.assertEqual(len(rejected), 3)
+        self.assertTrue(
+            all(
+                point.rejection_reasons
+                and "cost exceeds" in point.rejection_reasons[0].lower()
+                for point in rejected
+            )
+        )
+
+    def test_diagnostics_do_not_change_authoritative_rows_or_proposals(self):
+        city = self._city()
+        constraints = DecisionConstraints(budget_cap_vnd=250_000)
+        with_diagnostics = build_predictive_city_plan(city, constraints)
+        with mock.patch(
+            "heatsafe.services.preventive_planning._build_optimization_evidence",
+            return_value=CityOptimizationEvidence(),
+        ):
+            without_materialized_diagnostics = build_predictive_city_plan(
+                city, constraints
+            )
+
+        fixed_time = datetime(2000, 1, 1, tzinfo=UTC)
+
+        def authoritative_plan(plan):
+            normalized_rows = []
+            for row in plan.rows:
+                window = row.best_window
+                if window is not None:
+                    proposal = replace(
+                        window.proposal,
+                        created_at=fixed_time,
+                        expires_at=fixed_time,
+                    )
+                    window = replace(window, proposal=proposal)
+                normalized_rows.append(replace(row, best_window=window))
+            return replace(
+                plan,
+                rows=tuple(normalized_rows),
+                created_at=fixed_time,
+                expires_at=fixed_time,
+                optimization_evidence=None,
+            )
+
+        self.assertEqual(
+            authoritative_plan(with_diagnostics),
+            authoritative_plan(without_materialized_diagnostics),
+        )
 
     def test_ranks_and_portfolio_are_stable_when_zone_order_changes(self):
         city = self._city()
-        first = build_predictive_city_plan(city, DecisionConstraints())
+        constraints = DecisionConstraints(budget_cap_vnd=250_000)
+        first = build_predictive_city_plan(city, constraints)
         second = build_predictive_city_plan(
             replace(city, zones=tuple(reversed(city.zones))),
-            DecisionConstraints(),
+            constraints,
         )
 
         self.assertEqual(first.portfolio_id, second.portfolio_id)
         self.assertEqual(first.selected_zone_ids, second.selected_zone_ids)
+        self.assertEqual(first.optimization_evidence, second.optimization_evidence)
         self.assertEqual(
             [
                 (

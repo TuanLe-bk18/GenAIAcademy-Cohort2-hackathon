@@ -1,0 +1,6254 @@
+{
+  "schema_version": "operator-presentation-v1",
+  "generated_from": {
+    "scenario_version": "hanoi_heatwave_v1",
+    "generator_version": "stateful-replay-v2",
+    "seed": 42,
+    "source_state_checksum": "011222c65df7ef8cc63ac8a3ea1e1d3fd9c27f0b28edddfbbd7534e6353ff3f9"
+  },
+  "range_label": "09:15–13:15",
+  "decision_time_label": "11:15",
+  "start_tick": 37,
+  "decision_tick": 45,
+  "end_tick": 53,
+  "plan_status": "READY",
+  "presentation_limits": {
+    "budget_usd": 500,
+    "support_per_driver_usd": 0.32
+  },
+  "decision_views": {
+    "ba-dinh": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 56 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 56,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "19 of 19",
+        "order_impact_summary": "-1.6 percentage points",
+        "pickup_delay_summary": "+1.9 min",
+        "cost_summary": "$24 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "19 of 19",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-1.6 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.9 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$24 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 56,
+            "projected_drivers_at_limit": 48.265625,
+            "pause_minutes": 15,
+            "expected_demand": 113,
+            "high_demand": 127,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 40,
+            "projected_drivers_at_limit": 63.09375,
+            "pause_minutes": 15,
+            "expected_demand": 114,
+            "high_demand": 129,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 28,
+            "projected_drivers_at_limit": 78.296875,
+            "pause_minutes": 15,
+            "expected_demand": 118,
+            "high_demand": 135,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 28,
+            "projected_drivers_at_limit": 81.171875,
+            "pause_minutes": 15,
+            "expected_demand": 122,
+            "high_demand": 140,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 19.0,
+            "high_demand_value": 19.0,
+            "limit_value": 19.0,
+            "unit": "drivers",
+            "expected_label": "19 of 19",
+            "high_demand_label": "19 of 19",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 95.67999999999999,
+            "limit_value": 95.24000000000001,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "95.7%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.8,
+            "high_demand_value": 1.9,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.8 min",
+            "high_demand_label": "+1.9 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "bac-tu-liem": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 45 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 45,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "30-minute breaks",
+        "coverage_summary": "22 of 22",
+        "order_impact_summary": "-0.0 percentage points",
+        "pickup_delay_summary": "+1.6 min",
+        "cost_summary": "$42 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "22 of 22",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-0.0 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.6 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$42 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 45,
+            "projected_drivers_at_limit": 38.6875,
+            "pause_minutes": 30,
+            "expected_demand": 76,
+            "high_demand": 85,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 32,
+            "projected_drivers_at_limit": 50.96875,
+            "pause_minutes": 30,
+            "expected_demand": 79,
+            "high_demand": 89,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 23,
+            "projected_drivers_at_limit": 60.28125,
+            "pause_minutes": 30,
+            "expected_demand": 83,
+            "high_demand": 95,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 23,
+            "projected_drivers_at_limit": 60.28125,
+            "pause_minutes": 30,
+            "expected_demand": 86,
+            "high_demand": 99,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 22.0,
+            "high_demand_value": 22.0,
+            "limit_value": 22.0,
+            "unit": "drivers",
+            "expected_label": "22 of 22",
+            "high_demand_label": "22 of 22",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 100.0,
+            "limit_value": 98.0,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "100.0%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.0,
+            "high_demand_value": 1.6,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.0 min",
+            "high_demand_label": "+1.6 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "cau-giay": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 117 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 117,
+        "start_time_label": "11:15",
+        "group_summary": "3 staggered groups",
+        "break_length_label": "30-minute breaks",
+        "coverage_summary": "27 of 27",
+        "order_impact_summary": "-0.0 percentage points",
+        "pickup_delay_summary": "+1.5 min",
+        "cost_summary": "$133 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "27 of 27",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-0.0 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.5 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$133 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 117,
+            "projected_drivers_at_limit": 36.328125,
+            "pause_minutes": 30,
+            "expected_demand": 123,
+            "high_demand": 138,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 78,
+            "projected_drivers_at_limit": 66.984375,
+            "pause_minutes": 30,
+            "expected_demand": 124,
+            "high_demand": 140,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 78,
+            "projected_drivers_at_limit": 103.796875,
+            "pause_minutes": 30,
+            "expected_demand": 128,
+            "high_demand": 146,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 55,
+            "projected_drivers_at_limit": 112.875,
+            "pause_minutes": 30,
+            "expected_demand": 133,
+            "high_demand": 153,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 27.0,
+            "high_demand_value": 27.0,
+            "limit_value": 27.0,
+            "unit": "drivers",
+            "expected_label": "27 of 27",
+            "high_demand_label": "27 of 27",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 100.0,
+            "limit_value": 98.0,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "100.0%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.0,
+            "high_demand_value": 1.5,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.0 min",
+            "high_demand_label": "+1.5 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "dong-da": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 34 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 34,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "31 of 31",
+        "order_impact_summary": "-1.1 percentage points",
+        "pickup_delay_summary": "+1.5 min",
+        "cost_summary": "$21 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "31 of 31",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-1.1 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.5 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$21 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 34,
+            "projected_drivers_at_limit": 88.625,
+            "pause_minutes": 15,
+            "expected_demand": 162,
+            "high_demand": 181,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 34,
+            "projected_drivers_at_limit": 88.625,
+            "pause_minutes": 15,
+            "expected_demand": 169,
+            "high_demand": 191,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 34,
+            "projected_drivers_at_limit": 90.53125,
+            "pause_minutes": 15,
+            "expected_demand": 177,
+            "high_demand": 202,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 34,
+            "projected_drivers_at_limit": 91.453125,
+            "pause_minutes": 15,
+            "expected_demand": 183,
+            "high_demand": 210,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 31.0,
+            "high_demand_value": 31.0,
+            "limit_value": 31.0,
+            "unit": "drivers",
+            "expected_label": "31 of 31",
+            "high_demand_label": "31 of 31",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 96.84,
+            "high_demand_value": 83.91,
+            "limit_value": 82.99,
+            "unit": "%",
+            "expected_label": "96.8%",
+            "high_demand_label": "83.9%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 1.1,
+            "high_demand_value": 1.5,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+1.1 min",
+            "high_demand_label": "+1.5 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "ha-dong": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 87 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 87,
+        "start_time_label": "11:15",
+        "group_summary": "3 staggered groups",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "25 of 25",
+        "order_impact_summary": "-0.0 percentage points",
+        "pickup_delay_summary": "+1.9 min",
+        "cost_summary": "$28 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "25 of 25",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-0.0 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.9 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$28 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 87,
+            "projected_drivers_at_limit": 25.953125,
+            "pause_minutes": 15,
+            "expected_demand": 96,
+            "high_demand": 108,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 29,
+            "projected_drivers_at_limit": 77.15625,
+            "pause_minutes": 30,
+            "expected_demand": 98,
+            "high_demand": 111,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 25,
+            "projected_drivers_at_limit": 81.03125,
+            "pause_minutes": 30,
+            "expected_demand": 99,
+            "high_demand": 113,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 25,
+            "projected_drivers_at_limit": 81.03125,
+            "pause_minutes": 30,
+            "expected_demand": 100,
+            "high_demand": 115,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 25.0,
+            "high_demand_value": 25.0,
+            "limit_value": 25.0,
+            "unit": "drivers",
+            "expected_label": "25 of 25",
+            "high_demand_label": "25 of 25",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 100.0,
+            "limit_value": 98.0,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "100.0%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.0,
+            "high_demand_value": 1.9,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.0 min",
+            "high_demand_label": "+1.9 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "hai-ba-trung": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 73 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 73,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "30-minute breaks",
+        "coverage_summary": "30 of 30",
+        "order_impact_summary": "-0.0 percentage points",
+        "pickup_delay_summary": "+1.4 min",
+        "cost_summary": "$77 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "30 of 30",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-0.0 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.4 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$77 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 73,
+            "projected_drivers_at_limit": 62.75,
+            "pause_minutes": 30,
+            "expected_demand": 114,
+            "high_demand": 128,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 73,
+            "projected_drivers_at_limit": 67.6875,
+            "pause_minutes": 30,
+            "expected_demand": 117,
+            "high_demand": 132,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 51,
+            "projected_drivers_at_limit": 87.109375,
+            "pause_minutes": 30,
+            "expected_demand": 121,
+            "high_demand": 138,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 37,
+            "projected_drivers_at_limit": 102.765625,
+            "pause_minutes": 30,
+            "expected_demand": 126,
+            "high_demand": 145,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 30.0,
+            "high_demand_value": 30.0,
+            "limit_value": 30.0,
+            "unit": "drivers",
+            "expected_label": "30 of 30",
+            "high_demand_label": "30 of 30",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 100.0,
+            "limit_value": 98.0,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "100.0%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.0,
+            "high_demand_value": 1.4,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.0 min",
+            "high_demand_label": "+1.4 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "hoan-kiem": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 44 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 44,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "44 of 44",
+        "order_impact_summary": "-1.4 percentage points",
+        "pickup_delay_summary": "+1.8 min",
+        "cost_summary": "$18 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "44 of 44",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-1.4 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.8 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$18 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 44,
+            "projected_drivers_at_limit": 99.296875,
+            "pause_minutes": 15,
+            "expected_demand": 163,
+            "high_demand": 183,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 44,
+            "projected_drivers_at_limit": 99.296875,
+            "pause_minutes": 15,
+            "expected_demand": 164,
+            "high_demand": 185,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 44,
+            "projected_drivers_at_limit": 99.296875,
+            "pause_minutes": 15,
+            "expected_demand": 166,
+            "high_demand": 189,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 44,
+            "projected_drivers_at_limit": 99.296875,
+            "pause_minutes": 15,
+            "expected_demand": 171,
+            "high_demand": 197,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 44.0,
+            "high_demand_value": 44.0,
+            "limit_value": 44.0,
+            "unit": "drivers",
+            "expected_label": "44 of 44",
+            "high_demand_label": "44 of 44",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 92.14,
+            "limit_value": 91.57,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "92.1%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.4,
+            "high_demand_value": 1.8,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.4 min",
+            "high_demand_label": "+1.8 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "hoang-mai": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 31 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 31,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "27 of 27",
+        "order_impact_summary": "-1.0 percentage points",
+        "pickup_delay_summary": "+1.6 min",
+        "cost_summary": "$20 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "27 of 27",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-1.0 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.6 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$20 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 31,
+            "projected_drivers_at_limit": 82.015625,
+            "pause_minutes": 15,
+            "expected_demand": 160,
+            "high_demand": 179,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 31,
+            "projected_drivers_at_limit": 82.015625,
+            "pause_minutes": 15,
+            "expected_demand": 162,
+            "high_demand": 183,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 31,
+            "projected_drivers_at_limit": 85.78125,
+            "pause_minutes": 15,
+            "expected_demand": 163,
+            "high_demand": 186,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 31,
+            "projected_drivers_at_limit": 85.78125,
+            "pause_minutes": 15,
+            "expected_demand": 167,
+            "high_demand": 192,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 27.0,
+            "high_demand_value": 27.0,
+            "limit_value": 27.0,
+            "unit": "drivers",
+            "expected_label": "27 of 27",
+            "high_demand_label": "27 of 27",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 85.92999999999999,
+            "high_demand_value": 74.45,
+            "limit_value": 73.48,
+            "unit": "%",
+            "expected_label": "85.9%",
+            "high_demand_label": "74.5%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 1.6,
+            "high_demand_value": 1.6,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+1.6 min",
+            "high_demand_label": "+1.6 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "nam-tu-liem": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 37 drivers starting at 11:30",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 37,
+        "start_time_label": "11:30",
+        "group_summary": "1 staggered group",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "16 of 16",
+        "order_impact_summary": "-1.2 percentage points",
+        "pickup_delay_summary": "+1.9 min",
+        "cost_summary": "$15 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "16 of 16",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-1.2 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.9 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$15 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 21,
+            "projected_drivers_at_limit": 74.734375,
+            "pause_minutes": 30,
+            "expected_demand": 111,
+            "high_demand": 124,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 37,
+            "projected_drivers_at_limit": 59.75,
+            "pause_minutes": 15,
+            "expected_demand": 114,
+            "high_demand": 129,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 16,
+            "projected_drivers_at_limit": 79.40625,
+            "pause_minutes": 30,
+            "expected_demand": 116,
+            "high_demand": 132,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 16,
+            "projected_drivers_at_limit": 79.40625,
+            "pause_minutes": 30,
+            "expected_demand": 116,
+            "high_demand": 133,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 16.0,
+            "high_demand_value": 16.0,
+            "limit_value": 16.0,
+            "unit": "drivers",
+            "expected_label": "16 of 16",
+            "high_demand_label": "16 of 16",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 100.0,
+            "high_demand_value": 98.79,
+            "limit_value": 98.0,
+            "unit": "%",
+            "expected_label": "100.0%",
+            "high_demand_label": "98.8%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 0.2,
+            "high_demand_value": 1.9,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+0.2 min",
+            "high_demand_label": "+1.9 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:30",
+        "budget_limit_usd": 500.0
+      }
+    },
+    "thanh-xuan": {
+      "recommendation": {
+        "state": "ready",
+        "headline": "Protect 35 drivers starting at 11:15",
+        "explanation": "The city plan prioritizes urgent coverage while staying within current limits.",
+        "driver_count": 35,
+        "start_time_label": "11:15",
+        "group_summary": "1 staggered group",
+        "break_length_label": "15-minute breaks",
+        "coverage_summary": "34 of 34",
+        "order_impact_summary": "-1.1 percentage points",
+        "pickup_delay_summary": "+1.7 min",
+        "cost_summary": "$23 of $500",
+        "guardrails": [
+          {
+            "label": "Safety coverage",
+            "value": "34 of 34",
+            "status_label": "All covered",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "value": "-1.1 percentage points",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "value": "+1.7 min",
+            "status_label": "Within limit",
+            "passed": true
+          },
+          {
+            "label": "Estimated plan cost",
+            "value": "$23 of $500",
+            "status_label": "Within limit",
+            "passed": true
+          }
+        ],
+        "can_activate": true,
+        "blocking_reason": ""
+      },
+      "insights": {
+        "timing_options": [
+          {
+            "start_time": "2026-05-26T11:15:00+07:00",
+            "start_time_label": "11:15",
+            "selected": true,
+            "feasible": true,
+            "drivers_protected": 35,
+            "projected_drivers_at_limit": 92.34375,
+            "pause_minutes": 15,
+            "expected_demand": 176,
+            "high_demand": 197,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:30:00+07:00",
+            "start_time_label": "11:30",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 35,
+            "projected_drivers_at_limit": 92.34375,
+            "pause_minutes": 15,
+            "expected_demand": 182,
+            "high_demand": 206,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T11:45:00+07:00",
+            "start_time_label": "11:45",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 35,
+            "projected_drivers_at_limit": 92.34375,
+            "pause_minutes": 15,
+            "expected_demand": 184,
+            "high_demand": 210,
+            "rejection_reason": ""
+          },
+          {
+            "start_time": "2026-05-26T12:00:00+07:00",
+            "start_time_label": "12:00",
+            "selected": false,
+            "feasible": true,
+            "drivers_protected": 35,
+            "projected_drivers_at_limit": 93.265625,
+            "pause_minutes": 15,
+            "expected_demand": 186,
+            "high_demand": 214,
+            "rejection_reason": ""
+          }
+        ],
+        "portfolio_options": [
+          {
+            "label": "Selected plan",
+            "selected": true,
+            "feasible": true,
+            "protected_drivers": 559,
+            "exposure_hours_avoided": 198.5,
+            "high_demand_cost_usd": 400.89544,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "275 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 2",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 0,
+            "exposure_hours_avoided": 0.0,
+            "high_demand_cost_usd": 0.0,
+            "pickup_delay_minutes": 0.0,
+            "coverage_summary": "0 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 3",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 37,
+            "exposure_hours_avoided": 9.25,
+            "high_demand_cost_usd": 14.652,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "16 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 4",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 44,
+            "exposure_hours_avoided": 11.0,
+            "high_demand_cost_usd": 17.6,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "44 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 5",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 56,
+            "exposure_hours_avoided": 14.0,
+            "high_demand_cost_usd": 23.52,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "19 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 6",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 87,
+            "exposure_hours_avoided": 21.75,
+            "high_demand_cost_usd": 28.014,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "25 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 7",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 81,
+            "exposure_hours_avoided": 20.25,
+            "high_demand_cost_usd": 32.252,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "60 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 8",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 75,
+            "exposure_hours_avoided": 18.75,
+            "high_demand_cost_usd": 37.3396,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "71 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 9",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 93,
+            "exposure_hours_avoided": 23.25,
+            "high_demand_cost_usd": 38.172,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "35 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 10",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 78,
+            "exposure_hours_avoided": 19.5,
+            "high_demand_cost_usd": 38.73356,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "75 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 11",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 79,
+            "exposure_hours_avoided": 19.75,
+            "high_demand_cost_usd": 40.83656,
+            "pickup_delay_minutes": 1.8,
+            "coverage_summary": "78 of 275",
+            "rejection_reason": ""
+          },
+          {
+            "label": "Plan option 12",
+            "selected": false,
+            "feasible": true,
+            "protected_drivers": 100,
+            "exposure_hours_avoided": 25.0,
+            "high_demand_cost_usd": 41.12,
+            "pickup_delay_minutes": 1.9,
+            "coverage_summary": "63 of 275",
+            "rejection_reason": ""
+          }
+        ],
+        "stress_metrics": [
+          {
+            "label": "Safety coverage",
+            "expected_value": 34.0,
+            "high_demand_value": 34.0,
+            "limit_value": 34.0,
+            "unit": "drivers",
+            "expected_label": "34 of 34",
+            "high_demand_label": "34 of 34",
+            "passed": true
+          },
+          {
+            "label": "Orders completed",
+            "expected_value": 86.59,
+            "high_demand_value": 74.98,
+            "limit_value": 74.05,
+            "unit": "%",
+            "expected_label": "86.6%",
+            "high_demand_label": "75.0%",
+            "passed": true
+          },
+          {
+            "label": "Expected pickup delay",
+            "expected_value": 1.7,
+            "high_demand_value": 1.7,
+            "limit_value": 2.0,
+            "unit": "min",
+            "expected_label": "+1.7 min",
+            "high_demand_label": "+1.7 min",
+            "passed": true
+          },
+          {
+            "label": "Plan cost",
+            "expected_value": 400.044,
+            "high_demand_value": 400.89544,
+            "limit_value": 500.0,
+            "unit": "$",
+            "expected_label": "$400",
+            "high_demand_label": "$401",
+            "passed": true
+          }
+        ],
+        "outcome": null,
+        "evaluated_option_label": "Compared 1,024 plan combinations; 1,024 were within all limits.",
+        "selected_start_label": "11:15",
+        "budget_limit_usd": 500.0
+      }
+    }
+  },
+  "pre_decision": [
+    {
+      "tick": 37,
+      "time": "2026-05-26T09:15:00+07:00",
+      "time_label": "09:15",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 0,
+        "active_drivers": 3037,
+        "requests_15m": 1272,
+        "average_heat_index_c": 47.3,
+        "covered_drivers": 0,
+        "required_drivers": 0,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 50.0,
+          "heat_state": "danger",
+          "active_drivers": 372,
+          "urgent_drivers": 0,
+          "requests_15m": 179,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 48.8,
+          "heat_state": "danger",
+          "active_drivers": 330,
+          "urgent_drivers": 0,
+          "requests_15m": 145,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 48.5,
+          "heat_state": "danger",
+          "active_drivers": 346,
+          "urgent_drivers": 0,
+          "requests_15m": 133,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 48.2,
+          "heat_state": "danger",
+          "active_drivers": 277,
+          "urgent_drivers": 0,
+          "requests_15m": 98,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 47.3,
+          "heat_state": "danger",
+          "active_drivers": 360,
+          "urgent_drivers": 0,
+          "requests_15m": 157,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 47.0,
+          "heat_state": "danger",
+          "active_drivers": 323,
+          "urgent_drivers": 0,
+          "requests_15m": 135,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 46.7,
+          "heat_state": "danger",
+          "active_drivers": 294,
+          "urgent_drivers": 0,
+          "requests_15m": 125,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 46.1,
+          "heat_state": "danger",
+          "active_drivers": 271,
+          "urgent_drivers": 0,
+          "requests_15m": 102,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 45.6,
+          "heat_state": "danger",
+          "active_drivers": 249,
+          "urgent_drivers": 0,
+          "requests_15m": 119,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 45.0,
+          "heat_state": "danger",
+          "active_drivers": 215,
+          "urgent_drivers": 0,
+          "requests_15m": 79,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 38,
+      "time": "2026-05-26T09:30:00+07:00",
+      "time_label": "09:30",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 0,
+        "active_drivers": 2959,
+        "requests_15m": 1204,
+        "average_heat_index_c": 47.5,
+        "covered_drivers": 0,
+        "required_drivers": 0,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 50.2,
+          "heat_state": "danger",
+          "active_drivers": 363,
+          "urgent_drivers": 0,
+          "requests_15m": 152,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 49.0,
+          "heat_state": "danger",
+          "active_drivers": 321,
+          "urgent_drivers": 0,
+          "requests_15m": 143,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 48.7,
+          "heat_state": "danger",
+          "active_drivers": 337,
+          "urgent_drivers": 0,
+          "requests_15m": 151,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 48.4,
+          "heat_state": "danger",
+          "active_drivers": 270,
+          "urgent_drivers": 0,
+          "requests_15m": 83,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 47.5,
+          "heat_state": "danger",
+          "active_drivers": 351,
+          "urgent_drivers": 0,
+          "requests_15m": 148,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 47.2,
+          "heat_state": "danger",
+          "active_drivers": 314,
+          "urgent_drivers": 0,
+          "requests_15m": 146,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 46.9,
+          "heat_state": "danger",
+          "active_drivers": 287,
+          "urgent_drivers": 0,
+          "requests_15m": 119,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 46.3,
+          "heat_state": "danger",
+          "active_drivers": 264,
+          "urgent_drivers": 0,
+          "requests_15m": 86,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 45.8,
+          "heat_state": "danger",
+          "active_drivers": 242,
+          "urgent_drivers": 0,
+          "requests_15m": 86,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 45.2,
+          "heat_state": "danger",
+          "active_drivers": 210,
+          "urgent_drivers": 0,
+          "requests_15m": 90,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 39,
+      "time": "2026-05-26T09:45:00+07:00",
+      "time_label": "09:45",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 0,
+        "active_drivers": 2880,
+        "requests_15m": 1088,
+        "average_heat_index_c": 47.7,
+        "covered_drivers": 0,
+        "required_drivers": 0,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 50.4,
+          "heat_state": "danger",
+          "active_drivers": 353,
+          "urgent_drivers": 0,
+          "requests_15m": 145,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 49.2,
+          "heat_state": "danger",
+          "active_drivers": 313,
+          "urgent_drivers": 0,
+          "requests_15m": 119,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 48.9,
+          "heat_state": "danger",
+          "active_drivers": 328,
+          "urgent_drivers": 0,
+          "requests_15m": 122,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 48.6,
+          "heat_state": "danger",
+          "active_drivers": 263,
+          "urgent_drivers": 0,
+          "requests_15m": 73,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 47.7,
+          "heat_state": "danger",
+          "active_drivers": 341,
+          "urgent_drivers": 0,
+          "requests_15m": 119,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 47.4,
+          "heat_state": "danger",
+          "active_drivers": 306,
+          "urgent_drivers": 0,
+          "requests_15m": 125,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 47.1,
+          "heat_state": "danger",
+          "active_drivers": 279,
+          "urgent_drivers": 0,
+          "requests_15m": 118,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 46.5,
+          "heat_state": "danger",
+          "active_drivers": 257,
+          "urgent_drivers": 0,
+          "requests_15m": 103,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 46.0,
+          "heat_state": "danger",
+          "active_drivers": 236,
+          "urgent_drivers": 0,
+          "requests_15m": 98,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 45.4,
+          "heat_state": "danger",
+          "active_drivers": 204,
+          "urgent_drivers": 0,
+          "requests_15m": 66,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 40,
+      "time": "2026-05-26T10:00:00+07:00",
+      "time_label": "10:00",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 0,
+        "active_drivers": 2805,
+        "requests_15m": 1050,
+        "average_heat_index_c": 47.9,
+        "covered_drivers": 0,
+        "required_drivers": 0,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 50.6,
+          "heat_state": "danger",
+          "active_drivers": 344,
+          "urgent_drivers": 0,
+          "requests_15m": 151,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 49.4,
+          "heat_state": "danger",
+          "active_drivers": 304,
+          "urgent_drivers": 0,
+          "requests_15m": 111,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 49.1,
+          "heat_state": "danger",
+          "active_drivers": 320,
+          "urgent_drivers": 0,
+          "requests_15m": 115,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 48.8,
+          "heat_state": "danger",
+          "active_drivers": 256,
+          "urgent_drivers": 0,
+          "requests_15m": 86,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 47.9,
+          "heat_state": "danger",
+          "active_drivers": 332,
+          "urgent_drivers": 0,
+          "requests_15m": 122,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 47.6,
+          "heat_state": "danger",
+          "active_drivers": 298,
+          "urgent_drivers": 0,
+          "requests_15m": 125,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 47.3,
+          "heat_state": "danger",
+          "active_drivers": 272,
+          "urgent_drivers": 0,
+          "requests_15m": 98,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 46.7,
+          "heat_state": "danger",
+          "active_drivers": 250,
+          "urgent_drivers": 0,
+          "requests_15m": 88,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 46.2,
+          "heat_state": "danger",
+          "active_drivers": 230,
+          "urgent_drivers": 0,
+          "requests_15m": 77,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 45.6,
+          "heat_state": "danger",
+          "active_drivers": 199,
+          "urgent_drivers": 0,
+          "requests_15m": 77,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 41,
+      "time": "2026-05-26T10:15:00+07:00",
+      "time_label": "10:15",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 43,
+        "active_drivers": 2830,
+        "requests_15m": 1184,
+        "average_heat_index_c": 48.0,
+        "covered_drivers": 0,
+        "required_drivers": 43,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 47.5,
+          "heat_state": "danger",
+          "active_drivers": 274,
+          "urgent_drivers": 7,
+          "requests_15m": 124,
+          "included": false
+        },
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 50.8,
+          "heat_state": "danger",
+          "active_drivers": 347,
+          "urgent_drivers": 6,
+          "requests_15m": 164,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 49.2,
+          "heat_state": "danger",
+          "active_drivers": 322,
+          "urgent_drivers": 6,
+          "requests_15m": 137,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 48.9,
+          "heat_state": "danger",
+          "active_drivers": 258,
+          "urgent_drivers": 5,
+          "requests_15m": 83,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 47.7,
+          "heat_state": "danger",
+          "active_drivers": 301,
+          "urgent_drivers": 5,
+          "requests_15m": 139,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 45.7,
+          "heat_state": "danger",
+          "active_drivers": 201,
+          "urgent_drivers": 4,
+          "requests_15m": 80,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 49.5,
+          "heat_state": "danger",
+          "active_drivers": 307,
+          "urgent_drivers": 3,
+          "requests_15m": 127,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 48.0,
+          "heat_state": "danger",
+          "active_drivers": 335,
+          "urgent_drivers": 3,
+          "requests_15m": 133,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 46.3,
+          "heat_state": "danger",
+          "active_drivers": 232,
+          "urgent_drivers": 3,
+          "requests_15m": 91,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 46.9,
+          "heat_state": "danger",
+          "active_drivers": 253,
+          "urgent_drivers": 1,
+          "requests_15m": 106,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 42,
+      "time": "2026-05-26T10:30:00+07:00",
+      "time_label": "10:30",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 112,
+        "active_drivers": 2855,
+        "requests_15m": 1235,
+        "average_heat_index_c": 48.2,
+        "covered_drivers": 0,
+        "required_drivers": 112,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 50.9,
+          "heat_state": "danger",
+          "active_drivers": 350,
+          "urgent_drivers": 18,
+          "requests_15m": 171,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 47.9,
+          "heat_state": "danger",
+          "active_drivers": 303,
+          "urgent_drivers": 16,
+          "requests_15m": 126,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 47.6,
+          "heat_state": "danger",
+          "active_drivers": 277,
+          "urgent_drivers": 15,
+          "requests_15m": 122,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 49.4,
+          "heat_state": "danger",
+          "active_drivers": 325,
+          "urgent_drivers": 14,
+          "requests_15m": 142,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 49.7,
+          "heat_state": "danger",
+          "active_drivers": 310,
+          "urgent_drivers": 11,
+          "requests_15m": 146,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 49.1,
+          "heat_state": "danger",
+          "active_drivers": 260,
+          "urgent_drivers": 10,
+          "requests_15m": 102,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 45.9,
+          "heat_state": "danger",
+          "active_drivers": 203,
+          "urgent_drivers": 10,
+          "requests_15m": 72,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 46.4,
+          "heat_state": "danger",
+          "active_drivers": 234,
+          "urgent_drivers": 8,
+          "requests_15m": 111,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 48.2,
+          "heat_state": "danger",
+          "active_drivers": 338,
+          "urgent_drivers": 5,
+          "requests_15m": 149,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 47.0,
+          "heat_state": "danger",
+          "active_drivers": 255,
+          "urgent_drivers": 5,
+          "requests_15m": 94,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 43,
+      "time": "2026-05-26T10:45:00+07:00",
+      "time_label": "10:45",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 169,
+        "active_drivers": 2880,
+        "requests_15m": 1232,
+        "average_heat_index_c": 48.3,
+        "covered_drivers": 0,
+        "required_drivers": 169,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 51.1,
+          "heat_state": "danger",
+          "active_drivers": 353,
+          "urgent_drivers": 26,
+          "requests_15m": 147,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 49.5,
+          "heat_state": "danger",
+          "active_drivers": 328,
+          "urgent_drivers": 21,
+          "requests_15m": 138,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 48.0,
+          "heat_state": "danger",
+          "active_drivers": 306,
+          "urgent_drivers": 20,
+          "requests_15m": 146,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 47.7,
+          "heat_state": "danger",
+          "active_drivers": 279,
+          "urgent_drivers": 20,
+          "requests_15m": 160,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 46.0,
+          "heat_state": "danger",
+          "active_drivers": 204,
+          "urgent_drivers": 17,
+          "requests_15m": 75,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 46.6,
+          "heat_state": "danger",
+          "active_drivers": 236,
+          "urgent_drivers": 16,
+          "requests_15m": 84,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 49.8,
+          "heat_state": "danger",
+          "active_drivers": 313,
+          "urgent_drivers": 15,
+          "requests_15m": 120,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 49.2,
+          "heat_state": "danger",
+          "active_drivers": 263,
+          "urgent_drivers": 13,
+          "requests_15m": 114,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 48.3,
+          "heat_state": "danger",
+          "active_drivers": 341,
+          "urgent_drivers": 13,
+          "requests_15m": 149,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 47.1,
+          "heat_state": "danger",
+          "active_drivers": 257,
+          "urgent_drivers": 8,
+          "requests_15m": 99,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 44,
+      "time": "2026-05-26T11:00:00+07:00",
+      "time_label": "11:00",
+      "branch": "PRE_DECISION",
+      "status": "Monitoring",
+      "city": {
+        "urgent_drivers": 220,
+        "active_drivers": 2906,
+        "requests_15m": 1233,
+        "average_heat_index_c": 48.5,
+        "covered_drivers": 0,
+        "required_drivers": 220,
+        "budget_remaining_usd": null,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 51.2,
+          "heat_state": "danger",
+          "active_drivers": 357,
+          "urgent_drivers": 35,
+          "requests_15m": 152,
+          "included": false
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 49.7,
+          "heat_state": "danger",
+          "active_drivers": 331,
+          "urgent_drivers": 27,
+          "requests_15m": 137,
+          "included": false
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 48.2,
+          "heat_state": "danger",
+          "active_drivers": 309,
+          "urgent_drivers": 26,
+          "requests_15m": 166,
+          "included": false
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 47.9,
+          "heat_state": "danger",
+          "active_drivers": 282,
+          "urgent_drivers": 22,
+          "requests_15m": 100,
+          "included": false
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 50.0,
+          "heat_state": "danger",
+          "active_drivers": 315,
+          "urgent_drivers": 21,
+          "requests_15m": 131,
+          "included": false
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 46.7,
+          "heat_state": "danger",
+          "active_drivers": 238,
+          "urgent_drivers": 21,
+          "requests_15m": 106,
+          "included": false
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 48.5,
+          "heat_state": "danger",
+          "active_drivers": 344,
+          "urgent_drivers": 20,
+          "requests_15m": 151,
+          "included": false
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 46.1,
+          "heat_state": "danger",
+          "active_drivers": 206,
+          "urgent_drivers": 20,
+          "requests_15m": 81,
+          "included": false
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 49.4,
+          "heat_state": "danger",
+          "active_drivers": 265,
+          "urgent_drivers": 16,
+          "requests_15m": 95,
+          "included": false
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 47.3,
+          "heat_state": "danger",
+          "active_drivers": 259,
+          "urgent_drivers": 12,
+          "requests_15m": 114,
+          "included": false
+        }
+      ]
+    },
+    {
+      "tick": 45,
+      "time": "2026-05-26T11:15:00+07:00",
+      "time_label": "11:15",
+      "branch": "PRE_DECISION",
+      "status": "Decision needed",
+      "city": {
+        "urgent_drivers": 275,
+        "active_drivers": 2932,
+        "requests_15m": 1266,
+        "average_heat_index_c": 49.3,
+        "covered_drivers": 275,
+        "required_drivers": 275,
+        "budget_remaining_usd": 99,
+        "comparison_urgent_drivers": null
+      },
+      "zones": [
+        {
+          "id": "hoan-kiem",
+          "name": "Hoàn Kiếm",
+          "latitude": 21.0285,
+          "longitude": 105.8542,
+          "heat_index_c": 52.1,
+          "heat_state": "Extreme danger",
+          "active_drivers": 360,
+          "urgent_drivers": 44,
+          "requests_15m": 161,
+          "included": true
+        },
+        {
+          "id": "thanh-xuan",
+          "name": "Thanh Xuân",
+          "latitude": 20.9937,
+          "longitude": 105.8118,
+          "heat_index_c": 49.0,
+          "heat_state": "danger",
+          "active_drivers": 312,
+          "urgent_drivers": 34,
+          "requests_15m": 169,
+          "included": true
+        },
+        {
+          "id": "dong-da",
+          "name": "Đống Đa",
+          "latitude": 21.0187,
+          "longitude": 105.8238,
+          "heat_index_c": 50.5,
+          "heat_state": "danger",
+          "active_drivers": 334,
+          "urgent_drivers": 31,
+          "requests_15m": 157,
+          "included": true
+        },
+        {
+          "id": "hai-ba-trung",
+          "name": "Hai Bà Trưng",
+          "latitude": 21.0094,
+          "longitude": 105.853,
+          "heat_index_c": 50.8,
+          "heat_state": "danger",
+          "active_drivers": 318,
+          "urgent_drivers": 30,
+          "requests_15m": 113,
+          "included": true
+        },
+        {
+          "id": "cau-giay",
+          "name": "Cầu Giấy",
+          "latitude": 21.0333,
+          "longitude": 105.7961,
+          "heat_index_c": 49.3,
+          "heat_state": "danger",
+          "active_drivers": 347,
+          "urgent_drivers": 27,
+          "requests_15m": 122,
+          "included": true
+        },
+        {
+          "id": "hoang-mai",
+          "name": "Hoàng Mai",
+          "latitude": 20.9693,
+          "longitude": 105.8458,
+          "heat_index_c": 48.7,
+          "heat_state": "danger",
+          "active_drivers": 284,
+          "urgent_drivers": 27,
+          "requests_15m": 158,
+          "included": true
+        },
+        {
+          "id": "ha-dong",
+          "name": "Hà Đông",
+          "latitude": 20.9631,
+          "longitude": 105.7725,
+          "heat_index_c": 47.5,
+          "heat_state": "danger",
+          "active_drivers": 240,
+          "urgent_drivers": 25,
+          "requests_15m": 93,
+          "included": true
+        },
+        {
+          "id": "bac-tu-liem",
+          "name": "Bắc Từ Liêm",
+          "latitude": 21.0664,
+          "longitude": 105.7483,
+          "heat_index_c": 47.0,
+          "heat_state": "danger",
+          "active_drivers": 208,
+          "urgent_drivers": 22,
+          "requests_15m": 74,
+          "included": true
+        },
+        {
+          "id": "ba-dinh",
+          "name": "Ba Đình",
+          "latitude": 21.0341,
+          "longitude": 105.8166,
+          "heat_index_c": 50.2,
+          "heat_state": "danger",
+          "active_drivers": 267,
+          "urgent_drivers": 19,
+          "requests_15m": 112,
+          "included": true
+        },
+        {
+          "id": "nam-tu-liem",
+          "name": "Nam Từ Liêm",
+          "latitude": 21.0125,
+          "longitude": 105.7656,
+          "heat_index_c": 48.1,
+          "heat_state": "danger",
+          "active_drivers": 262,
+          "urgent_drivers": 16,
+          "requests_15m": 107,
+          "included": true
+        }
+      ]
+    }
+  ],
+  "branches": {
+    "ACTIVATE": [
+      {
+        "tick": 46,
+        "time": "2026-05-26T11:30:00+07:00",
+        "time_label": "11:30",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 87,
+          "active_drivers": 2710,
+          "requests_15m": 1299,
+          "average_heat_index_c": 50.2,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 309
+        },
+        "zones": [
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 48.9,
+            "heat_state": "danger",
+            "active_drivers": 264,
+            "urgent_drivers": 25,
+            "requests_15m": 113,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 49.5,
+            "heat_state": "danger",
+            "active_drivers": 270,
+            "urgent_drivers": 13,
+            "requests_15m": 124,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 49.8,
+            "heat_state": "danger",
+            "active_drivers": 288,
+            "urgent_drivers": 11,
+            "requests_15m": 153,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 312,
+            "urgent_drivers": 8,
+            "requests_15m": 171,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 48.4,
+            "heat_state": "danger",
+            "active_drivers": 219,
+            "urgent_drivers": 8,
+            "requests_15m": 100,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 52.9,
+            "heat_state": "Extreme danger",
+            "active_drivers": 328,
+            "urgent_drivers": 7,
+            "requests_15m": 169,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 50.1,
+            "heat_state": "danger",
+            "active_drivers": 320,
+            "urgent_drivers": 6,
+            "requests_15m": 163,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 51.7,
+            "heat_state": "danger",
+            "active_drivers": 282,
+            "urgent_drivers": 5,
+            "requests_15m": 127,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 244,
+            "urgent_drivers": 3,
+            "requests_15m": 94,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 47.8,
+            "heat_state": "danger",
+            "active_drivers": 183,
+            "urgent_drivers": 1,
+            "requests_15m": 85,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 47,
+        "time": "2026-05-26T11:45:00+07:00",
+        "time_label": "11:45",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 94,
+          "active_drivers": 2807,
+          "requests_15m": 1422,
+          "average_heat_index_c": 51.0,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 315
+        },
+        "zones": [
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.2,
+            "heat_state": "Extreme danger",
+            "active_drivers": 336,
+            "urgent_drivers": 15,
+            "requests_15m": 177,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 50.6,
+            "heat_state": "danger",
+            "active_drivers": 314,
+            "urgent_drivers": 15,
+            "requests_15m": 165,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 50.9,
+            "heat_state": "danger",
+            "active_drivers": 288,
+            "urgent_drivers": 14,
+            "requests_15m": 173,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 50.3,
+            "heat_state": "danger",
+            "active_drivers": 281,
+            "urgent_drivers": 12,
+            "requests_15m": 137,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 53.7,
+            "heat_state": "Extreme danger",
+            "active_drivers": 360,
+            "urgent_drivers": 11,
+            "requests_15m": 183,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 49.7,
+            "heat_state": "danger",
+            "active_drivers": 248,
+            "urgent_drivers": 9,
+            "requests_15m": 134,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.2,
+            "heat_state": "danger",
+            "active_drivers": 237,
+            "urgent_drivers": 7,
+            "requests_15m": 106,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 52.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 292,
+            "urgent_drivers": 5,
+            "requests_15m": 154,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 51.9,
+            "heat_state": "danger",
+            "active_drivers": 260,
+            "urgent_drivers": 3,
+            "requests_15m": 109,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 48.6,
+            "heat_state": "danger",
+            "active_drivers": 191,
+            "urgent_drivers": 3,
+            "requests_15m": 84,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 48,
+        "time": "2026-05-26T12:00:00+07:00",
+        "time_label": "12:00",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 95,
+          "active_drivers": 2923,
+          "requests_15m": 1310,
+          "average_heat_index_c": 51.7,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 288
+        },
+        "zones": [
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 318,
+            "urgent_drivers": 18,
+            "requests_15m": 156,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 53.0,
+            "heat_state": "Extreme danger",
+            "active_drivers": 341,
+            "urgent_drivers": 17,
+            "requests_15m": 152,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 290,
+            "urgent_drivers": 14,
+            "requests_15m": 128,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 368,
+            "urgent_drivers": 12,
+            "requests_15m": 172,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.5,
+            "heat_state": "danger",
+            "active_drivers": 265,
+            "urgent_drivers": 10,
+            "requests_15m": 132,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 319,
+            "urgent_drivers": 8,
+            "requests_15m": 139,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.6,
+            "heat_state": "Extreme danger",
+            "active_drivers": 274,
+            "urgent_drivers": 6,
+            "requests_15m": 99,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.7,
+            "heat_state": "danger",
+            "active_drivers": 304,
+            "urgent_drivers": 6,
+            "requests_15m": 164,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.4,
+            "heat_state": "danger",
+            "active_drivers": 209,
+            "urgent_drivers": 3,
+            "requests_15m": 85,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.9,
+            "heat_state": "danger",
+            "active_drivers": 235,
+            "urgent_drivers": 1,
+            "requests_15m": 83,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 49,
+        "time": "2026-05-26T12:15:00+07:00",
+        "time_label": "12:15",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 111,
+          "active_drivers": 3009,
+          "requests_15m": 1333,
+          "average_heat_index_c": 51.7,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 259
+        },
+        "zones": [
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.9,
+            "heat_state": "Extreme danger",
+            "active_drivers": 346,
+            "urgent_drivers": 20,
+            "requests_15m": 136,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 323,
+            "urgent_drivers": 20,
+            "requests_15m": 148,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 294,
+            "urgent_drivers": 17,
+            "requests_15m": 138,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.4,
+            "heat_state": "Extreme danger",
+            "active_drivers": 372,
+            "urgent_drivers": 13,
+            "requests_15m": 176,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.2,
+            "heat_state": "Extreme danger",
+            "active_drivers": 329,
+            "urgent_drivers": 11,
+            "requests_15m": 148,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.5,
+            "heat_state": "danger",
+            "active_drivers": 270,
+            "urgent_drivers": 10,
+            "requests_15m": 105,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.6,
+            "heat_state": "Extreme danger",
+            "active_drivers": 277,
+            "urgent_drivers": 7,
+            "requests_15m": 114,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.3,
+            "heat_state": "danger",
+            "active_drivers": 215,
+            "urgent_drivers": 6,
+            "requests_15m": 80,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.7,
+            "heat_state": "danger",
+            "active_drivers": 337,
+            "urgent_drivers": 5,
+            "requests_15m": 190,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.9,
+            "heat_state": "danger",
+            "active_drivers": 246,
+            "urgent_drivers": 2,
+            "requests_15m": 98,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 50,
+        "time": "2026-05-26T12:30:00+07:00",
+        "time_label": "12:30",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 125,
+          "active_drivers": 3050,
+          "requests_15m": 1329,
+          "average_heat_index_c": 51.6,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 220
+        },
+        "zones": [
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.8,
+            "heat_state": "Extreme danger",
+            "active_drivers": 349,
+            "urgent_drivers": 21,
+            "requests_15m": 163,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.3,
+            "heat_state": "danger",
+            "active_drivers": 325,
+            "urgent_drivers": 20,
+            "requests_15m": 149,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.0,
+            "heat_state": "danger",
+            "active_drivers": 297,
+            "urgent_drivers": 20,
+            "requests_15m": 125,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 376,
+            "urgent_drivers": 16,
+            "requests_15m": 176,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.1,
+            "heat_state": "Extreme danger",
+            "active_drivers": 331,
+            "urgent_drivers": 13,
+            "requests_15m": 129,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.4,
+            "heat_state": "danger",
+            "active_drivers": 273,
+            "urgent_drivers": 12,
+            "requests_15m": 116,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 279,
+            "urgent_drivers": 9,
+            "requests_15m": 121,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.2,
+            "heat_state": "danger",
+            "active_drivers": 217,
+            "urgent_drivers": 6,
+            "requests_15m": 81,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.6,
+            "heat_state": "danger",
+            "active_drivers": 352,
+            "urgent_drivers": 5,
+            "requests_15m": 171,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.8,
+            "heat_state": "danger",
+            "active_drivers": 251,
+            "urgent_drivers": 3,
+            "requests_15m": 98,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 51,
+        "time": "2026-05-26T12:45:00+07:00",
+        "time_label": "12:45",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 102,
+          "active_drivers": 3089,
+          "requests_15m": 1373,
+          "average_heat_index_c": 51.5,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 154
+        },
+        "zones": [
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.7,
+            "heat_state": "Extreme danger",
+            "active_drivers": 352,
+            "urgent_drivers": 16,
+            "requests_15m": 166,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 50.9,
+            "heat_state": "danger",
+            "active_drivers": 299,
+            "urgent_drivers": 15,
+            "requests_15m": 132,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.2,
+            "heat_state": "danger",
+            "active_drivers": 328,
+            "urgent_drivers": 14,
+            "requests_15m": 147,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 379,
+            "urgent_drivers": 12,
+            "requests_15m": 181,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.0,
+            "heat_state": "Extreme danger",
+            "active_drivers": 335,
+            "urgent_drivers": 11,
+            "requests_15m": 165,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.4,
+            "heat_state": "Extreme danger",
+            "active_drivers": 282,
+            "urgent_drivers": 11,
+            "requests_15m": 115,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.3,
+            "heat_state": "danger",
+            "active_drivers": 276,
+            "urgent_drivers": 9,
+            "requests_15m": 108,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.2,
+            "heat_state": "danger",
+            "active_drivers": 219,
+            "urgent_drivers": 6,
+            "requests_15m": 85,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.5,
+            "heat_state": "danger",
+            "active_drivers": 366,
+            "urgent_drivers": 5,
+            "requests_15m": 166,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.7,
+            "heat_state": "danger",
+            "active_drivers": 253,
+            "urgent_drivers": 3,
+            "requests_15m": 108,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 52,
+        "time": "2026-05-26T13:00:00+07:00",
+        "time_label": "13:00",
+        "branch": "ACTIVATE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 75,
+          "active_drivers": 3115,
+          "requests_15m": 1318,
+          "average_heat_index_c": 51.4,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 94
+        },
+        "zones": [
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 50.8,
+            "heat_state": "danger",
+            "active_drivers": 302,
+            "urgent_drivers": 12,
+            "requests_15m": 127,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 52.9,
+            "heat_state": "Extreme danger",
+            "active_drivers": 338,
+            "urgent_drivers": 11,
+            "requests_15m": 139,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.6,
+            "heat_state": "Extreme danger",
+            "active_drivers": 355,
+            "urgent_drivers": 11,
+            "requests_15m": 141,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 284,
+            "urgent_drivers": 10,
+            "requests_15m": 111,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 331,
+            "urgent_drivers": 10,
+            "requests_15m": 158,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.2,
+            "heat_state": "Extreme danger",
+            "active_drivers": 382,
+            "urgent_drivers": 5,
+            "requests_15m": 182,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.2,
+            "heat_state": "danger",
+            "active_drivers": 278,
+            "urgent_drivers": 5,
+            "requests_15m": 100,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.7,
+            "heat_state": "danger",
+            "active_drivers": 255,
+            "urgent_drivers": 5,
+            "requests_15m": 99,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.1,
+            "heat_state": "danger",
+            "active_drivers": 221,
+            "urgent_drivers": 4,
+            "requests_15m": 89,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 369,
+            "urgent_drivers": 2,
+            "requests_15m": 172,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 53,
+        "time": "2026-05-26T13:15:00+07:00",
+        "time_label": "13:15",
+        "branch": "ACTIVATE",
+        "status": "Playback complete",
+        "city": {
+          "urgent_drivers": 54,
+          "active_drivers": 3057,
+          "requests_15m": 1231,
+          "average_heat_index_c": 51.6,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 59
+        },
+        "zones": [
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.0,
+            "heat_state": "danger",
+            "active_drivers": 296,
+            "urgent_drivers": 12,
+            "requests_15m": 125,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.1,
+            "heat_state": "Extreme danger",
+            "active_drivers": 332,
+            "urgent_drivers": 11,
+            "requests_15m": 125,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 279,
+            "urgent_drivers": 8,
+            "requests_15m": 104,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.3,
+            "heat_state": "danger",
+            "active_drivers": 325,
+            "urgent_drivers": 7,
+            "requests_15m": 137,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.8,
+            "heat_state": "Extreme danger",
+            "active_drivers": 348,
+            "urgent_drivers": 6,
+            "requests_15m": 128,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.6,
+            "heat_state": "danger",
+            "active_drivers": 362,
+            "urgent_drivers": 3,
+            "requests_15m": 165,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.4,
+            "heat_state": "danger",
+            "active_drivers": 273,
+            "urgent_drivers": 2,
+            "requests_15m": 107,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.9,
+            "heat_state": "danger",
+            "active_drivers": 250,
+            "urgent_drivers": 2,
+            "requests_15m": 109,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.3,
+            "heat_state": "danger",
+            "active_drivers": 217,
+            "urgent_drivers": 2,
+            "requests_15m": 56,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.4,
+            "heat_state": "Extreme danger",
+            "active_drivers": 375,
+            "urgent_drivers": 1,
+            "requests_15m": 175,
+            "included": true
+          }
+        ]
+      }
+    ],
+    "CONTINUE": [
+      {
+        "tick": 46,
+        "time": "2026-05-26T11:30:00+07:00",
+        "time_label": "11:30",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 309,
+          "active_drivers": 2959,
+          "requests_15m": 1299,
+          "average_heat_index_c": 50.2,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 87
+        },
+        "zones": [
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 52.9,
+            "heat_state": "Extreme danger",
+            "active_drivers": 363,
+            "urgent_drivers": 42,
+            "requests_15m": 169,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 49.8,
+            "heat_state": "danger",
+            "active_drivers": 314,
+            "urgent_drivers": 37,
+            "requests_15m": 153,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 50.1,
+            "heat_state": "danger",
+            "active_drivers": 351,
+            "urgent_drivers": 36,
+            "requests_15m": 163,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 51.7,
+            "heat_state": "danger",
+            "active_drivers": 321,
+            "urgent_drivers": 35,
+            "requests_15m": 127,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 337,
+            "urgent_drivers": 33,
+            "requests_15m": 171,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 49.5,
+            "heat_state": "danger",
+            "active_drivers": 287,
+            "urgent_drivers": 30,
+            "requests_15m": 124,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 48.4,
+            "heat_state": "danger",
+            "active_drivers": 242,
+            "urgent_drivers": 30,
+            "requests_15m": 100,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 48.9,
+            "heat_state": "danger",
+            "active_drivers": 264,
+            "urgent_drivers": 25,
+            "requests_15m": 113,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 47.8,
+            "heat_state": "danger",
+            "active_drivers": 210,
+            "urgent_drivers": 21,
+            "requests_15m": 85,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 270,
+            "urgent_drivers": 20,
+            "requests_15m": 94,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 47,
+        "time": "2026-05-26T11:45:00+07:00",
+        "time_label": "11:45",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 315,
+          "active_drivers": 2984,
+          "requests_15m": 1422,
+          "average_heat_index_c": 51.0,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 94
+        },
+        "zones": [
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 50.9,
+            "heat_state": "danger",
+            "active_drivers": 354,
+            "urgent_drivers": 47,
+            "requests_15m": 173,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 53.7,
+            "heat_state": "Extreme danger",
+            "active_drivers": 366,
+            "urgent_drivers": 37,
+            "requests_15m": 183,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 52.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 324,
+            "urgent_drivers": 35,
+            "requests_15m": 154,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.2,
+            "heat_state": "Extreme danger",
+            "active_drivers": 340,
+            "urgent_drivers": 34,
+            "requests_15m": 177,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 50.6,
+            "heat_state": "danger",
+            "active_drivers": 317,
+            "urgent_drivers": 32,
+            "requests_15m": 165,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.2,
+            "heat_state": "danger",
+            "active_drivers": 244,
+            "urgent_drivers": 30,
+            "requests_15m": 106,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 50.3,
+            "heat_state": "danger",
+            "active_drivers": 289,
+            "urgent_drivers": 27,
+            "requests_15m": 137,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 49.7,
+            "heat_state": "danger",
+            "active_drivers": 266,
+            "urgent_drivers": 27,
+            "requests_15m": 134,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 51.9,
+            "heat_state": "danger",
+            "active_drivers": 272,
+            "urgent_drivers": 24,
+            "requests_15m": 109,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 48.6,
+            "heat_state": "danger",
+            "active_drivers": 212,
+            "urgent_drivers": 22,
+            "requests_15m": 84,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 48,
+        "time": "2026-05-26T12:00:00+07:00",
+        "time_label": "12:00",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 288,
+          "active_drivers": 3012,
+          "requests_15m": 1310,
+          "average_heat_index_c": 51.7,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 95
+        },
+        "zones": [
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.7,
+            "heat_state": "danger",
+            "active_drivers": 357,
+            "urgent_drivers": 44,
+            "requests_15m": 164,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 327,
+            "urgent_drivers": 36,
+            "requests_15m": 139,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 320,
+            "urgent_drivers": 32,
+            "requests_15m": 156,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 369,
+            "urgent_drivers": 30,
+            "requests_15m": 172,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 53.0,
+            "heat_state": "Extreme danger",
+            "active_drivers": 343,
+            "urgent_drivers": 29,
+            "requests_15m": 152,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.6,
+            "heat_state": "Extreme danger",
+            "active_drivers": 275,
+            "urgent_drivers": 26,
+            "requests_15m": 99,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.5,
+            "heat_state": "danger",
+            "active_drivers": 269,
+            "urgent_drivers": 26,
+            "requests_15m": 132,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 292,
+            "urgent_drivers": 25,
+            "requests_15m": 128,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.9,
+            "heat_state": "danger",
+            "active_drivers": 246,
+            "urgent_drivers": 23,
+            "requests_15m": 83,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.4,
+            "heat_state": "danger",
+            "active_drivers": 214,
+            "urgent_drivers": 17,
+            "requests_15m": 85,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 49,
+        "time": "2026-05-26T12:15:00+07:00",
+        "time_label": "12:15",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 259,
+          "active_drivers": 3037,
+          "requests_15m": 1333,
+          "average_heat_index_c": 51.7,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 111
+        },
+        "zones": [
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.7,
+            "heat_state": "danger",
+            "active_drivers": 360,
+            "urgent_drivers": 40,
+            "requests_15m": 190,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.2,
+            "heat_state": "Extreme danger",
+            "active_drivers": 330,
+            "urgent_drivers": 33,
+            "requests_15m": 148,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 323,
+            "urgent_drivers": 28,
+            "requests_15m": 148,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.9,
+            "heat_state": "Extreme danger",
+            "active_drivers": 346,
+            "urgent_drivers": 26,
+            "requests_15m": 136,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 294,
+            "urgent_drivers": 26,
+            "requests_15m": 138,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.6,
+            "heat_state": "Extreme danger",
+            "active_drivers": 277,
+            "urgent_drivers": 25,
+            "requests_15m": 114,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.5,
+            "heat_state": "danger",
+            "active_drivers": 271,
+            "urgent_drivers": 23,
+            "requests_15m": 105,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.4,
+            "heat_state": "Extreme danger",
+            "active_drivers": 372,
+            "urgent_drivers": 22,
+            "requests_15m": 176,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.9,
+            "heat_state": "danger",
+            "active_drivers": 249,
+            "urgent_drivers": 19,
+            "requests_15m": 98,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.3,
+            "heat_state": "danger",
+            "active_drivers": 215,
+            "urgent_drivers": 17,
+            "requests_15m": 80,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 50,
+        "time": "2026-05-26T12:30:00+07:00",
+        "time_label": "12:30",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 220,
+          "active_drivers": 3062,
+          "requests_15m": 1329,
+          "average_heat_index_c": 51.6,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 125
+        },
+        "zones": [
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.6,
+            "heat_state": "danger",
+            "active_drivers": 363,
+            "urgent_drivers": 34,
+            "requests_15m": 171,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.1,
+            "heat_state": "Extreme danger",
+            "active_drivers": 332,
+            "urgent_drivers": 26,
+            "requests_15m": 129,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 279,
+            "urgent_drivers": 24,
+            "requests_15m": 121,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.0,
+            "heat_state": "danger",
+            "active_drivers": 297,
+            "urgent_drivers": 24,
+            "requests_15m": 125,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.8,
+            "heat_state": "Extreme danger",
+            "active_drivers": 349,
+            "urgent_drivers": 23,
+            "requests_15m": 163,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.4,
+            "heat_state": "danger",
+            "active_drivers": 273,
+            "urgent_drivers": 21,
+            "requests_15m": 116,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.3,
+            "heat_state": "danger",
+            "active_drivers": 325,
+            "urgent_drivers": 20,
+            "requests_15m": 149,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.8,
+            "heat_state": "danger",
+            "active_drivers": 251,
+            "urgent_drivers": 17,
+            "requests_15m": 98,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 376,
+            "urgent_drivers": 16,
+            "requests_15m": 176,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.2,
+            "heat_state": "danger",
+            "active_drivers": 217,
+            "urgent_drivers": 15,
+            "requests_15m": 81,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 51,
+        "time": "2026-05-26T12:45:00+07:00",
+        "time_label": "12:45",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 154,
+          "active_drivers": 3089,
+          "requests_15m": 1373,
+          "average_heat_index_c": 51.5,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 102
+        },
+        "zones": [
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.5,
+            "heat_state": "danger",
+            "active_drivers": 366,
+            "urgent_drivers": 25,
+            "requests_15m": 166,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.4,
+            "heat_state": "Extreme danger",
+            "active_drivers": 282,
+            "urgent_drivers": 20,
+            "requests_15m": 115,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.0,
+            "heat_state": "Extreme danger",
+            "active_drivers": 335,
+            "urgent_drivers": 19,
+            "requests_15m": 165,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.7,
+            "heat_state": "Extreme danger",
+            "active_drivers": 352,
+            "urgent_drivers": 16,
+            "requests_15m": 166,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 50.9,
+            "heat_state": "danger",
+            "active_drivers": 299,
+            "urgent_drivers": 15,
+            "requests_15m": 132,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.2,
+            "heat_state": "danger",
+            "active_drivers": 328,
+            "urgent_drivers": 14,
+            "requests_15m": 147,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 379,
+            "urgent_drivers": 12,
+            "requests_15m": 181,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.2,
+            "heat_state": "danger",
+            "active_drivers": 219,
+            "urgent_drivers": 12,
+            "requests_15m": 85,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.3,
+            "heat_state": "danger",
+            "active_drivers": 276,
+            "urgent_drivers": 11,
+            "requests_15m": 108,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.7,
+            "heat_state": "danger",
+            "active_drivers": 253,
+            "urgent_drivers": 10,
+            "requests_15m": 108,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 52,
+        "time": "2026-05-26T13:00:00+07:00",
+        "time_label": "13:00",
+        "branch": "CONTINUE",
+        "status": "Monitoring",
+        "city": {
+          "urgent_drivers": 94,
+          "active_drivers": 3115,
+          "requests_15m": 1318,
+          "average_heat_index_c": 51.4,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 75
+        },
+        "zones": [
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 52.9,
+            "heat_state": "Extreme danger",
+            "active_drivers": 338,
+            "urgent_drivers": 13,
+            "requests_15m": 139,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.3,
+            "heat_state": "Extreme danger",
+            "active_drivers": 284,
+            "urgent_drivers": 13,
+            "requests_15m": 111,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.4,
+            "heat_state": "danger",
+            "active_drivers": 369,
+            "urgent_drivers": 12,
+            "requests_15m": 172,
+            "included": true
+          },
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 50.8,
+            "heat_state": "danger",
+            "active_drivers": 302,
+            "urgent_drivers": 12,
+            "requests_15m": 127,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.6,
+            "heat_state": "Extreme danger",
+            "active_drivers": 355,
+            "urgent_drivers": 11,
+            "requests_15m": 141,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.1,
+            "heat_state": "danger",
+            "active_drivers": 331,
+            "urgent_drivers": 10,
+            "requests_15m": 158,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.7,
+            "heat_state": "danger",
+            "active_drivers": 255,
+            "urgent_drivers": 7,
+            "requests_15m": 99,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.1,
+            "heat_state": "danger",
+            "active_drivers": 221,
+            "urgent_drivers": 6,
+            "requests_15m": 89,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.2,
+            "heat_state": "Extreme danger",
+            "active_drivers": 382,
+            "urgent_drivers": 5,
+            "requests_15m": 182,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.2,
+            "heat_state": "danger",
+            "active_drivers": 278,
+            "urgent_drivers": 5,
+            "requests_15m": 100,
+            "included": true
+          }
+        ]
+      },
+      {
+        "tick": 53,
+        "time": "2026-05-26T13:15:00+07:00",
+        "time_label": "13:15",
+        "branch": "CONTINUE",
+        "status": "Playback complete",
+        "city": {
+          "urgent_drivers": 59,
+          "active_drivers": 3057,
+          "requests_15m": 1231,
+          "average_heat_index_c": 51.6,
+          "covered_drivers": 275,
+          "required_drivers": 275,
+          "budget_remaining_usd": 99,
+          "comparison_urgent_drivers": 54
+        },
+        "zones": [
+          {
+            "id": "hoang-mai",
+            "name": "Hoàng Mai",
+            "latitude": 20.9693,
+            "longitude": 105.8458,
+            "heat_index_c": 51.0,
+            "heat_state": "danger",
+            "active_drivers": 296,
+            "urgent_drivers": 12,
+            "requests_15m": 125,
+            "included": true
+          },
+          {
+            "id": "hai-ba-trung",
+            "name": "Hai Bà Trưng",
+            "latitude": 21.0094,
+            "longitude": 105.853,
+            "heat_index_c": 53.1,
+            "heat_state": "Extreme danger",
+            "active_drivers": 332,
+            "urgent_drivers": 11,
+            "requests_15m": 125,
+            "included": true
+          },
+          {
+            "id": "ba-dinh",
+            "name": "Ba Đình",
+            "latitude": 21.0341,
+            "longitude": 105.8166,
+            "heat_index_c": 52.5,
+            "heat_state": "Extreme danger",
+            "active_drivers": 279,
+            "urgent_drivers": 9,
+            "requests_15m": 104,
+            "included": true
+          },
+          {
+            "id": "cau-giay",
+            "name": "Cầu Giấy",
+            "latitude": 21.0333,
+            "longitude": 105.7961,
+            "heat_index_c": 51.6,
+            "heat_state": "danger",
+            "active_drivers": 362,
+            "urgent_drivers": 7,
+            "requests_15m": 165,
+            "included": true
+          },
+          {
+            "id": "thanh-xuan",
+            "name": "Thanh Xuân",
+            "latitude": 20.9937,
+            "longitude": 105.8118,
+            "heat_index_c": 51.3,
+            "heat_state": "danger",
+            "active_drivers": 325,
+            "urgent_drivers": 7,
+            "requests_15m": 137,
+            "included": true
+          },
+          {
+            "id": "dong-da",
+            "name": "Đống Đa",
+            "latitude": 21.0187,
+            "longitude": 105.8238,
+            "heat_index_c": 52.8,
+            "heat_state": "Extreme danger",
+            "active_drivers": 348,
+            "urgent_drivers": 6,
+            "requests_15m": 128,
+            "included": true
+          },
+          {
+            "id": "nam-tu-liem",
+            "name": "Nam Từ Liêm",
+            "latitude": 21.0125,
+            "longitude": 105.7656,
+            "heat_index_c": 50.4,
+            "heat_state": "danger",
+            "active_drivers": 273,
+            "urgent_drivers": 2,
+            "requests_15m": 107,
+            "included": true
+          },
+          {
+            "id": "ha-dong",
+            "name": "Hà Đông",
+            "latitude": 20.9631,
+            "longitude": 105.7725,
+            "heat_index_c": 49.9,
+            "heat_state": "danger",
+            "active_drivers": 250,
+            "urgent_drivers": 2,
+            "requests_15m": 109,
+            "included": true
+          },
+          {
+            "id": "bac-tu-liem",
+            "name": "Bắc Từ Liêm",
+            "latitude": 21.0664,
+            "longitude": 105.7483,
+            "heat_index_c": 49.3,
+            "heat_state": "danger",
+            "active_drivers": 217,
+            "urgent_drivers": 2,
+            "requests_15m": 56,
+            "included": true
+          },
+          {
+            "id": "hoan-kiem",
+            "name": "Hoàn Kiếm",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "heat_index_c": 54.4,
+            "heat_state": "Extreme danger",
+            "active_drivers": 375,
+            "urgent_drivers": 1,
+            "requests_15m": 175,
+            "included": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -11,8 +11,9 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Protocol, TypedDict, cast
 
 from ..ai_decision import ACTION_DELAYS, recommend_ai_intervention
 from ..demand_profile import intraday_demand_factor
@@ -20,6 +21,7 @@ from ..ingestion import calculate_heat_index
 from ..models import (
     AcceleratedForecastInput,
     CityForecastProjection,
+    CityOptimizationEvidence,
     CurrentForecastInput,
     DecisionConstraints,
     DriverActionPrediction,
@@ -34,10 +36,13 @@ from ..models import (
     ForecastZoneInput,
     HeatForecastEvidence,
     InterventionWindow,
+    PortfolioTradeoffPoint,
     PredictiveCityPlan,
     PredictiveZonePlanRow,
     SafePauseProposal,
+    TimingOption,
     ZoneForecastProjection,
+    ZoneOptimizationOptions,
     ZoneSnapshot,
 )
 from ..repository import DemandForecast
@@ -952,10 +957,11 @@ def _window_outcome(
     *,
     seed: int,
 ) -> InterventionWindow:
-    assert zone.source is not None
+    source = zone.source
+    assert source is not None
     start = min(wave.start_minute for wave in proposal.wave_plan)
     end = max(wave.end_minute for wave in proposal.wave_plan)
-    demand = _demand_for_window(zone.source, start)
+    demand = _demand_for_window(source, start)
     demand_ratio = demand.upper_requests / max(1, demand.median_requests)
     path_costs: list[int] = []
     for path_id in city.path_ids:
@@ -983,7 +989,7 @@ def _window_outcome(
         projected_after = 0.0
         residual_risk = 0.0
         source_drivers = {
-            item.driver_id_hash: item for item in zone.source.drivers
+            item.driver_id_hash: item for item in source.drivers
         }
         for projected_driver in zone.drivers:
             current = source_drivers[projected_driver.driver_id_hash]
@@ -1049,6 +1055,399 @@ def _rank(
     }
 
 
+class _ZoneDraft(TypedDict):
+    zone: ZoneForecastProjection
+    now: ForecastHorizon
+    future: ForecastHorizon
+    window: InterventionWindow | None
+    unavailable_reason: str
+
+
+class _CandidateZoneDraft(TypedDict):
+    zone: ZoneForecastProjection
+    now: ForecastHorizon
+    future: ForecastHorizon
+    window: InterventionWindow
+    unavailable_reason: str
+
+
+@dataclass(frozen=True)
+class _PortfolioEvaluation:
+    mask: int
+    selected_zone_ids: tuple[str, ...]
+    selected_proposal_ids: tuple[str, ...]
+    protected_drivers: int
+    urgent_drivers_covered: int
+    exposure_hours_avoided: float
+    projected_drivers_at_limit_120m: float
+    expected_cost_vnd: int
+    high_demand_reserved_cost_vnd: int
+    worst_area_pickup_delay_minutes: float
+    budget_compliant: bool
+
+
+@dataclass(frozen=True)
+class _RejectedZoneOption:
+    zone_id: str
+    window: InterventionWindow
+    rejection_reasons: tuple[str, ...]
+
+
+def _rejection_reasons(
+    proposal: SafePauseProposal | None,
+    fallback: str = "",
+) -> tuple[str, ...]:
+    reasons = tuple(
+        note
+        for note in (proposal.guardrail_notes if proposal is not None else ())
+        if not note.startswith("Meets")
+    )
+    if (
+        not reasons
+        and fallback
+        and (proposal is None or not proposal.within_guardrails)
+    ):
+        reasons = (fallback,)
+    return reasons[:2]
+
+
+def _timing_option(
+    city: CityForecastProjection,
+    *,
+    start_delay_minutes: int,
+    window: InterventionWindow | None,
+    feasible: bool,
+    rejection_reasons: tuple[str, ...] = (),
+) -> TimingOption:
+    proposal = window.proposal if window is not None else None
+    source = next(
+        (item.source for item in city.zones if proposal is not None and item.zone_id == proposal.zone_id),
+        None,
+    )
+    demand = (
+        _demand_for_window(source, start_delay_minutes)
+        if source is not None
+        else None
+    )
+    return TimingOption(
+        proposal_id=proposal.proposal_id if proposal is not None else "",
+        start_delay_minutes=start_delay_minutes,
+        start_time=city.lineage.observed_at
+        + timedelta(minutes=start_delay_minutes),
+        pause_minutes=proposal.pause_minutes if proposal is not None else 0,
+        waves=proposal.waves if proposal is not None else 0,
+        drivers_protected=proposal.selected_drivers if proposal is not None else 0,
+        projected_drivers_at_limit_120m=(
+            window.projected_mandatory_after_120m if window is not None else 0.0
+        ),
+        residual_risk_120m=(window.residual_risk_120m if window is not None else 0.0),
+        expected_cost_vnd=window.expected_cost_vnd if window is not None else 0,
+        high_demand_reserved_cost_vnd=(
+            window.p95_reserved_cost_vnd if window is not None else 0
+        ),
+        expected_fulfillment_rate=(
+            proposal.projected_fulfillment_rate if proposal is not None else 0.0
+        ),
+        high_demand_fulfillment_rate=(
+            proposal.p90_fulfillment_rate if proposal is not None else 0.0
+        ),
+        expected_pickup_delay_minutes=(
+            proposal.projected_eta_increase_minutes if proposal is not None else 0.0
+        ),
+        high_demand_pickup_delay_minutes=(
+            proposal.p90_eta_increase_minutes if proposal is not None else 0.0
+        ),
+        expected_demand_requests=(demand.median_requests if demand is not None else 0),
+        high_demand_requests=(demand.upper_requests if demand is not None else 0),
+        feasible=feasible,
+        rejection_reasons=rejection_reasons[:2],
+    )
+
+
+def _cached_window_outcome(
+    cache: dict[str, InterventionWindow],
+    city: CityForecastProjection,
+    zone: ZoneForecastProjection,
+    proposal: SafePauseProposal,
+    *,
+    seed: int,
+) -> InterventionWindow:
+    if proposal.proposal_id not in cache:
+        cache[proposal.proposal_id] = _window_outcome(
+            city,
+            zone,
+            proposal,
+            seed=seed,
+        )
+    return cache[proposal.proposal_id]
+
+
+def _portfolio_option_id(
+    city: CityForecastProjection,
+    constraints: DecisionConstraints,
+    evaluation: _PortfolioEvaluation,
+) -> str:
+    fingerprint = "|".join(
+        (
+            city.lineage.mode,
+            city.lineage.snapshot_id,
+            str(constraints.budget_cap_vnd),
+            ",".join(evaluation.selected_zone_ids),
+            ",".join(evaluation.selected_proposal_ids),
+        )
+    )
+    return hashlib.sha256(fingerprint.encode()).hexdigest()[:32]
+
+
+def _portfolio_point(
+    city: CityForecastProjection,
+    constraints: DecisionConstraints,
+    evaluation: _PortfolioEvaluation,
+    *,
+    selected_mask: int,
+    selected_portfolio_id: str,
+    urgent_drivers_required: int,
+) -> PortfolioTradeoffPoint:
+    selected = evaluation.mask == selected_mask
+    return PortfolioTradeoffPoint(
+        option_id=(
+            selected_portfolio_id
+            if selected
+            else _portfolio_option_id(city, constraints, evaluation)
+        ),
+        selected=selected,
+        feasible=evaluation.budget_compliant,
+        selected_zone_ids=evaluation.selected_zone_ids,
+        protected_drivers=evaluation.protected_drivers,
+        urgent_drivers_covered=evaluation.urgent_drivers_covered,
+        urgent_drivers_required=urgent_drivers_required,
+        exposure_hours_avoided=evaluation.exposure_hours_avoided,
+        projected_drivers_at_limit_120m=(
+            evaluation.projected_drivers_at_limit_120m
+        ),
+        expected_cost_vnd=evaluation.expected_cost_vnd,
+        high_demand_reserved_cost_vnd=(
+            evaluation.high_demand_reserved_cost_vnd
+        ),
+        worst_area_pickup_delay_minutes=(
+            evaluation.worst_area_pickup_delay_minutes
+        ),
+        rejection_reasons=(
+            ()
+            if evaluation.budget_compliant
+            else ("High-demand reserved cost exceeds the city budget cap.",)
+        ),
+    )
+
+
+def _build_optimization_evidence(
+    city: CityForecastProjection,
+    constraints: DecisionConstraints,
+    *,
+    evaluations: tuple[_PortfolioEvaluation, ...],
+    selected_mask: int,
+    selected_portfolio_id: str,
+    urgent_drivers_required: int,
+    zone_options: tuple[ZoneOptimizationOptions, ...],
+    rejected_zone_options: tuple[_RejectedZoneOption, ...],
+    drafts: tuple[_ZoneDraft, ...],
+) -> CityOptimizationEvidence:
+    points_by_mask = {
+        evaluation.mask: _portfolio_point(
+            city,
+            constraints,
+            evaluation,
+            selected_mask=selected_mask,
+            selected_portfolio_id=selected_portfolio_id,
+            urgent_drivers_required=urgent_drivers_required,
+        )
+        for evaluation in evaluations
+    }
+    compliant = tuple(
+        evaluation for evaluation in evaluations if evaluation.budget_compliant
+    )
+    selected_evaluation = next(
+        evaluation for evaluation in evaluations if evaluation.mask == selected_mask
+    )
+    anchors = (
+        (selected_evaluation, "Selected"),
+        (
+            min(
+                compliant,
+                key=lambda item: (
+                    item.expected_cost_vnd,
+                    -item.urgent_drivers_covered,
+                    -item.protected_drivers,
+                    item.mask,
+                ),
+            ),
+            "Cheapest feasible",
+        ),
+        (
+            min(
+                compliant,
+                key=lambda item: (
+                    -item.urgent_drivers_covered,
+                    -item.protected_drivers,
+                    -item.exposure_hours_avoided,
+                    item.expected_cost_vnd,
+                    item.mask,
+                ),
+            ),
+            "Highest protection",
+        ),
+        (
+            min(
+                compliant,
+                key=lambda item: (
+                    item.worst_area_pickup_delay_minutes,
+                    -item.urgent_drivers_covered,
+                    item.expected_cost_vnd,
+                    item.mask,
+                ),
+            ),
+            "Lowest service impact",
+        ),
+    )
+
+    chosen: dict[str, PortfolioTradeoffPoint] = {}
+    for evaluation, label in anchors:
+        point = points_by_mask[evaluation.mask]
+        if point.option_id not in chosen:
+            chosen[point.option_id] = replace(point, label=label)
+
+    frontier = tuple(
+        sorted(
+            (
+                candidate
+                for candidate in compliant
+                if not any(
+                    other.mask != candidate.mask
+                    and other.expected_cost_vnd <= candidate.expected_cost_vnd
+                    and other.urgent_drivers_covered
+                    >= candidate.urgent_drivers_covered
+                    and other.exposure_hours_avoided
+                    >= candidate.exposure_hours_avoided
+                    and (
+                        other.expected_cost_vnd < candidate.expected_cost_vnd
+                        or other.urgent_drivers_covered
+                        > candidate.urgent_drivers_covered
+                        or other.exposure_hours_avoided
+                        > candidate.exposure_hours_avoided
+                    )
+                    for other in compliant
+                )
+            ),
+            key=lambda item: (
+                item.expected_cost_vnd,
+                -item.urgent_drivers_covered,
+                -item.exposure_hours_avoided,
+                item.mask,
+            ),
+        )
+    )
+
+    rejected_points = [
+        points_by_mask[evaluation.mask]
+        for evaluation in evaluations
+        if not evaluation.budget_compliant
+    ]
+    future_by_zone = {
+        draft["zone"].zone_id: draft["future"] for draft in drafts
+    }
+    for rejected in rejected_zone_options:
+        proposal = rejected.window.proposal
+        projected_after = rejected.window.projected_mandatory_after_120m + sum(
+            future.expected_crossers
+            for zone_id, future in future_by_zone.items()
+            if zone_id != rejected.zone_id
+        )
+        option_payload = "|".join(
+            (
+                "rejected-zone-option",
+                city.lineage.mode,
+                city.lineage.snapshot_id,
+                str(constraints.budget_cap_vnd),
+                rejected.zone_id,
+                proposal.proposal_id,
+            )
+        )
+        rejected_points.append(
+            PortfolioTradeoffPoint(
+                option_id=hashlib.sha256(option_payload.encode()).hexdigest()[:32],
+                feasible=False,
+                selected_zone_ids=(rejected.zone_id,),
+                protected_drivers=proposal.selected_drivers,
+                urgent_drivers_covered=proposal.mandatory_selected_drivers,
+                urgent_drivers_required=urgent_drivers_required,
+                exposure_hours_avoided=round(
+                    proposal.exposure_minutes_avoided / 60.0, 6
+                ),
+                projected_drivers_at_limit_120m=round(projected_after, 6),
+                expected_cost_vnd=rejected.window.expected_cost_vnd,
+                high_demand_reserved_cost_vnd=(
+                    rejected.window.p95_reserved_cost_vnd
+                ),
+                worst_area_pickup_delay_minutes=(
+                    proposal.p90_eta_increase_minutes
+                ),
+                rejection_reasons=rejected.rejection_reasons[:2],
+            )
+        )
+
+    near_misses: list[PortfolioTradeoffPoint] = []
+    seen_rejected_ids: set[str] = set()
+    for point in sorted(
+        rejected_points,
+        key=lambda item: (
+            max(
+                0,
+                item.high_demand_reserved_cost_vnd
+                - constraints.budget_cap_vnd,
+            ),
+            len(item.rejection_reasons),
+            -item.urgent_drivers_covered,
+            -item.protected_drivers,
+            item.expected_cost_vnd,
+            item.option_id,
+        ),
+    ):
+        if point.option_id in seen_rejected_ids:
+            continue
+        seen_rejected_ids.add(point.option_id)
+        near_misses.append(point)
+        if len(near_misses) == 3:
+            break
+
+    frontier_capacity = max(0, 12 - len(chosen) - len(near_misses))
+    for evaluation in frontier:
+        point = points_by_mask[evaluation.mask]
+        if point.option_id in chosen:
+            continue
+        chosen[point.option_id] = replace(point, label="Frontier option")
+        frontier_capacity -= 1
+        if frontier_capacity == 0:
+            break
+    for point in near_misses:
+        if len(chosen) == 12:
+            break
+        label = (
+            "Over-budget near miss"
+            if any("budget" in reason.lower() or "cost exceeds" in reason.lower()
+                   for reason in point.rejection_reasons)
+            else "Blocked near miss"
+        )
+        chosen.setdefault(point.option_id, replace(point, label=label))
+
+    return CityOptimizationEvidence(
+        evaluated_portfolio_count=len(evaluations),
+        budget_compliant_portfolio_count=len(compliant),
+        selected_portfolio_id=selected_portfolio_id,
+        portfolio_options=tuple(chosen.values())[:12],
+        zone_options=zone_options[:10],
+    )
+
+
 def build_predictive_city_plan(
     city: CityForecastProjection,
     constraints: DecisionConstraints,
@@ -1062,7 +1461,9 @@ def build_predictive_city_plan(
         raise ForecastInputError(
             f"expected {expected_zone_count} projected zones; found {len(city.zones)}"
         )
-    drafts: list[dict[str, object]] = []
+    drafts: list[_ZoneDraft] = []
+    zone_options: list[ZoneOptimizationOptions] = []
+    rejected_zone_options: list[_RejectedZoneOption] = []
     evidence_unavailable = False
     for zone in sorted(city.zones, key=lambda item: item.zone_id):
         source = zone.source
@@ -1090,6 +1491,9 @@ def build_predictive_city_plan(
         )
         predictions = _driver_predictions(city, zone)
         windows: list[InterventionWindow] = []
+        timing_options: list[TimingOption] = []
+        alternative_options: dict[str, TimingOption] = {}
+        window_by_proposal_id: dict[str, InterventionWindow] = {}
         unavailable_reason = ""
         if source is None or not predictions:
             evidence_unavailable = True
@@ -1097,6 +1501,9 @@ def build_predictive_city_plan(
         else:
             demand = tuple(item.median_requests for item in source.demand)
             upper = tuple(item.upper_requests for item in source.demand)
+
+
+
             for start in ACTION_DELAYS:
                 result = recommend_ai_intervention(
                     source.zone,
@@ -1108,18 +1515,65 @@ def build_predictive_city_plan(
                     candidate_start_delays=(start,),
                     preventive_ids=preventive_ids,
                 )
+                representative = result.recommended or next(
+                    iter(result.alternatives), None
+                )
+                representative_window = (
+                    _cached_window_outcome(
+                        window_by_proposal_id,
+                        city,
+                        zone,
+                        representative,
+                        seed=seed,
+                    )
+                    if representative is not None
+                    else None
+                )
+                reasons = _rejection_reasons(representative, result.message)
                 if result.recommended is not None:
-                    windows.append(
-                        _window_outcome(
-                            city,
-                            zone,
-                            result.recommended,
-                            seed=seed,
+                    assert representative_window is not None
+                    windows.append(representative_window)
+                elif representative_window is not None:
+                    rejected_zone_options.append(
+                        _RejectedZoneOption(
+                            zone_id=zone.zone_id,
+                            window=representative_window,
+                            rejection_reasons=reasons,
                         )
                     )
                 elif result.status == "MODEL_UNAVAILABLE":
                     evidence_unavailable = True
                     unavailable_reason = result.message
+                if len(timing_options) < 4:
+                    timing_options.append(
+                        _timing_option(
+                            city,
+                            start_delay_minutes=start,
+                            window=representative_window,
+                            feasible=result.recommended is not None,
+                            rejection_reasons=reasons,
+                        )
+                    )
+                for proposal in result.alternatives:
+                    proposal_window = _cached_window_outcome(
+                        window_by_proposal_id,
+                        city,
+                        zone,
+                        proposal,
+                        seed=seed,
+                    )
+                    alternative_options.setdefault(
+                        proposal.proposal_id,
+                        _timing_option(
+                            city,
+                            start_delay_minutes=start,
+                            window=proposal_window,
+                            feasible=proposal.within_guardrails,
+                            rejection_reasons=_rejection_reasons(
+                                proposal, result.message
+                            ),
+                        ),
+                    )
         best_window = min(
             windows,
             key=lambda item: (
@@ -1145,6 +1599,25 @@ def build_predictive_city_plan(
                 "window": best_window,
                 "unavailable_reason": unavailable_reason,
             }
+        )
+        timing_proposal_ids = {
+            option.proposal_id for option in timing_options if option.proposal_id
+        }
+        zone_options.append(
+            ZoneOptimizationOptions(
+                zone_id=zone.zone_id,
+                selected_proposal_id=(
+                    best_window.proposal.proposal_id
+                    if best_window is not None
+                    else None
+                ),
+                timing_options=tuple(timing_options[:4]),
+                proposal_alternatives=tuple(
+                    option
+                    for proposal_id, option in alternative_options.items()
+                    if proposal_id not in timing_proposal_ids
+                )[:8],
+            )
         )
 
     severity_rank = _rank(
@@ -1184,9 +1657,13 @@ def build_predictive_city_plan(
         ]
     )
 
-    candidate_drafts = [draft for draft in drafts if draft["window"] is not None]
+    candidate_drafts = cast(
+        list[_CandidateZoneDraft],
+        [draft for draft in drafts if draft["window"] is not None],
+    )
     total_mandatory = sum(draft["now"].mandatory_now for draft in drafts)
     portfolios: list[tuple[tuple[object, ...], int, tuple[int, ...]]] = []
+    portfolio_evaluations: list[_PortfolioEvaluation] = []
     for mask in range(1 << len(candidate_drafts)):
         selected_indexes = tuple(
             index
@@ -1201,32 +1678,49 @@ def build_predictive_city_plan(
             for path_index in range(len(city.path_ids))
         )
         city_p95 = _nearest_rank_p95(city_paths)
-        if city_p95 > constraints.budget_cap_vnd:
-            continue
         selected_ids = tuple(
             candidate_drafts[index]["zone"].zone_id
+            for index in selected_indexes
+        )
+        selected_proposal_ids = tuple(
+            candidate_drafts[index]["window"].proposal.proposal_id
             for index in selected_indexes
         )
         covered = sum(
             candidate_drafts[index]["window"].proposal.mandatory_selected_drivers
             for index in selected_indexes
         )
-        projected_after = sum(
-            (
-                draft["window"].projected_mandatory_after_120m
-                if draft["zone"].zone_id in selected_ids
-                else draft["future"].expected_crossers
-            )
-            for draft in drafts
+        protected = sum(
+            candidate_drafts[index]["window"].proposal.selected_drivers
+            for index in selected_indexes
         )
-        residual_by_zone = tuple(
-            (
-                draft["window"].residual_risk_120m
-                if draft["zone"].zone_id in selected_ids
-                else draft["future"].baseline_expected_risk
+        exposure_hours_avoided = round(
+            sum(
+                candidate_drafts[index][
+                    "window"
+                ].proposal.exposure_minutes_avoided
+                for index in selected_indexes
             )
-            for draft in drafts
+            / 60.0,
+            6,
         )
+        projected_by_zone: list[float] = []
+        residual_by_zone_values: list[float] = []
+        for draft in drafts:
+            window = draft["window"]
+            if draft["zone"].zone_id in selected_ids:
+                assert window is not None
+                projected_by_zone.append(
+                    window.projected_mandatory_after_120m
+                )
+                residual_by_zone_values.append(window.residual_risk_120m)
+            else:
+                projected_by_zone.append(draft["future"].expected_crossers)
+                residual_by_zone_values.append(
+                    draft["future"].baseline_expected_risk
+                )
+        projected_after = sum(projected_by_zone)
+        residual_by_zone = tuple(residual_by_zone_values)
         prevented = sum(
             candidate_drafts[index]["window"].proposal.expected_risk_events_prevented
             for index in selected_indexes
@@ -1236,6 +1730,32 @@ def build_predictive_city_plan(
             candidate_drafts[index]["window"].proposal.p90_eta_increase_minutes
             for index in selected_indexes
         )
+        worst_eta = max(
+            (
+                candidate_drafts[index][
+                    "window"
+                ].proposal.p90_eta_increase_minutes
+                for index in selected_indexes
+            ),
+            default=0.0,
+        )
+        portfolio_evaluations.append(
+            _PortfolioEvaluation(
+                mask=mask,
+                selected_zone_ids=selected_ids,
+                selected_proposal_ids=selected_proposal_ids,
+                protected_drivers=protected,
+                urgent_drivers_covered=covered,
+                exposure_hours_avoided=exposure_hours_avoided,
+                projected_drivers_at_limit_120m=round(projected_after, 6),
+                expected_cost_vnd=expected_cost,
+                high_demand_reserved_cost_vnd=city_p95,
+                worst_area_pickup_delay_minutes=round(worst_eta, 6),
+                budget_compliant=city_p95 <= constraints.budget_cap_vnd,
+            )
+        )
+        if city_p95 > constraints.budget_cap_vnd:
+            continue
         score = (
             -covered,
             round(projected_after, 6),
@@ -1335,6 +1855,17 @@ def build_predictive_city_plan(
         )
     )
     portfolio_id = hashlib.sha256(fingerprint.encode()).hexdigest()[:32]
+    optimization_evidence = _build_optimization_evidence(
+        city,
+        constraints,
+        evaluations=tuple(portfolio_evaluations),
+        selected_mask=selected_mask,
+        selected_portfolio_id=portfolio_id,
+        urgent_drivers_required=total_mandatory,
+        zone_options=tuple(zone_options),
+        rejected_zone_options=tuple(rejected_zone_options),
+        drafts=tuple(drafts),
+    )
     created_at = datetime.now(UTC)
     return PredictiveCityPlan(
         portfolio_id=portfolio_id,
@@ -1353,6 +1884,7 @@ def build_predictive_city_plan(
         expires_at=created_at + timedelta(minutes=15),
         mandatory_now_covered=mandatory_covered,
         mandatory_now_uncovered=max(0, total_mandatory - mandatory_covered),
+        optimization_evidence=optimization_evidence,
     )
 
 
