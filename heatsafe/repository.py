@@ -990,49 +990,89 @@ class BigQueryRepository:
     def load_driver_features_many(
         self, zone_ids: list[str], snapshot_id: str
     ) -> dict[str, tuple[DriverCurrentFeature, ...]]:
-        """Load one exact-snapshot feature batch without future/replay fallback."""
+        """Load one exact-snapshot feature batch without future-tick fallback."""
         from google.cloud import bigquery
 
         if not zone_ids:
             return {}
-        lineage_sql = ""
-        lineage_parameters: list[Any] = []
         if self._selected_replay_lineage is not None:
             run_id, tick_id, selected_snapshot_id = self._selected_replay_lineage
             if selected_snapshot_id != snapshot_id:
                 raise ValueError("selected replay snapshot does not match feature request")
-            lineage_sql = """
-              AND simulation_run_id = @simulation_run_id
-              AND tick_id = @tick_id
+            # Scoring intentionally replaces driver_current_features on every
+            # simulation tick. Rebuild an older tick's exact scored feature
+            # batch from immutable history, using the same status filter and
+            # clipping bounds as infra/ml_pipeline.py.
+            query = f"""
+                SELECT
+                  scenario_id, @snapshot_id AS snapshot_id,
+                  event_time AS observed_at, driver_id_hash, zone_id,
+                  LEAST(50.55, GREATEST(33.05, heat_index_c)) AS heat_index_c,
+                  LEAST(68.0, GREATEST(46.0, humidity_percent))
+                    AS humidity_percent,
+                  LEAST(360, GREATEST(30, continuous_exposure_minutes))
+                    AS continuous_exposure_minutes,
+                  LEAST(5, GREATEST(1, trips_60m)) AS trips_60m,
+                  LEAST(20.9, GREATEST(3.0, distance_km_60m))
+                    AS distance_km_60m,
+                  LEAST(45, GREATEST(0, rest_minutes_120m))
+                    AS rest_minutes_120m,
+                  LEAST(180, GREATEST(15, hydration_gap_minutes))
+                    AS hydration_gap_minutes,
+                  LEAST(3.09, GREATEST(0.60, route_heat_load))
+                    AS route_heat_load,
+                  LEAST(2.69, GREATEST(0.50, workload_intensity))
+                    AS workload_intensity,
+                  is_simulated, simulation_run_id, tick_id,
+                  driver_status, heat_dose_120m, acclimatization_class,
+                  generator_version
+                FROM `{self.dataset}.driver_state_history`
+                WHERE scenario_id = @scenario_id
+                  AND simulation_run_id = @simulation_run_id
+                  AND tick_id = @tick_id
+                  AND zone_id IN UNNEST(@zone_ids)
+                  AND driver_status IN ('IDLE', 'TO_PICKUP', 'ON_TRIP')
+                ORDER BY zone_id, driver_id_hash
             """
-            lineage_parameters = [
+            parameters = [
+                bigquery.ScalarQueryParameter(
+                    "scenario_id", "STRING", self.scenario
+                ),
+                bigquery.ScalarQueryParameter(
+                    "snapshot_id", "STRING", snapshot_id
+                ),
+                bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
                 bigquery.ScalarQueryParameter(
                     "simulation_run_id", "STRING", run_id
                 ),
                 bigquery.ScalarQueryParameter("tick_id", "STRING", tick_id),
             ]
-        query = f"""
-            SELECT
-              scenario_id, snapshot_id, observed_at, driver_id_hash, zone_id,
-              heat_index_c, humidity_percent, continuous_exposure_minutes,
-              trips_60m, distance_km_60m, rest_minutes_120m,
-              hydration_gap_minutes, route_heat_load, workload_intensity,
-              is_simulated, simulation_run_id, tick_id, driver_status,
-              heat_dose_120m, acclimatization_class, generator_version
-            FROM `{self.dataset}.driver_current_features`
-            WHERE scenario_id = @scenario_id
-              AND snapshot_id = @snapshot_id
-              AND zone_id IN UNNEST(@zone_ids)
-              {lineage_sql}
-            ORDER BY zone_id, driver_id_hash
-        """
-        config = self._job_config(
-            [
-                bigquery.ScalarQueryParameter("scenario_id", "STRING", self.scenario),
-                bigquery.ScalarQueryParameter("snapshot_id", "STRING", snapshot_id),
+        else:
+            query = f"""
+                SELECT
+                  scenario_id, snapshot_id, observed_at, driver_id_hash, zone_id,
+                  heat_index_c, humidity_percent, continuous_exposure_minutes,
+                  trips_60m, distance_km_60m, rest_minutes_120m,
+                  hydration_gap_minutes, route_heat_load, workload_intensity,
+                  is_simulated, simulation_run_id, tick_id, driver_status,
+                  heat_dose_120m, acclimatization_class, generator_version
+                FROM `{self.dataset}.driver_current_features`
+                WHERE scenario_id = @scenario_id
+                  AND snapshot_id = @snapshot_id
+                  AND zone_id IN UNNEST(@zone_ids)
+                ORDER BY zone_id, driver_id_hash
+            """
+            parameters = [
+                bigquery.ScalarQueryParameter(
+                    "scenario_id", "STRING", self.scenario
+                ),
+                bigquery.ScalarQueryParameter(
+                    "snapshot_id", "STRING", snapshot_id
+                ),
                 bigquery.ArrayQueryParameter("zone_ids", "STRING", zone_ids),
-                *lineage_parameters,
-            ],
+            ]
+        config = self._job_config(
+            parameters,
             100_000_000,
         )
         rows = list(self._client().query(query, job_config=config).result())

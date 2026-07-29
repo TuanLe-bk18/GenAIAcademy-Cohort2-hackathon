@@ -95,6 +95,7 @@ def build_current_dashboard_payload(
         "branch": "CURRENT",
         "city": {
             "urgent_drivers": urgent,
+            "at_risk_15m": view.city_kpis.at_risk_within_15m,
             "requests_15m": sum(
                 area.forecast_requests_30m for area in view.map_areas
             ),
@@ -111,7 +112,6 @@ def build_current_dashboard_payload(
         "pre_decision": [frame],
         "branches": {"ACTIVATE": [], "CONTINUE": []},
         "decision_views": decision_views,
-        "priority_zone_ids": [area.zone_id for area in view.priority_areas],
         "current_kpis": _json_safe(view.city_kpis.cards),
         "current_actions": {
             "available": decision_available,
@@ -146,23 +146,20 @@ _HTML = """
     <div class="progress-track" aria-hidden="true"><span data-progress></span></div>
   </section>
 
-  <section class="status-strip">
-    <span class="status-pill" data-status></span>
-    <span data-disclosure>Synthetic Hanoi operations · display-only replay · fixed demo limits <span data-limit-copy></span> · no real dispatch</span>
+  <section class="action-strip" aria-label="SafePause decision">
+    <button type="button" class="primary" data-choice="ACTIVATE">Activate SafePause</button>
+    <button type="button" data-choice="CONTINUE">Continue Monitoring</button>
   </section>
 
   <section class="kpi-grid" aria-label="City status">
     <article class="kpi-card critical">
-      <span data-kpi-label-0>Drivers needing a break now</span><strong data-kpi-urgent>0</strong><small data-kpi-note-0>Across Hanoi</small>
+      <span data-kpi-label-0>Mandatory breaks now</span><strong data-kpi-urgent>0 drivers</strong><small data-kpi-note-0>Across Hanoi</small>
     </article>
     <article class="kpi-card coverage">
-      <span data-kpi-label-1>Safety coverage</span><strong data-kpi-coverage>Monitoring</strong><small data-kpi-note-1>Available at decision time</small>
-    </article>
-    <article class="kpi-card preventive" data-kpi-preventive-card hidden>
-      <span>Preventive delivery</span><strong data-kpi-preventive>—</strong><small data-kpi-preventive-note>Available at decision time</small>
+      <span data-kpi-label-1>Preventive risk</span><strong data-kpi-coverage>Not available</strong><small data-kpi-note-1>15-minute projection unavailable</small>
     </article>
     <article class="kpi-card budget">
-      <span data-kpi-label-2>Budget remaining after this plan</span><strong data-kpi-budget>—</strong><small data-kpi-note-2>High-demand reserve included</small>
+      <span data-kpi-label-2>Active drivers</span><strong data-kpi-budget>—</strong><small data-kpi-note-2>online now</small>
     </article>
   </section>
 
@@ -178,7 +175,8 @@ _HTML = """
             </defs>
             <g data-map-zones></g>
           </svg>
-          <div class="map-controls" aria-label="Map zoom controls">
+          <div class="map-controls" aria-label="Map controls">
+            <button type="button" class="map-all-districts" data-map-all aria-label="Show all districts">All Districts</button>
             <button type="button" data-map-zoom-in aria-label="Zoom in">+</button>
             <button type="button" data-map-zoom-out aria-label="Zoom out">−</button>
           </div>
@@ -186,7 +184,10 @@ _HTML = """
         </div>
         <div class="map-legend"><span><i class="legend-hot"></i><span data-map-legend>Heat index</span></span><span><i class="legend-selected"></i>Selected / included</span></div>
       </div>
-      <div class="priority-list" data-priority aria-label="Priority areas"></div>
+      <div class="map-selection-summary" aria-live="polite">
+        <strong data-map-summary-title>Assessing current conditions</strong>
+        <span data-map-summary-context>Recommendation is loading for this tick.</span>
+      </div>
     </article>
 
     <article class="panel insight-panel">
@@ -194,7 +195,6 @@ _HTML = """
         <div><span class="eyebrow">Decision evidence</span><h2>Why this plan</h2></div>
         <div class="insight-controls">
           <label>View<select data-insight-view aria-label="Plan explanation"><option value="timing">Timing</option><option value="tradeoffs">Trade-offs</option><option value="stress">Stress test</option><option value="outcome">Outcome</option></select></label>
-          <label data-insight-scope-label>Scope<select data-insight-scope aria-label="Timing scope"><option value="selected">Selected district</option><option value="all">All districts</option></select></label>
         </div>
       </header>
       <p class="insight-caption" data-insight-caption></p>
@@ -207,28 +207,6 @@ _HTML = """
     </article>
   </section>
 
-  <section class="panel decision-panel">
-    <header><div><span class="eyebrow">Selected area</span><h2 data-area-name>—</h2></div><span class="heat-badge" data-area-heat>—</span></header>
-    <div class="decision-grid">
-      <div class="area-stats">
-        <div><span>Need a break now</span><strong data-area-urgent>0</strong></div>
-        <div><span>Active drivers</span><strong data-area-active>0</strong></div>
-        <div><span>Forecast demand</span><strong data-area-requests>0</strong></div>
-      </div>
-      <div class="recommendation-card">
-        <span class="eyebrow" data-recommendation-state>Live monitoring</span>
-        <h3 data-recommendation-headline>Monitoring conditions</h3>
-        <p data-recommendation-copy>Conditions update every 15 operational minutes.</p>
-      </div>
-      <div class="guardrails" data-guardrails></div>
-      <div class="decision-actions" data-decision-actions hidden>
-        <button type="button" class="primary" data-choice="ACTIVATE">Activate SafePause</button>
-        <button type="button" data-choice="CONTINUE">Continue monitoring</button>
-      </div>
-      <div class="decision-receipt" data-decision-receipt hidden></div>
-      <p class="decision-note" data-decision-note>Action becomes available at the recommendation time.</p>
-    </div>
-  </section>
 </main>
 """
 
@@ -276,18 +254,16 @@ button, select { font: inherit; }
 .toolbar-time { color:var(--muted); font-size:13px; margin-top:3px; }
 .toolbar-time strong { color:var(--safe); font-size:17px; font-variant-numeric:tabular-nums; }
 .playback-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
-.playback-actions button, .decision-actions button, .priority-list button { border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; min-height:36px; padding:7px 12px; transition:background-color .18s ease, border-color .18s ease, opacity .18s ease; }
-.playback-actions button:hover, .decision-actions button:hover, .priority-list button:hover { background:var(--raised); border-color:var(--primary); }
-.playback-actions button:focus-visible, .decision-actions button:focus-visible, .priority-list button:focus-visible, select:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
-.playback-actions button:disabled, .decision-actions button:disabled { opacity:.42; cursor:not-allowed; }
+.playback-actions button, .action-strip button { border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; min-height:36px; padding:7px 12px; transition:background-color .18s ease, border-color .18s ease, opacity .18s ease; }
+.playback-actions button:hover, .action-strip button:hover { background:var(--raised); border-color:var(--primary); }
+.playback-actions button:focus-visible, .action-strip button:focus-visible, select:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.playback-actions button:disabled, .action-strip button:disabled { opacity:.42; cursor:not-allowed; }
 .playback-actions label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
 .playback-actions select { border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:7px 8px; cursor:pointer; }
 .progress-track { position:absolute; height:4px; background:var(--raised); left:0; right:0; bottom:0; }
 .progress-track span { display:block; height:100%; width:0; background:var(--primary); transition:width .42s cubic-bezier(.2,.8,.2,1); }
-.status-strip { display:flex; align-items:center; flex-wrap:wrap; gap:9px; color:var(--muted); font-size:12px; padding:0 4px; }
-.status-pill { border:1px solid var(--primary); border-radius:999px; color:var(--safe); background:var(--primary-bg); padding:3px 9px; font-weight:700; }
+.action-strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}.action-strip button{width:100%;font-weight:700}.action-strip .primary{color:#102218;background:var(--primary);border-color:var(--primary)}.action-strip .primary:hover{background:var(--safe)}.action-strip button.selected{border-color:var(--safe);box-shadow:inset 0 0 0 1px var(--safe)}
 .kpi-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-.playback-root[data-has-preventive="true"] .kpi-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
 .kpi-card { min-height:104px; padding:13px 15px; border:1px solid var(--border); border-radius:12px; background:var(--surface); display:flex; flex-direction:column; justify-content:center; overflow:hidden; position:relative; }
 .kpi-card::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--primary); }
 .kpi-card.critical::before { background:var(--critical); }.kpi-card.budget::before { background:var(--heat); }
@@ -297,22 +273,15 @@ button, select { font: inherit; }
 .panel > header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px 10px; }
 .panel h2 { font-size:17px; line-height:1.25; margin:2px 0 0; }.eyebrow { color:var(--muted); font-size:10px; letter-spacing:.11em; text-transform:uppercase; font-weight:750; }
 .map-panel header > span { color:var(--muted); font-size:12px; }.map-layer-label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; white-space:nowrap; }.map-layer-label select { min-height:30px; border:1px solid var(--border); border-radius:7px; padding:4px 7px; background:var(--surface); color:var(--text); }
-.map-stage { padding:0 12px; position:relative; }.city-map{position:relative;width:100%;height:315px;overflow:hidden;border:1px solid var(--border);border-radius:11px;background:var(--map-canvas)}.city-basemap,.city-map svg{position:absolute;inset:0;width:100%;height:100%}.city-basemap{overflow:hidden;background:var(--map-canvas)}.city-basemap img{position:absolute;width:256px;height:256px;max-width:none;user-select:none;pointer-events:none}.city-map svg{display:block;z-index:1}.map-controls{position:absolute;z-index:3;top:10px;right:10px;display:grid;border:1px solid rgba(255,255,255,.62);border-radius:7px;overflow:hidden;box-shadow:0 2px 7px rgba(0,0,0,.28)}.map-controls button{width:32px;height:31px;border:0;border-bottom:1px solid #c7d0cc;background:rgba(255,255,255,.94);color:#15201d;font-size:20px;line-height:1;cursor:pointer}.map-controls button:last-child{border-bottom:0}.map-controls button:hover{background:#fff;color:#087f92}.map-controls button:disabled{opacity:.48;cursor:not-allowed}.map-attribution{position:absolute;z-index:2;right:6px;bottom:4px;padding:1px 4px;border-radius:3px;background:rgba(255,255,255,.82);color:#33443e;font-size:8px}.map-zone { cursor:pointer; }.map-zone path { transition:fill .32s ease, stroke .24s ease, stroke-width .24s ease, opacity .24s ease;vector-effect:non-scaling-stroke}.map-zone:hover path,.map-zone:focus-visible path{stroke:#087f92!important;stroke-width:4.5px!important;filter:url(#map-glow)}.map-zone text { fill:#17211e; font-size:10px; font-weight:750; pointer-events:none; paint-order:stroke; stroke:rgba(255,255,255,.92); stroke-width:3px; stroke-linejoin:round; }
+.map-stage { padding:0 12px; position:relative; }.city-map{position:relative;width:100%;height:315px;overflow:hidden;border:1px solid var(--border);border-radius:11px;background:var(--map-canvas)}.city-basemap,.city-map svg{position:absolute;inset:0;width:100%;height:100%}.city-basemap{overflow:hidden;background:var(--map-canvas)}.city-basemap img{position:absolute;width:256px;height:256px;max-width:none;user-select:none;pointer-events:none}.city-map svg{display:block;z-index:1}.map-controls{position:absolute;z-index:3;top:10px;right:10px;display:flex;border:1px solid rgba(255,255,255,.62);border-radius:7px;overflow:hidden;box-shadow:0 2px 7px rgba(0,0,0,.28)}.map-controls button{min-width:32px;height:31px;border:0;border-right:1px solid #c7d0cc;background:rgba(255,255,255,.94);color:#15201d;font-size:20px;line-height:1;cursor:pointer}.map-controls button:last-child{border-right:0}.map-controls .map-all-districts{width:auto;padding:0 10px;font-size:11px;font-weight:750}.map-controls .map-all-districts.active{background:#087f92;color:#fff}.map-controls button:hover{background:#fff;color:#087f92}.map-controls button:disabled{opacity:.48;cursor:not-allowed}.map-attribution{position:absolute;z-index:2;right:6px;bottom:4px;padding:1px 4px;border-radius:3px;background:rgba(255,255,255,.82);color:#33443e;font-size:8px}.map-zone { cursor:pointer; }.map-zone path { transition:fill .32s ease, stroke .24s ease, stroke-width .24s ease, opacity .24s ease;vector-effect:non-scaling-stroke}.map-zone:hover path,.map-zone:focus-visible path{stroke:#087f92!important;stroke-width:4.5px!important;filter:url(#map-glow)}.map-zone text { fill:#17211e; font-size:10px; font-weight:750; pointer-events:none; paint-order:stroke; stroke:rgba(255,255,255,.92); stroke-width:3px; stroke-linejoin:round; }
 .map-legend,.trend-legend { display:flex; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:10px; }.map-legend { position:absolute; left:24px; bottom:10px; padding:5px 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface); }
 .map-legend i,.trend-legend i { display:inline-block; width:9px; height:9px; margin-right:5px; border-radius:50%; vertical-align:-1px; }.legend-hot{background:var(--heat)}.legend-selected{border:2px solid var(--primary)}.legend-urgent{background:var(--heat)}.legend-demand{background:var(--context)}
-.priority-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:10px 12px 12px; }.priority-list button { text-align:left; min-width:0; padding:8px 10px; }.priority-list button.selected { border-color:var(--primary); background:var(--primary-bg); }.priority-list b,.priority-list span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.priority-list span { color:var(--muted); font-size:10px; margin-top:2px; }
-.insight-controls{display:flex;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end;gap:7px}.insight-controls label{display:flex;flex-direction:column;gap:3px;color:var(--muted);font-size:10px}.insight-controls select{min-height:30px;max-width:145px;border:1px solid var(--border);border-radius:7px;padding:4px 7px;background:var(--surface);color:var(--text)}.insight-caption{min-height:18px;margin:0;padding:0 16px 4px;color:var(--muted);font-size:11px}.insight-panel svg{display:block;width:100%;height:365px;padding:0 8px 8px}.insight-empty{margin:20px 16px;padding:14px;border:1px solid var(--border);border-radius:9px;color:var(--muted);background:var(--raised)}.insight-grid{stroke:var(--border);stroke-width:1}.insight-axis{fill:var(--muted);font-size:10px}.insight-title{fill:var(--text);font-size:11px;font-weight:700}.insight-value{fill:var(--text);font-size:10px;font-weight:700}.insight-expected{fill:none;stroke:var(--context);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.insight-high{fill:none;stroke:var(--heat);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round;stroke-linecap:round}.insight-selected{fill:var(--context)}.insight-included{fill:var(--heat)}.insight-neutral{fill:var(--muted);opacity:.72}.insight-limit{stroke:var(--critical);stroke-width:2;stroke-dasharray:5 4}.insight-point{stroke:var(--surface);stroke-width:2}.decision-grid{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(340px,1.2fr);align-items:start;padding-bottom:4px}.decision-grid .area-stats{grid-column:1}.decision-grid .recommendation-card{grid-column:2;grid-row:1 / span 2}.decision-grid .guardrails{grid-column:1}.decision-grid .decision-actions,.decision-grid .decision-receipt,.decision-grid .decision-note{grid-column:1 / -1}
-.heat-badge { color:var(--heat); border:1px solid var(--heat); border-radius:999px; background:var(--heat-bg); padding:4px 8px; font-size:11px; font-weight:700; white-space:nowrap; }
-.area-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin:0 14px; border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--border); }.area-stats div { background:var(--surface); padding:10px; }.area-stats span { display:block; color:var(--muted); font-size:10px; }.area-stats strong { display:block; margin-top:3px; font-size:17px; font-variant-numeric:tabular-nums; }
-.recommendation-card { margin:12px 14px; padding:12px; min-height:102px; border-left:3px solid var(--primary); border-radius:0 9px 9px 0; background:var(--primary-bg); }.recommendation-card h3 { font-size:16px; line-height:1.3; margin:4px 0 5px; }.recommendation-card p { color:var(--muted); font-size:12px; line-height:1.45; margin:0; }
-.guardrails { margin:0 14px; min-height:96px; }.guardrail { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); font-size:11px; }.guardrail span:first-child{color:var(--muted)}.guardrail .pass{color:var(--safe);font-weight:700}.guardrail .fail{color:var(--critical-text);font-weight:700}
-.decision-actions { display:flex; gap:8px; padding:10px 14px 0; }.decision-actions button { flex:1; }.decision-actions .primary { color:#102218; background:var(--primary); border-color:var(--primary); font-weight:750; }.decision-actions .primary:hover{background:var(--safe)}
-.decision-receipt { margin:10px 14px 0; border:1px solid var(--primary); border-radius:8px; color:var(--safe); background:var(--safe-bg); padding:9px 10px; font-size:12px; }
-.decision-note { color:var(--muted); font-size:10px; margin:8px 14px 14px; }
+.map-selection-summary{margin:10px 12px 12px;padding:11px 13px;border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:9px;background:var(--primary-bg)}.map-selection-summary strong{display:block;font-size:14px;line-height:1.3}.map-selection-summary span{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.4}
+.insight-controls{display:flex;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end;gap:7px}.insight-controls label{display:flex;flex-direction:column;gap:3px;color:var(--muted);font-size:10px}.insight-controls select{min-height:30px;max-width:145px;border:1px solid var(--border);border-radius:7px;padding:4px 7px;background:var(--surface);color:var(--text)}.insight-caption{min-height:18px;margin:0;padding:0 16px 4px;color:var(--muted);font-size:11px}.insight-panel svg{display:block;width:100%;height:365px;padding:0 8px 8px}.insight-empty{margin:20px 16px;padding:14px;border:1px solid var(--border);border-radius:9px;color:var(--muted);background:var(--raised)}.insight-grid{stroke:var(--border);stroke-width:1}.insight-axis{fill:var(--muted);font-size:10px}.insight-title{fill:var(--text);font-size:11px;font-weight:700}.insight-value{fill:var(--text);font-size:10px;font-weight:700}.insight-expected{fill:none;stroke:var(--context);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.insight-high{fill:none;stroke:var(--heat);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round;stroke-linecap:round}.insight-selected{fill:var(--context)}.insight-included{fill:var(--heat)}.insight-neutral{fill:var(--muted);opacity:.72}.insight-limit{stroke:var(--critical);stroke-width:2;stroke-dasharray:5 4}.insight-point{stroke:var(--surface);stroke-width:2}
 .trend-panel > header { align-items:center; }.trend-panel svg { display:block; width:100%; height:205px; padding:0 8px 8px; }.chart-grid line { stroke:var(--border); stroke-width:1; }.urgent-line,.demand-line { fill:none; stroke-linejoin:round; stroke-linecap:round; }.urgent-line{stroke:var(--heat);stroke-width:3}.demand-line{stroke:var(--context);stroke-width:2;stroke-dasharray:5 4}.chart-cursor{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4;opacity:.72;transition:x1 .42s cubic-bezier(.2,.8,.2,1),x2 .42s cubic-bezier(.2,.8,.2,1)}.urgent-dot{fill:var(--heat);transition:cx .42s cubic-bezier(.2,.8,.2,1),cy .42s cubic-bezier(.2,.8,.2,1)}.demand-dot{fill:var(--context);transition:cx .42s cubic-bezier(.2,.8,.2,1),cy .42s cubic-bezier(.2,.8,.2,1)}.chart-value{fill:var(--heat);font-size:11px;font-weight:700}.demand-value{fill:var(--context)}[data-chart-reveal]{transition:clip-path .42s cubic-bezier(.2,.8,.2,1)}[data-trend] > text{fill:var(--muted);font-size:10px}
 [hidden]{display:none!important}
-@media(max-width:1100px){.playback-toolbar{align-items:flex-start;flex-direction:column}.playback-actions{justify-content:flex-start}.workspace-grid{grid-template-columns:1fr}.map-stage svg{height:300px}.kpi-card strong{font-size:21px}.decision-grid{grid-template-columns:1fr}.decision-grid .recommendation-card{grid-column:1;grid-row:auto}.decision-grid .guardrails{grid-column:1}}
-@media(max-width:680px){.kpi-grid,.priority-list{grid-template-columns:1fr}.area-stats{grid-template-columns:1fr}.playback-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.playback-actions label{grid-column:span 2}.insight-controls{justify-content:flex-start}.panel>header{flex-direction:column}.insight-panel svg{height:330px}}
+@media(max-width:1100px){.playback-toolbar{align-items:flex-start;flex-direction:column}.playback-actions{justify-content:flex-start}.workspace-grid{grid-template-columns:1fr}.map-stage svg{height:300px}.kpi-card strong{font-size:21px}}
+@media(max-width:680px){.kpi-grid{grid-template-columns:1fr}.playback-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.playback-actions label{grid-column:span 2}.insight-controls{justify-content:flex-start}.panel>header{flex-direction:column}.insight-panel svg{height:330px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 """
 
@@ -343,6 +312,10 @@ function selectZone(state, zoneId) {
   render(state)
   if (isCurrent(state)) state.setTriggerValue?.("selected_zone_id", zoneId)
   else emitReplayState(state)
+}
+function selectAllDistricts(state) {
+  state.selectedZone = null
+  render(state)
 }
 function tweenNumber(node, next) {
   if (!node) return
@@ -413,12 +386,65 @@ function start(state) {
 }
 function selectedZone(state, frame) {
   const zones = frame?.zones || []
-  let zone = zones.find((item) => item.id === state.selectedZone)
-  if (!zone) {
-    zone = zones[0]
-    state.selectedZone = zone?.id || null
+  return zones.find((item) => item.id === state.selectedZone) || null
+}
+function preventiveRiskAtTick(state, frame) {
+  if (isCurrent(state)) {
+    const value = frame.city?.at_risk_15m
+    return value == null || !Number.isFinite(Number(value)) ? null : Number(value)
   }
-  return zone
+  const event = (state.data.rolling_events || []).find(
+    (item) => Number(item.tick) === Number(frame.tick)
+  )
+  const value = event?.new_preventive_count
+  return value == null || !Number.isFinite(Number(value)) ? null : Number(value)
+}
+function citywideRecommendation(state, frame) {
+  const mandatory = Math.max(0, Number(frame.city?.urgent_drivers || 0))
+  const atRisk = preventiveRiskAtTick(state, frame)
+  const recorded = isCurrent(state)
+    ? state.data.current_actions?.recorded_action
+    : state.choice
+  if (recorded === "ACTIVATE") {
+    if (mandatory > 0) {
+      return {
+        title: "Update SafePause coverage",
+        copy: atRisk == null
+          ? `${mandatory.toLocaleString()} drivers still require a mandatory break now.`
+          : `${mandatory.toLocaleString()} drivers require a mandatory break now; ${atRisk.toLocaleString()} more are at risk within 15 minutes.`,
+      }
+    }
+    if (atRisk != null && atRisk > 0) {
+      return {
+        title: "SafePause activated",
+        copy: `${atRisk.toLocaleString()} at-risk drivers are included in the next preventive wave.`,
+      }
+    }
+    return {
+      title: "SafePause coverage is holding",
+      copy: "No additional mandatory or preventive cohort is verified for this tick.",
+    }
+  }
+  if (mandatory > 0) {
+    return {
+      title: "Start mandatory breaks now",
+      copy: atRisk == null || atRisk === 0
+        ? `${mandatory.toLocaleString()} drivers require an immediate mandatory break.`
+        : `${mandatory.toLocaleString()} drivers require a mandatory break now; ${atRisk.toLocaleString()} more are at risk within 15 minutes.`,
+    }
+  }
+  if (atRisk != null && atRisk > 0) {
+    return {
+      title: "Activate SafePause now",
+      copy: `${atRisk.toLocaleString()} drivers are projected to require a mandatory break within 15 minutes.`,
+    }
+  }
+  return {
+    title: "Continue monitoring",
+    copy: atRisk == null
+      ? "No verified preventive recommendation is available for this tick."
+      : "No driver currently requires a mandatory or preventive break.",
+  }
 }
 function worldPoint(longitude, latitude, zoom) {
   const size = 256 * Math.pow(2, zoom)
@@ -535,6 +561,7 @@ function renderMap(state, frame) {
   renderBasemap(state, projection)
   q(root, "[data-map-zoom-in]").disabled = projection.zoom >= 12
   q(root, "[data-map-zoom-out]").disabled = projection.zoom <= 10
+  q(root, "[data-map-all]").classList.toggle("active", !state.selectedZone)
   const ids = new Set(zones.map((item) => item.id))
   layer.querySelectorAll(".map-zone").forEach((node) => { if (!ids.has(node.dataset.id)) node.remove() })
   zones.forEach((zone) => {
@@ -571,24 +598,21 @@ function renderMap(state, frame) {
     label.setAttribute("x", x); label.setAttribute("y", y)
     label.textContent = zone.name
   })
-  const priority = q(root, "[data-priority]")
-  priority.replaceChildren()
-  const priorityIds = state.data.priority_zone_ids || []
-  const priorityZones = priorityIds.length
-    ? priorityIds.map((id) => zones.find((zone) => zone.id === id)).filter(Boolean)
-    : zones.slice(0, 3)
-  priorityZones.slice(0, 3).forEach((zone, index) => {
-    const button = document.createElement("button")
-    button.type = "button"
-    if (state.selectedZone === zone.id) button.classList.add("selected")
-    const title = document.createElement("b")
-    title.textContent = `${index + 1}. ${zone.name}`
-    const detail = document.createElement("span")
-    detail.textContent = `${zone.heat_state} · ${zone.urgent_drivers} need a break`
-    button.append(title, detail)
-    button.onclick = () => selectZone(state, zone.id)
-    priority.appendChild(button)
-  })
+  const selected = zones.find((zone) => zone.id === state.selectedZone)
+  const districtRecommendation = state.data.decision_views?.[selected?.id]?.recommendation
+  if (selected) {
+    const canActivate = Boolean(districtRecommendation?.can_activate)
+    setText(root, "[data-map-summary-title]", canActivate ? `Activate SafePause in ${selected.name}` : `Continue monitoring ${selected.name}`)
+    setText(root, "[data-map-summary-context]", districtRecommendation
+      ? canActivate
+        ? `${Number(districtRecommendation.driver_count || 0).toLocaleString()} drivers · ${districtRecommendation.start_time_label} start · ${districtRecommendation.break_length_label}.`
+        : districtRecommendation.explanation
+      : "District recommendation is loading.")
+  } else {
+    const recommendation = citywideRecommendation(state, frame)
+    setText(root, "[data-map-summary-title]", recommendation.title)
+    setText(root, "[data-map-summary-context]", recommendation.copy)
+  }
   setText(root, "[data-map-summary]", `${zones.length} operating areas · 15-minute conditions`)
   setText(root, "[data-map-legend]", mapMetric(zones[0] || {}, metric)[2])
 }
@@ -727,21 +751,22 @@ function renderOutcomeInsight(state, insights, layers) {
   return true
 }
 function renderInsights(state, frame, zone) {
-  const root=state.root,layers=insightLayers(root),insights=state.data.decision_views?.[zone?.id]?.insights
-  const scopeLabel=q(root,"[data-insight-scope-label]"),empty=q(root,"[data-insight-empty]"),svg=q(root,"[data-insight]")
-  scopeLabel.hidden=state.insightView!=="timing"
+  const root=state.root,layers=insightLayers(root)
+  const fallbackView=Object.values(state.data.decision_views||{})[0]
+  const insights=state.data.decision_views?.[zone?.id]?.insights || fallbackView?.insights
+  const empty=q(root,"[data-insight-empty]"),svg=q(root,"[data-insight]")
   let rendered=false
-  if(state.insightView==="timing"&&state.insightScope==="all"){
-    setText(root,"[data-insight-caption]","All districts · cyan is selected, amber is included in the current plan.")
+  if(state.insightView==="timing"&&!zone){
+    setText(root,"[data-insight-caption]","All districts · amber areas are included in the current plan.")
     rendered=renderAllDistrictsInsight(state,frame,layers)
   }else if(state.insightView==="timing"){
-    setText(root,"[data-insight-caption]","Selected district · expected and high-demand forecast.")
+    setText(root,"[data-insight-caption]",`${zone.name} · expected and high-demand forecast.`)
     rendered=renderTimingInsight(insights,layers)
   }else if(state.insightView==="tradeoffs"){
     setText(root,"[data-insight-caption]","City-wide portfolio · each point is one evaluated plan combination.")
     rendered=renderTradeoffInsight(insights,layers)
   }else if(state.insightView==="stress"){
-    setText(root,"[data-insight-caption]","Selected district plus city budget · 100% marks each operating limit.")
+    setText(root,"[data-insight-caption]",zone ? `${zone.name} plus city budget · 100% marks each operating limit.` : "City plan · 100% marks each operating limit.")
     rendered=renderStressInsight(insights,layers)
   }else{
     setText(root,"[data-insight-caption]","Same scenario · comparison branches only after the recorded choice.")
@@ -749,59 +774,28 @@ function renderInsights(state, frame, zone) {
   }
   svg.hidden=!rendered;empty.hidden=rendered
 }
-function renderDecision(state, frame, zone) {
+function renderActions(state, frame, zone) {
   const root = state.root
-  setText(root, "[data-area-name]", zone?.name)
-  setText(root, "[data-area-heat]", zone ? `${zone.heat_state} · ${Number(zone.heat_index_c).toFixed(1)}°C` : "—")
-  tweenNumber(q(root, "[data-area-urgent]"), Number(zone?.urgent_drivers || 0))
-  tweenNumber(q(root, "[data-area-active]"), Number(zone?.active_drivers || 0))
-  tweenNumber(q(root, "[data-area-requests]"), Number(zone?.forecast_requests_30m ?? zone?.requests_15m ?? 0))
+  const citywide = !zone
   const decisionIndex = (state.data.pre_decision || []).length - 1
   const atDecision = isCurrent(state) || state.index >= decisionIndex
+  const decisionViews = Object.values(state.data.decision_views || {})
   const decision = state.data.decision_views?.[zone?.id]?.recommendation
+    || decisionViews.find((item) => item?.recommendation?.can_activate)?.recommendation
+    || decisionViews[0]?.recommendation
   const currentActions = state.data.current_actions || {}
-  const actions = q(root, "[data-decision-actions]")
-  const receipt = q(root, "[data-decision-receipt]")
   const activate = q(root, '[data-choice="ACTIVATE"]')
-  const canActivate = Boolean(decision?.can_activate)
-  activate.disabled = !canActivate || Boolean(currentActions.recording)
-  if (!atDecision) {
-    setText(root, "[data-recommendation-state]", "Live monitoring")
-    setText(root, "[data-recommendation-headline]", "Monitoring conditions")
-    setText(root, "[data-recommendation-copy]", `Next recommendation at ${state.data.decision_time_label}. The next interval is ready for instant playback.`)
-  } else {
-    setText(root, "[data-recommendation-state]", decision?.state === "ready" ? "Recommended action" : "Operator review")
-    setText(root, "[data-recommendation-headline]", decision?.headline || "Recommendation temporarily unavailable")
-    setText(root, "[data-recommendation-copy]", decision ? `${decision.group_summary} · ${decision.break_length_label}. ${decision.explanation}` : "Monitoring remains available.")
-  }
-  const guards = q(root, "[data-guardrails]")
-  guards.replaceChildren()
-  ;(atDecision ? (decision?.guardrails || []) : []).slice(0, 4).forEach((guard) => {
-    const row = document.createElement("div")
-    row.className = "guardrail"
-    const label = document.createElement("span")
-    label.textContent = guard.label
-    const value = document.createElement("span")
-    value.className = guard.passed ? "pass" : "fail"
-    value.textContent = `${guard.passed ? "✓" : "!"} ${guard.value} · ${guard.status_label}`
-    row.append(label, value)
-    guards.appendChild(row)
-  })
+  const continueButton = q(root, '[data-choice="CONTINUE"]')
+  const canActivate = citywide
+    ? Boolean(isCurrent(state) ? currentActions.available : decision?.can_activate)
+    : Boolean(decision?.can_activate)
   const recorded = isCurrent(state) ? currentActions.recorded_action : state.choice
   const available = isCurrent(state) ? Boolean(currentActions.available) : atDecision
-  actions.hidden = !available || Boolean(recorded)
-  receipt.hidden = !recorded
-  if (recorded) {
-    receipt.textContent = isCurrent(state)
-      ? (recorded === "ACTIVATE" ? "SafePause activated for this operational interval." : "Continue monitoring recorded for this operational interval.")
-      : (recorded === "ACTIVATE" ? "SafePause selected for this display replay. The comparison continues locally." : "Continue monitoring selected. The no-action path continues locally.")
-  }
-  const note = !available
-    ? (isCurrent(state) ? "Monitoring conditions · action is not available for this interval." : "Action becomes available at the recommendation time.")
-    : !recorded
-      ? (canActivate ? (isCurrent(state) ? "Choose an action for the current verified plan." : "Choose a path to continue the display replay.") : "SafePause is disabled because this plan does not fit all current limits.")
-      : (isCurrent(state) ? "The decision is locked for this operational interval." : "Use Play or Next 15 min to view the outcome.")
-  setText(root, "[data-decision-note]", note)
+  const locked = Boolean(recorded) || Boolean(currentActions.recording)
+  activate.disabled = !available || !canActivate || locked
+  continueButton.disabled = !available || locked
+  activate.classList.toggle("selected", recorded === "ACTIVATE")
+  continueButton.classList.toggle("selected", recorded === "CONTINUE")
 }
 function svgNode(name, attrs = {}, text = null) {
   const node = document.createElementNS(NS, name)
@@ -855,7 +849,7 @@ function renderDistrictComparison(state, frame, marks, labels) {
   return true
 }
 function renderTiming(state, frame, insights, marks, labels) {
-  if (state.insightScope === "all") return renderDistrictComparison(state, frame, marks, labels)
+  if (!state.selectedZone) return renderDistrictComparison(state, frame, marks, labels)
   const options = insights?.timing_options || []
   if (!options.length) return false
   const expected = options.map((item) => Number(item.expected_demand || 0))
@@ -954,8 +948,6 @@ function renderInsightsAlternative(state, frame, zone) {
   grid.replaceChildren(); marks.replaceChildren(); labels.replaceChildren()
   addGrid(grid)
   const insights = state.data.decision_views?.[zone?.id]?.insights
-  const scopeLabel = q(root, "[data-insight-scope-label]")
-  scopeLabel.hidden = state.insightView !== "timing"
   let rendered = false
   if (state.insightView === "timing") rendered = renderTiming(state, frame, insights, marks, labels)
   else if (state.insightView === "tradeoffs") rendered = renderTradeoffs(insights, marks, labels)
@@ -964,9 +956,9 @@ function renderInsightsAlternative(state, frame, zone) {
   q(root, "[data-insight]").hidden = !rendered
   q(root, "[data-insight-empty]").hidden = rendered
   const captions = {
-    timing: state.insightScope === "all" ? "All districts · cyan is selected, amber is included in the current plan." : "Selected district · expected and high-demand forecast.",
+    timing: zone ? `${zone.name} · expected and high-demand forecast.` : "All districts · amber areas are included in the current plan.",
     tradeoffs: "City-wide portfolio · each point is one evaluated plan combination.",
-    stress: "Selected district plus city budget · 100% marks each operating limit.",
+    stress: zone ? `${zone.name} plus city budget · 100% marks each operating limit.` : "City plan · 100% marks each operating limit.",
     outcome: "Same scenario · comparison branches only after the recorded choice.",
   }
   setText(root, "[data-insight-caption]", captions[state.insightView])
@@ -976,26 +968,15 @@ function render(state) {
   if (!frame) return
   const root = state.root
   const frames = displayFrames(state)
-  if (!state.selectedZone) state.selectedZone = frame.zones?.[0]?.id
   const playbackRoot = q(root, ".playback-root")
   playbackRoot.dataset.mode = state.data.mode || "replay"
-  const preventiveCoverage = frame.city?.coverage?.preventive
-  playbackRoot.dataset.hasPreventive = String(!isCurrent(state) && Boolean(preventiveCoverage))
-  q(root, "[data-kpi-preventive-card]").hidden = isCurrent(state) || !preventiveCoverage
   setText(root, "[data-range]", state.data.range_label)
   setText(root, "[data-time]", frame.time_label)
   setText(root, "[data-decision-time]", state.data.decision_time_label)
-  setText(root, "[data-status]", state.running ? "Playing" : frame.status)
-  if (isCurrent(state)) {
-    setText(root, "[data-disclosure]", state.data.synthetic_disclosure)
-  } else {
-    setText(root, "[data-disclosure]", `Synthetic Hanoi operations · display-only replay · $${Number(state.data.presentation_limits?.budget_usd || 0).toLocaleString()} budget / $${Number(state.data.presentation_limits?.support_per_driver_usd || 0).toFixed(2)} support per driver · no real dispatch`)
-  }
   q(root, "[data-progress]").style.width = `${(state.index / Math.max(1, frames.length - 1)) * 100}%`
   setText(root, "[data-play-label]", state.running ? "Pause" : "Play")
   q(root, '[data-action="next"]').disabled = state.running || !canAdvance(state)
   q(root, '[data-action="play"]').disabled = !state.running && !canAdvance(state)
-  const atDecision = state.index >= (state.data.pre_decision || []).length - 1
   if (isCurrent(state) && state.data.current_kpis?.length === 3) {
     const valueSelectors = ["[data-kpi-urgent]", "[data-kpi-coverage]", "[data-kpi-budget]"]
     state.data.current_kpis.forEach((card, index) => {
@@ -1004,45 +985,37 @@ function render(state) {
       setText(root, `[data-kpi-note-${index}]`, card.detail)
     })
   } else {
-    setText(root, "[data-kpi-label-0]", "Drivers needing a break now")
+    setText(root, "[data-kpi-label-0]", "Mandatory breaks now")
     setText(root, "[data-kpi-note-0]", "Across Hanoi")
-    setText(root, "[data-kpi-label-1]", "Mandatory coverage")
-    setText(root, "[data-kpi-label-2]", "Rolling budget remaining")
-    setText(root, "[data-kpi-note-2]", "Includes mandatory reserve")
-    tweenNumber(q(root, "[data-kpi-urgent]"), Number(frame.city.urgent_drivers || 0))
-    const mandatory = frame.city.coverage?.mandatory
-    const covered = Number(mandatory?.covered_drivers ?? frame.city.covered_drivers ?? 0)
-    const required = Number(mandatory?.required_drivers ?? frame.city.required_drivers ?? 0)
-    setText(root, "[data-kpi-coverage]", atDecision ? `${covered.toLocaleString()} / ${required.toLocaleString()}` : "Monitoring")
-    setText(root, "[data-kpi-note-1]", atDecision ? (mandatory?.status || (covered >= required ? "All covered" : `${Math.max(0, required-covered).toLocaleString()} still uncovered`)) : "Available at decision time")
-    const preventiveCard = q(root, "[data-kpi-preventive-card]")
-    preventiveCard.hidden = !preventiveCoverage
-    if (preventiveCoverage) {
-      const started = Number(preventiveCoverage.started_drivers || 0)
-      const planned = Number(preventiveCoverage.planned_drivers || 0)
-      setText(root, "[data-kpi-preventive]", `${started.toLocaleString()} / ${planned.toLocaleString()}`)
-      setText(root, "[data-kpi-preventive-note]", preventiveCoverage.status || "Rolling evaluation")
-    }
-    const budget = frame.city.budget_remaining_usd
-    setText(root, "[data-kpi-budget]", atDecision && budget != null ? `${budget < 0 ? "−" : ""}$${Math.abs(Number(budget)).toLocaleString()}` : "—")
+    setText(root, "[data-kpi-urgent]", `${Number(frame.city.urgent_drivers || 0).toLocaleString()} drivers`)
+    const atRisk = preventiveRiskAtTick(state, frame)
+    const riskAvailable = atRisk != null
+    setText(root, "[data-kpi-label-1]", riskAvailable ? "At risk within 15 min" : "Preventive risk")
+    setText(root, "[data-kpi-coverage]", riskAvailable ? `${Number(atRisk).toLocaleString()} drivers` : "Not available")
+    setText(root, "[data-kpi-note-1]", riskAvailable ? "Projected from current evidence" : "15-minute projection unavailable")
+    const activeDrivers = frame.city.active_drivers ?? (frame.zones || []).reduce(
+      (total, zone) => total + Number(zone.active_drivers || 0), 0
+    )
+    setText(root, "[data-kpi-label-2]", "Active drivers")
+    setText(root, "[data-kpi-budget]", Number(activeDrivers).toLocaleString())
+    setText(root, "[data-kpi-note-2]", "online now")
   }
   renderMap(state, frame)
   const zone = selectedZone(state, frame)
-  renderDecision(state, frame, zone)
+  renderActions(state, frame, zone)
   renderInsights(state, frame, zone)
 }
 function mount(root, data, setTriggerValue, setStateValue) {
-  const selected = data.pre_decision?.[0]?.zones?.find((zone) => zone.selected)
-  const state = { root, data, setTriggerValue, setStateValue, index:0, choice:null, selectedZone:selected?.id || null, speed:"normal", mapMetric:"heat", mapZoom:11, insightView:"timing", insightScope:"selected", running:false, timer:null, lastEmittedReplayState:null }
+  const state = { root, data, setTriggerValue, setStateValue, index:0, choice:null, selectedZone:null, speed:"normal", mapMetric:"heat", mapZoom:11, insightView:"timing", running:false, timer:null, lastEmittedReplayState:null }
   q(root, '[data-action="play"]').onclick = () => { if (state.running) { stop(state); render(state) } else start(state) }
   q(root, '[data-action="next"]').onclick = () => step(state)
   q(root, '[data-action="reset"]').onclick = () => { stop(state); state.index=0; state.choice=null; state.selectedZone=null; render(state); emitReplayState(state) }
+  q(root, "[data-map-all]").onclick = () => selectAllDistricts(state)
   q(root, "[data-speed]").onchange = (event) => { state.speed=event.target.value; if (state.running) start(state) }
   q(root, "[data-map-metric]").onchange = (event) => { state.mapMetric=event.target.value; render(state) }
   q(root, "[data-map-zoom-in]").onclick = () => { state.mapZoom=Math.min(12, state.mapZoom + 1); render(state) }
   q(root, "[data-map-zoom-out]").onclick = () => { state.mapZoom=Math.max(10, state.mapZoom - 1); render(state) }
   q(root, "[data-insight-view]").onchange = (event) => { state.insightView=event.target.value; render(state) }
-  q(root, "[data-insight-scope]").onchange = (event) => { state.insightScope=event.target.value; render(state) }
   root.querySelectorAll("[data-choice]").forEach((button) => {
     button.onclick = () => {
       stop(state)
@@ -1072,10 +1045,7 @@ export default function(component) {
       stop(state); state.index=0; state.choice=null
       state.mapMetric="heat"
       q(parentElement, "[data-map-metric]").value="heat"
-      state.selectedZone=data.pre_decision?.[0]?.zones?.find((zone) => zone.selected)?.id || null
-    } else if (data.mode === "current") {
-      const serverSelected = data.pre_decision?.[0]?.zones?.find((zone) => zone.selected)?.id
-      if (serverSelected) state.selectedZone = serverSelected
+      state.selectedZone=null
     }
     render(state)
   }

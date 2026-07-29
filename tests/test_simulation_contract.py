@@ -35,7 +35,7 @@ class SettingsContractTests(unittest.TestCase):
         self.assertFalse(settings.production_bundle_enabled)
         self.assertIsNone(settings.production_bundle_dataset_id)
         self.assertIsNone(settings.production_bundle_run_id)
-        self.assertEqual(settings.production_bundle_tick_index, 41)
+        self.assertEqual(settings.production_bundle_tick_index, 40)
 
     def test_external_identifiers_fail_closed(self):
         invalid = {

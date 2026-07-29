@@ -693,6 +693,71 @@ class BigQueryFeatureBatchTests(TestCase):
         self.assertIn("snapshot_id = @snapshot_id", captured["query"])
         self.assertIn("zone_id IN UNNEST(@zone_ids)", captured["query"])
 
+    def test_historical_features_rebuild_exact_scored_tick_from_history(self):
+        captured = {}
+        row = SimpleNamespace(
+            scenario_id="heatwave",
+            snapshot_id="snapshot-40",
+            observed_at=datetime.now(UTC),
+            driver_id_hash="driver-1",
+            zone_id="hoan-kiem",
+            heat_index_c=50.55,
+            humidity_percent=68.0,
+            continuous_exposure_minutes=360,
+            trips_60m=5,
+            distance_km_60m=20.9,
+            rest_minutes_120m=0,
+            hydration_gap_minutes=180,
+            route_heat_load=3.09,
+            workload_intensity=2.69,
+            is_simulated=True,
+            simulation_run_id="a" * 32,
+            tick_id="tick-40",
+            driver_status="ON_TRIP",
+            heat_dose_120m=120.0,
+            acclimatization_class="LOW",
+            generator_version="stateful-replay-v2",
+        )
+
+        class QueryResult:
+            def result(self):
+                return [row]
+
+        class Client:
+            def query(self, query, job_config):
+                captured["query"] = query
+                captured["job_config"] = job_config
+                return QueryResult()
+
+        repository = BigQueryRepository(scenario="heatwave")
+        repository._client_instance = cast(Any, Client())
+        repository._selected_replay_lineage = (
+            "a" * 32,
+            "tick-40",
+            "snapshot-40",
+        )
+
+        grouped = repository.load_driver_features_many(
+            ["hoan-kiem"], "snapshot-40"
+        )
+
+        self.assertEqual(len(grouped["hoan-kiem"]), 1)
+        self.assertIn(".driver_state_history`", captured["query"])
+        self.assertNotIn(".driver_current_features`", captured["query"])
+        self.assertIn(
+            "driver_status IN ('IDLE', 'TO_PICKUP', 'ON_TRIP')",
+            captured["query"],
+        )
+        self.assertIn("LEAST(360, GREATEST(30", captured["query"])
+        parameters = {
+            parameter.name: parameter.value
+            for parameter in captured["job_config"].query_parameters
+            if hasattr(parameter, "value")
+        }
+        self.assertEqual(parameters["simulation_run_id"], "a" * 32)
+        self.assertEqual(parameters["tick_id"], "tick-40")
+        self.assertEqual(parameters["snapshot_id"], "snapshot-40")
+
 
 if __name__ == "__main__":
     import unittest

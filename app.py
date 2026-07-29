@@ -36,10 +36,8 @@ from heatsafe.services.preventive_planning import (
     build_predictive_city_plan,
     project_city_forecast,
 )
-from heatsafe.simulation.engine import load_zone_priors
 from heatsafe.telemetry import log_event
 from heatsafe.ui import (
-    advance_refresh_token,
     render_copilot_panel,
     render_replay_copilot_panel,
 )
@@ -58,15 +56,9 @@ from heatsafe.ui.operator_console import (
     render_styles,
 )
 from heatsafe.ui.production_mode import get_production_session
-from heatsafe.ui.state import (
-    DEFAULT_BUDGET_USD,
-    DEFAULT_SPONSOR_USD,
-    build_constraints,
-)
 
 DECISION_HORIZON_MINUTES = 120
 MODE_KEY = "operator-console:sidebar:mode"
-AREA_KEY = "operator-console:sidebar:area"
 SPEED_KEY = "operator-console:sidebar:speed"
 SURFACE_KEY = "operator-console:surface"
 SESSION_KEY = "production_window_session"
@@ -79,19 +71,21 @@ st.set_page_config(
 )
 
 st.session_state.setdefault("refresh_token", uuid4().hex)
-st.session_state.setdefault("decision_budget_cap", DEFAULT_BUDGET_USD)
-st.session_state.setdefault("decision_partner_credit", DEFAULT_SPONSOR_USD)
 st.session_state.setdefault("selected_zone_id", None)
 st.session_state.setdefault("operator_recording", False)
 
 pending_zone = st.session_state.pop("operator_pending_zone", None)
 if pending_zone is not None:
     st.session_state.selected_zone_id = pending_zone
-    st.session_state[AREA_KEY] = pending_zone
 
 
 def _constraints() -> DecisionConstraints:
-    return build_constraints(DECISION_HORIZON_MINUTES)
+    settings = Settings.from_env()
+    return DecisionConstraints(
+        horizon_minutes=DECISION_HORIZON_MINUTES,
+        budget_cap_vnd=settings.operator_budget_cap_vnd,
+        sponsor_per_driver_vnd=settings.operator_sponsor_per_driver_vnd,
+    )
 
 
 @st.cache_resource(show_spinner="Loading verified current conditions…")
@@ -317,16 +311,12 @@ def _apply_action(
 
 
 active_mode = str(st.session_state.get(MODE_KEY, "current"))
-active_session: ProductionSession | None = None
 render_styles()
 sidebar_result = render_sidebar(
     None,
     _constraints(),
     playback=None,
     mode=active_mode,
-    area_options=tuple(
-        (area.zone_id, area.name) for area in load_zone_priors()
-    ),
     key_prefix="operator-console:sidebar",
 )
 selected_surface = st.segmented_control(
@@ -345,38 +335,6 @@ presentation_mode = (
     sidebar_result.mode == "accelerated-production"
     and surface == "Operations"
 )
-if sidebar_result.mode == "accelerated-production" and not presentation_mode:
-    active_session = get_production_session()
-
-if sidebar_result.limits_applied:
-    st.session_state.decision_budget_cap = (
-        sidebar_result.constraints.budget_cap_vnd / 25_000
-    )
-    st.session_state.decision_partner_credit = (
-        sidebar_result.constraints.sponsor_per_driver_vnd / 25_000
-    )
-    st.session_state.pop("operator_recorded_decision", None)
-    st.rerun()
-if sidebar_result.refresh_requested:
-    advance_refresh_token()
-    st.rerun()
-if sidebar_result.reset_requested:
-    st.session_state.pop("operator_recorded_decision", None)
-    st.session_state.pop("operator_advance_error", None)
-    if isinstance(active_session, ProductionSession):
-        active_session.reset()
-        st.session_state.production_window_last_advance = time.monotonic()
-    st.rerun()
-if isinstance(active_session, ProductionSession) and sidebar_result.playback_action:
-    if sidebar_result.playback_action == "PLAY":
-        active_session.start()
-        st.session_state.production_window_last_advance = time.monotonic()
-    elif sidebar_result.playback_action == "PAUSE":
-        active_session.pause()
-    elif sidebar_result.playback_action == "NEXT":
-        _advance_once(active_session, 0.0, force=True)
-    st.rerun()
-
 def live_operator_workspace() -> None:
     workspace_started = time.perf_counter()
     mode = str(st.session_state.get(MODE_KEY, "current"))
@@ -431,8 +389,7 @@ def live_operator_workspace() -> None:
         zones = tuple(evidence.zones)
     valid_zone_ids = {zone.zone_id for zone in zones}
     selected_zone_id = str(
-        st.session_state.get(AREA_KEY)
-        or st.session_state.get("selected_zone_id")
+        st.session_state.get("selected_zone_id")
         or zones[0].zone_id
     )
     if selected_zone_id not in valid_zone_ids:

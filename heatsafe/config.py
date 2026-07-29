@@ -95,7 +95,9 @@ class Settings:
     simulation_model_dataset: str | None = None
     production_bundle_dataset_id: str | None = None
     production_bundle_run_id: str | None = None
-    production_bundle_tick_index: int = 41
+    production_bundle_tick_index: int = 40
+    operator_budget_cap_vnd: int = 3_000_000
+    operator_sponsor_per_driver_vnd: int = 8_000
 
     def __post_init__(self) -> None:
         _require_match("GOOGLE_CLOUD_PROJECT", self.project_id, _PROJECT_ID_RE)
@@ -183,6 +185,14 @@ class Settings:
             raise ValueError(
                 "HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX must be in 0..95"
             )
+        if not 0 <= self.operator_budget_cap_vnd <= 1_000_000_000:
+            raise ValueError(
+                "HEATSAFE_OPERATOR_BUDGET_CAP_VND must be in 0..1000000000"
+            )
+        if not 0 <= self.operator_sponsor_per_driver_vnd <= 10_000_000:
+            raise ValueError(
+                "HEATSAFE_OPERATOR_SPONSOR_PER_DRIVER_VND must be in 0..10000000"
+            )
         if (self.production_bundle_dataset_id is None) != (
             self.production_bundle_run_id is None
         ):
@@ -265,9 +275,21 @@ class Settings:
             ),
             production_bundle_tick_index=_parse_int(
                 "HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX",
-                "41",
+                "40",
                 minimum=0,
                 maximum=95,
+            ),
+            operator_budget_cap_vnd=_parse_int(
+                "HEATSAFE_OPERATOR_BUDGET_CAP_VND",
+                "3000000",
+                minimum=0,
+                maximum=1_000_000_000,
+            ),
+            operator_sponsor_per_driver_vnd=_parse_int(
+                "HEATSAFE_OPERATOR_SPONSOR_PER_DRIVER_VND",
+                "8000",
+                minimum=0,
+                maximum=10_000_000,
             ),
         )
 

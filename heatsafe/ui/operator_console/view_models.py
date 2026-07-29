@@ -54,40 +54,47 @@ class OperatorKpiView:
 
 @dataclass(frozen=True)
 class OperatorCityKpis:
-    drivers_needing_break_now: int
-    covered_drivers: int
-    total_drivers_requiring_coverage: int
-    budget_remaining_usd: float | None
-    coverage_state: str
-    budget_remaining_label: str
+    mandatory_breaks_now: int
+    at_risk_within_15m: int | None
+    active_drivers: int
 
     @property
     def cards(self) -> tuple[OperatorKpiView, OperatorKpiView, OperatorKpiView]:
+        preventive_available = self.at_risk_within_15m is not None
         return (
             OperatorKpiView(
-                label="Drivers needing a break now",
-                value=f"{self.drivers_needing_break_now:,}",
+                label="Mandatory breaks now",
+                value=f"{self.mandatory_breaks_now:,} drivers",
                 detail="Across Hanoi",
-                state="critical" if self.drivers_needing_break_now else "safe",
+                state="critical" if self.mandatory_breaks_now else "safe",
             ),
             OperatorKpiView(
-                label="Safety coverage",
+                label=(
+                    "At risk within 15 min"
+                    if preventive_available
+                    else "Preventive risk"
+                ),
                 value=(
-                    f"{self.covered_drivers:,} / "
-                    f"{self.total_drivers_requiring_coverage:,}"
+                    f"{self.at_risk_within_15m:,} drivers"
+                    if preventive_available
+                    else "Not available"
                 ),
-                detail=self.coverage_state,
-                state="safe" if self.coverage_state == "All covered" else "warning",
+                detail=(
+                    "Projected from current evidence"
+                    if preventive_available
+                    else "15-minute projection unavailable"
+                ),
+                state=(
+                    "warning"
+                    if preventive_available and self.at_risk_within_15m
+                    else "neutral"
+                ),
             ),
             OperatorKpiView(
-                label="Budget remaining after this plan",
-                value=self.budget_remaining_label,
-                detail="Includes the high-demand case",
-                state=(
-                    "neutral"
-                    if self.budget_remaining_usd is None
-                    else "safe" if self.budget_remaining_usd >= 0 else "critical"
-                ),
+                label="Active drivers",
+                value=f"{self.active_drivers:,}",
+                detail="online now",
+                state="neutral",
             ),
         )
 
@@ -415,26 +422,23 @@ def build_city_kpis(
     areas: Sequence[OperatorAreaView],
 ) -> OperatorCityKpis:
     urgent = sum(area.drivers_needing_break_now for area in areas)
-    if plan is None:
-        return OperatorCityKpis(
-            drivers_needing_break_now=urgent,
-            covered_drivers=0,
-            total_drivers_requiring_coverage=urgent,
-            budget_remaining_usd=None,
-            coverage_state="Coverage is updating",
-            budget_remaining_label="—",
-        )
-    covered = max(0, int(plan.mandatory_now_covered))
-    required = covered + max(0, int(plan.mandatory_now_uncovered))
-    uncovered = max(0, required - covered)
-    remaining_vnd = int(plan.budget_cap_vnd) - int(plan.p95_reserved_cost_vnd)
+    projected_15m: int | None = None
+    if plan is not None:
+        horizons_15m = [
+            horizon
+            for row in plan.rows
+            for horizon in row.horizons
+            if horizon.minutes_ahead == 15
+        ]
+        if len(horizons_15m) == len(plan.rows):
+            projected_15m = sum(
+                max(0, int(horizon.projected_mandatory))
+                for horizon in horizons_15m
+            )
     return OperatorCityKpis(
-        drivers_needing_break_now=urgent,
-        covered_drivers=covered,
-        total_drivers_requiring_coverage=required,
-        budget_remaining_usd=remaining_vnd / 25_000,
-        coverage_state="All covered" if uncovered == 0 else f"{uncovered:,} still uncovered",
-        budget_remaining_label=format_currency_vnd(remaining_vnd),
+        mandatory_breaks_now=urgent,
+        at_risk_within_15m=projected_15m,
+        active_drivers=sum(max(0, int(area.active_drivers)) for area in areas),
     )
 
 

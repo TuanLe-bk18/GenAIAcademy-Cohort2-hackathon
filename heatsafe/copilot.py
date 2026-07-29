@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
@@ -16,6 +17,24 @@ from .risk import TIER_LABELS, heat_tier, operational_priority
 from .telemetry import log_event
 
 GEMINI_REQUEST_TIMEOUT_MS = 20_000
+
+
+def _bounded_history(
+    history: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, str], ...]:
+    """Keep only bounded conversational context, never arbitrary message metadata."""
+    bounded: list[dict[str, str]] = []
+    for message in history[-10:]:
+        role = str(message.get("role", "assistant"))
+        if role not in {"assistant", "user"}:
+            continue
+        bounded.append(
+            {
+                "role": role,
+                "content": str(message.get("content", ""))[:2_000],
+            }
+        )
+    return tuple(bounded)
 
 
 class CopilotEvidenceRepository(Protocol):
@@ -711,12 +730,20 @@ class HeatSafeCopilot:
         types: Any,
         question: str,
         deterministic_request: ToolRequest,
+        history: Sequence[Mapping[str, Any]] = (),
     ) -> ToolRequest:
         """Let Gemini confirm one allowlisted tool; deterministic parsing owns controls."""
 
         selection = client.models.generate_content(
             model=self.settings.gemini_model,
-            contents=question,
+            contents=(
+                "Bounded conversation history: "
+                + json.dumps(
+                    _bounded_history(history),
+                    ensure_ascii=False,
+                )
+                + f"\nCurrent user question: {question}"
+            ),
             config=types.GenerateContentConfig(
                 system_instruction=(
                     "Select the one allowed HeatSafe function. In HeatSafe, "
@@ -759,11 +786,17 @@ class HeatSafeCopilot:
         question: str,
         request: ToolRequest,
         result: ToolResult,
+        history: Sequence[Mapping[str, Any]] = (),
     ) -> str:
         response = client.models.generate_content(
             model=self.settings.gemini_model,
             contents=(
-                f"User question: {question}\n"
+                "Bounded conversation history: "
+                + json.dumps(
+                    _bounded_history(history),
+                    ensure_ascii=False,
+                )
+                + f"\nCurrent user question: {question}\n"
                 f"Executed HeatSafe tool: {request.tool_name}\n"
                 "Verified result: "
                 + json.dumps(
@@ -794,7 +827,11 @@ class HeatSafeCopilot:
             raise RuntimeError("Gemini returned an empty explanation")
         return answer
 
-    def answer(self, question: str) -> tuple[str, str]:
+    def answer(
+        self,
+        question: str,
+        history: Sequence[Mapping[str, Any]] = (),
+    ) -> tuple[str, str]:
         plain_question = _plain(question)
         if any(
             token in plain_question
@@ -832,7 +869,11 @@ class HeatSafeCopilot:
                 http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS),
             )
             request = self._select_with_gemini(
-                client, types, question, deterministic_request
+                client,
+                types,
+                question,
+                deterministic_request,
+                history,
             )
         except Exception as exc:
             # Selection did not execute a repository tool. Execute the deterministic
@@ -859,7 +900,12 @@ class HeatSafeCopilot:
             return result.deterministic_answer, result.tool_name
         try:
             answer = self._explain_with_gemini(
-                client, types, question, request, result
+                client,
+                types,
+                question,
+                request,
+                result,
+                history,
             )
         except Exception as exc:
             # Reuse the result already computed above. Never rerun a repository tool

@@ -2,7 +2,8 @@
 
 **Date**: 29-07-26
 **Complexity**: COMPLEX — standard, one execution stream
-**Status**: 🧪 TESTING — code, cloud bundle, deployment, and automated gates complete; visual confirmation pending
+**Status**: 🧪 SIDEBAR REVISION TESTING — local implementation and automated gates complete;
+manual localhost confirmation and any new deployment remain pending
 **Selected plan**: `process/general-plans/active/unified-sidebar-production-cloud-evidence_29-07-26/unified-sidebar-production-cloud-evidence_PLAN_29-07-26.md`
 **Research transcript**: `process/UI-isolation-Production-cloud-evidence/Unified Sidebar Production Event Replay.md`
 **Execution boundary**: the user approved materializing one new five-tick bundle and deploying it.
@@ -11,7 +12,7 @@ Authentication is explicitly out of scope and was not changed.
 
 > **TL;DR:** Use the reviewed local Event Replay v2 state to materialize a new cloud bundle for
 > ticks 37–41 on the ACTIVATE branch. Every tick is published in BigQuery and scored by the
-> existing BQML model and TimesFM 2.5; no model retraining is needed. Production pins tick 41 by
+> existing BQML model and TimesFM 2.5; no model retraining is needed. Production pins decision tick 40 by
 > exact run/dataset lineage and fails closed if the five-tick ledger is incomplete. Event Replay
 > remains artifact-bound and independent. A new 15-minute Scheduler is part of the topology but
 > stays `PAUSED`/OFF. Keep the visible label `Live conditions`.
@@ -51,7 +52,9 @@ The corrected implementation direction is:
 
 1. Share only the Copilot presentation shell.
 2. Keep Production and Event Replay engines, prompts, tools, histories, and evidence independent.
-3. Remove operator-editable cost controls while retaining fixed server-side policy guardrails.
+3. Make the Production and Event Replay sidebars structurally identical: retain
+   logo, mode switch, mode-specific caption, and Copilot; remove every control
+   shown in the supplied Production screenshot.
 4. Replace local `ProductionSession` evidence with one exact BigQuery simulation bundle.
 5. Materialize exactly ticks 37–41 from the current reviewed local Event Replay v2 ACTIVATE path.
 6. Reuse the deployed BQML and TimesFM models; no retraining is needed.
@@ -64,7 +67,8 @@ The corrected implementation direction is:
   real operational telemetry.
 - Ensure the Production dashboard and Production Copilot cannot read different runs or ticks.
 - Preserve deterministic Event Replay behavior and its no-cloud dependency.
-- Keep the UI clean by removing editable cost fields from the sidebar.
+- Keep both mode sidebars visually aligned by removing the Production-only area
+  selector, editable cost form, Apply action, Refresh action, and Reset action.
 - Fail closed when the pinned evidence is missing, incomplete, or no longer coherent.
 - Complete the hackathon slice without unnecessary data regeneration, model retraining, or new
   provider resources.
@@ -73,7 +77,8 @@ The corrected implementation direction is:
 
 - One pinned dataset + `simulation_run_id` + tick index identifies all Production evidence.
 - The bundle ledger contains exactly five `SUCCEEDED`/`SCORED` ticks, 37–41.
-- Selected tick 41 contains 10 zones, 25,146 BQML prediction rows, and 160 TimesFM forecast rows.
+- Selected tick 40 contains 10 zones, 2,805 active scored drivers, 25,245 BQML prediction rows,
+  and TimesFM forecasts for all 10 zones.
 - All component queries use the same exact lineage; none select an independent “latest”.
 - Production and Event Replay chat state remain isolated under separate keys.
 - All relevant automated tests pass and a hard-refresh runtime screenshot/manual check confirms
@@ -118,9 +123,9 @@ paused the run:
 | `scenario_id` | `heatwave` |
 | `scenario_version` | `hanoi_heatwave_v1` |
 | `simulation_run_id` | `8cf771e3c7d846128224504fa554885b` |
-| selected `tick_id` | `ed39961b6120b7e9dd92f607ea9974bd` |
-| selected `tick_index` | `41` |
-| selected `snapshot_id` | `2018f7df247f3248393254c3c5e4026c` |
+| selected `tick_id` | `0601a7d0124cc4fbbf31aa8cf88960bb` |
+| selected `tick_index` | `40` |
+| selected `snapshot_id` | `f48767f8cf664fcedbc2b741e63fc906` |
 | `run_status` | `PAUSED` |
 | ticks 37–41 | all `SUCCEEDED` / `SCORED` |
 | `pending_score_tick_id` | `NULL` |
@@ -161,7 +166,10 @@ recurring Scheduler and left the run paused.
 
 - The new v2 run contains the fields required by current simulation and UI contracts.
 - All five ticks were scored with the deployed BQML risk model and TimesFM 2.5.
-- Selected tick 41 has ten coherent zones under exact lineage.
+- Selected decision tick 40 has ten coherent zones under exact lineage. Historical scored
+  features are reconstructed from immutable `driver_state_history` with the same active-status
+  filter and clipping bounds used by the scoring pipeline; the overwritten tick-41
+  `driver_current_features` table is never used for this historical read.
 - A new training run would add time, provider cost, and reproducibility risk without fixing a
   demonstrated evidence gap.
 - This is a hackathon demo; the UI keeps `Live conditions` as the workspace label while its
@@ -179,7 +187,13 @@ recurring Scheduler and left the run paused.
 - Preserve one shared chat presentation component with separate Production/Event Replay state.
 - Pass bounded Production-only message history to `HeatSafeCopilot`.
 - Keep Event Replay bound to its immutable replay frame and existing replay tools.
-- Remove sidebar cost input controls and their apply handler.
+- Remove every Production-only control shown in the supplied screenshot:
+  `Selected area`, `Budget limit`, `Support per driver`, `Apply limits`,
+  `Refresh conditions`, and `Reset view`.
+- Keep the two mode sidebars structurally identical. Only their explanatory
+  captions may differ.
+- Keep area selection in the primary map/operator component and retain fixed
+  policy guardrails outside the sidebar.
 - Retain fixed policy values in server settings and expose them only as read-only context where
   useful.
 - Show prominent `Hackathon simulation` / `Simulated fleet operations` disclosure.
@@ -240,10 +254,12 @@ After each phase, document:
 
 ## 5. Execution Brief
 
-### Phase group 1 — UI and state isolation
+### Phase group 1 — Unified sidebar and state isolation
 
-**What happens:** Remove cost inputs, create explicit per-mode chat namespaces, and retain the
-shared presentation shell while keeping the two adapters independent.
+**What happens:** Remove all Production-only sidebar controls, create explicit
+per-mode chat namespaces, and retain the shared presentation shell while
+keeping the two adapters independent. Both modes render the same sidebar
+structure; caption copy may differ.
 
 **Integration points:** `app.py` → `heatsafe/ui/copilot_panel.py` → separate Copilot classes.
 
@@ -383,11 +399,13 @@ For this hackathon slice:
 - do not execute the recurring target Job after the approved manual materialization;
 - stop provider work if any relevant Scheduler is unexpectedly `ENABLED`.
 
-### AD-007 — Fixed policy, no sidebar editing
+### AD-007 — Unified mode-only sidebar with fixed policy
 
-Cost and safety policy values remain validated server-side settings. The sidebar does not expose
-editable budget/support fields or an apply button. Removing controls must not remove the optimizer
-constraints.
+The sidebar exposes no area, cost, refresh, reset, or playback controls. It
+retains the brand, two-mode switch, mode-specific caption, and Copilot shell.
+Production area selection remains map-owned. Cost and safety policy values
+remain validated server-side settings; removing their UI controls must not
+remove optimizer constraints.
 
 ### AD-008 — Honest Production labeling
 
@@ -575,9 +593,10 @@ Completed:
 - verified the local artifact checksum, seed 42, warm state, and branch coverage;
 - verified current Scheduler state was `PAUSED`.
 
-### Phase 1 — Isolate chat state and remove sidebar cost controls
+### Phase 1 — Unify both sidebars and isolate chat state
 
-**Status:** ✅ VERIFIED by focused UI/state regression tests.
+**Status:** 🧪 TESTING — local implementation and automated gates pass; manual visual
+confirmation pending.
 
 Implementation:
 
@@ -585,7 +604,11 @@ Implementation:
 - introduce explicit per-mode state namespaces;
 - pass bounded Production-only history to `HeatSafeCopilot`;
 - preserve replay history isolation and frame-bound evidence;
-- remove cost input widgets and their apply handler;
+- remove `Selected area`, `Budget limit`, `Support per driver`,
+  `Apply limits`, `Refresh conditions`, and `Reset view`;
+- render the same sidebar structure in both modes, allowing caption copy to
+  differ;
+- keep area selection in the map/operator component;
 - move/retain fixed policy values in validated server settings;
 - add read-only policy disclosure only where it helps the operator.
 
@@ -595,7 +618,9 @@ Tests:
 - Replay clear does not clear Production;
 - switching mode does not leak pending prompts;
 - replay remains zero-cloud-call;
-- cost widgets and apply event no longer exist;
+- all six screenshot controls and their app-level handlers no longer exist;
+- Production and Event Replay sidebar element ordering is identical except for
+  caption text;
 - fixed policy constraints still reach the optimizer/Copilot facts.
 
 **Done criteria:** focused tests pass and the user confirms the sidebar/chat behavior.
@@ -656,7 +681,8 @@ Tests:
 
 ### Phase 4 — Integrated local runtime verification
 
-**Status:** 🧪 TESTING — automated gates pass; hard-refresh visual confirmation pending.
+**Status:** 🧪 TESTING — automated gates and localhost health pass; hard-refresh visual
+confirmation is assigned to the user.
 
 Implementation/verification:
 
@@ -672,7 +698,7 @@ Implementation/verification:
 
 ### Phase 5 — Approved deploy and cloud proof
 
-**Status:** ✅ VERIFIED except the user visual gate.
+**Status:** ✅ PRIOR REVISION VERIFIED — the new sidebar revision has not been deployed.
 
 Completed:
 
@@ -686,6 +712,9 @@ Completed:
   12ms hot-cache workspace render on the single warm instance;
 - confirmed service health and smoke-tested the exact Production bundle/plan/decision paths.
 
+No image build, Cloud Run deployment, BigQuery mutation, Cloud Run Job execution, or Scheduler
+change was performed for the sidebar revision in this execution.
+
 **Done criteria:** deployed runtime proof is accepted by the user and Scheduler remains OFF.
 
 ## 11. Acceptance Criteria
@@ -694,13 +723,16 @@ Completed:
 - **AC-02:** Their histories, pending prompts, clear actions, adapters, tools, prompts, and evidence
   remain isolated.
 - **AC-03:** Event Replay remains artifact-bound and makes no BigQuery call.
-- **AC-04:** Sidebar budget/support inputs and their apply action are absent.
+- **AC-04:** `Selected area`, `Budget limit`, `Support per driver`,
+  `Apply limits`, `Refresh conditions`, and `Reset view` are absent from the
+  sidebar in both modes; logo, mode switch, caption, and Copilot remain in the
+  same order.
 - **AC-05:** Fixed policy guardrails remain validated server-side.
 - **AC-06:** Production loads only the pinned dataset/run/tick in Section 2.2.
 - **AC-07:** Run is `PAUSED`, all ticks 37–41 are `SUCCEEDED`/`SCORED`, and pending score is null
   before bundle construction.
-- **AC-08:** Selected tick 41 contains 10 zones, 25,146 BQML prediction rows, and 160 TimesFM
-  forecast rows.
+- **AC-08:** Selected tick 40 contains 10 zones, 2,805 active scored drivers, 25,245 BQML
+  prediction rows, and TimesFM forecasts for all 10 zones.
 - **AC-09:** Dashboard and Production Copilot consume the same immutable bundle/lineage.
 - **AC-10:** Missing, partial, mixed, or overwritten evidence fails closed and does not fall
   forward to another run.
@@ -718,14 +750,17 @@ Completed:
 
 ### Phase 1
 
-- [ ] Recheck current chat renderer/adapters and session-state drift.
-- [ ] Add explicit Production and Replay chat namespaces.
-- [ ] Add isolation tests before changing callers.
-- [ ] Pass bounded Production-only history to `HeatSafeCopilot`.
-- [ ] Remove cost widgets/apply handler.
-- [ ] Preserve validated fixed policy settings and test optimizer inputs.
-- [ ] Run focused app/Copilot/replay tests.
-- [ ] Present manual switch/clear steps and stop for user confirmation.
+- [x] Recheck current chat renderer/adapters and session-state drift.
+- [x] Add explicit Production and Replay chat namespaces.
+- [x] Add isolation tests.
+- [x] Pass bounded Production-only history to `HeatSafeCopilot`.
+- [x] Remove all six screenshot controls and their app-level handlers.
+- [x] Make Production and Event Replay sidebar structure identical except for
+  caption copy.
+- [x] Keep map-driven area selection and fixed optimizer constraints working.
+- [x] Preserve validated fixed policy settings and test optimizer inputs.
+- [x] Run focused app/Copilot/replay tests.
+- [x] Present manual switch/clear steps and stop for user confirmation.
 
 ### Phase 2
 
@@ -748,11 +783,13 @@ Completed:
 
 ### Phase 4
 
-- [ ] Run focused and relevant regression suites.
-- [ ] Launch local Streamlit against the cloud-read configuration.
+- [x] Run focused and relevant regression suites.
+- [x] Run localhost through `scripts/run_local_like_cloud_run.sh`, which reads the current
+  allowlisted Cloud Run env and serves this checkout with the pinned BigQuery bundle.
 - [ ] Manually verify both modes after hard refresh.
 - [ ] Verify typography, maps/charts, sidebar overflow, and disclosures.
-- [ ] Verify prompt path performs no training/scoring/simulation execution.
+- [x] Verify by automated/static gates that prompt paths perform no
+  training/scoring/simulation execution.
 - [ ] Collect user screenshots and confirmation.
 
 ### Phase 5
@@ -817,7 +854,7 @@ Explicitly untouched unless a newly discovered blocker requires plan revision:
 |---|---|---|
 | Chat clear/switch isolation | Fully automated AppTest/unit | AC-01, AC-02 |
 | Replay makes zero BigQuery calls | Fully automated fake/spy | AC-03 |
-| Cost controls absent | Fully automated AppTest/static | AC-04 |
+| All screenshot controls absent; both sidebar structures match | Fully automated AppTest/static | AC-04 |
 | Fixed policy reaches optimizer | Fully automated unit | AC-05 |
 | Exact pin in every query | Fully automated query-shape tests | AC-06, AC-10 |
 | Run/tick readiness | Fully automated fakes + hybrid provider read | AC-07 |
@@ -871,23 +908,24 @@ Research implications:
    `process/general-plans/active/unified-sidebar-production-cloud-evidence_29-07-26/unified-sidebar-production-cloud-evidence_PLAN_29-07-26.md`
 
 2. **Last completed phase**
-   Phases 0–3 and provider execution/deploy are complete. Phase 4 awaits user hard-refresh visual
-   confirmation.
+   Phases 0–3 and the prior provider execution/deploy are complete. The revised Phase 1 local
+   implementation and automated verification are complete; Phase 4 awaits the user's hard-refresh
+   visual confirmation. The revised sidebar has not been deployed.
 
 3. **Pinned evidence**
    Dataset `heatsafe_event_replay_v2_20260729`, run
-   `8cf771e3c7d846128224504fa554885b`, tick 41
-   `ed39961b6120b7e9dd92f607ea9974bd`, snapshot
-   `2018f7df247f3248393254c3c5e4026c`.
+   `8cf771e3c7d846128224504fa554885b`, tick 40
+   `0601a7d0124cc4fbbf31aa8cf88960bb`, snapshot
+   `f48767f8cf664fcedbc2b741e63fc906`.
 
 4. **Validate-contract status**
-   Run the installed plan validator after every plan change. The placeholder below remains for the
-   later ADAS validation workflow before EXECUTE.
+   Local execution gates are recorded below. The installed artifact validator is rerun after this
+   plan update.
 
 5. **Next executor action**
-   Capture the final manual screenshot evidence for revision
-   `heatsafe-ops-00011-9s2` if the submission packet requires it; Production
-   runtime and Continue-monitoring telemetry have already been verified.
+   The user hard-refreshes `http://localhost:8501`, checks both modes and the switch/clear behavior,
+   then reports the visual result. Any image build or Cloud Run deployment requires a later
+   explicit instruction.
 
 ### Cursor + RIPER-5 guidance
 
@@ -897,12 +935,47 @@ Research implications:
 - If scope expands into authentication, Scheduler activation, provider data generation, model
   retraining, real dispatch, or React migration, pause and revise this plan.
 
-**Next instruction:** complete the hard-refresh visual gate; do not enable the Scheduler.
+**Next instruction:** wait for localhost visual confirmation; do not deploy or enable the
+Scheduler.
 
 ## Test Infra Improvement Notes
 
-(none identified yet)
+- Added an AppTest sidebar-shape comparison so future mode-specific markup drift fails
+  deterministically without browser automation.
 
 ## Validate Contract
 
-(placeholder — adas-validate-agent writes this section before EXECUTE)
+**Status:** LOCAL EXECUTION RECORDED — formal pre-execution ADAS validation was skipped because the
+installed `adas` CLI was unavailable and the user explicitly authorized direct execution of the
+already-reviewed local-only Phase 1. No provider mutation was authorized.
+
+**Locked scope:**
+
+- edit the Streamlit sidebar, Copilot state/history wiring, validated fixed-policy settings, and
+  focused tests;
+- preserve map-owned area selection, Replay artifact isolation, and existing cloud evidence;
+- do not build, deploy, run cloud jobs, mutate BigQuery, or change Scheduler state.
+
+**Automated gates:**
+
+- `venv/bin/python -m unittest -v tests.test_app` — 9/9 passed, including the fixed-composer
+  container/CSS selector contract;
+- `venv/bin/python -m unittest -v tests.test_core tests.test_replay_copilot
+  tests.test_operator_console tests.test_replay_ui tests.test_cloud_bundle` — 74/74 passed;
+- `venv/bin/python -m unittest -v tests.test_preventive_planning tests.test_production_mode
+  tests.test_simulation_contract` — 44/44 passed;
+- `venv/bin/python -m compileall -q app.py heatsafe tests` — passed;
+- `venv/bin/python -m pip check` — no broken requirements;
+- `git diff --check` — passed;
+- `bash -n scripts/run_local_like_cloud_run.sh` — passed;
+- `http://127.0.0.1:8501/_stcore/health` — `ok`;
+- read-only local cloud-bundle smoke — dataset `heatsafe_event_replay_v2_20260729`, run
+  `8cf771e3c7d846128224504fa554885b`, decision tick 40, snapshot
+  `f48767f8cf664fcedbc2b741e63fc906`, 10 zones, 2,805 active scored drivers,
+  `stateful-replay-v2`, and model `heat-risk-bqml-20260705T103527Z`;
+- AppTest trigger probe — tick-40 dashboard exposed an actionable recommendation; injecting the
+  component's `ACTIVATE` trigger reached the application handler and returned
+  `SIMULATED_PROJECTED`, 3 audit events, and `NOT_APPLICABLE` dispatch without cloud writes.
+
+**Open manual gate:** hard-refresh both modes on localhost, check typography/overflow and chat
+switch/clear behavior, then obtain user confirmation.

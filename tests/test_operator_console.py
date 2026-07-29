@@ -526,14 +526,15 @@ class OperatorBuilderContractTests(unittest.TestCase):
         self.assertEqual(
             [card.label for card in view.city_kpis.cards],
             [
-                "Drivers needing a break now",
-                "Safety coverage",
-                "Budget remaining after this plan",
+                "Mandatory breaks now",
+                "Preventive risk",
+                "Active drivers",
             ],
         )
         self.assertLessEqual(len(view.priority_areas), MAX_PRIORITY_AREAS)
-        self.assertEqual(view.city_kpis.coverage_state, "All covered")
-        self.assertEqual(view.city_kpis.budget_remaining_label, "$160")
+        self.assertIsNone(view.city_kpis.at_risk_within_15m)
+        self.assertEqual(view.city_kpis.cards[1].value, "Not available")
+        self.assertGreater(view.city_kpis.active_drivers, 0)
 
     def test_builder_does_not_mutate_or_replace_authoritative_selection(self):
         before = self.plan

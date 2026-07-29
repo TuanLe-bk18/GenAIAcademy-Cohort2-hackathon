@@ -66,14 +66,17 @@ python infra/ml_pipeline.py --all --scenario heatwave
 
 ## Running Locally
 
-Run Cloud-first mode with Heatwave Replay enabled:
+Run localhost with the current non-secret runtime configuration read directly
+from the deployed `heatsafe-ops` Cloud Run service:
 
 ```bash
-HEATSAFE_MODE=cloud \
-HEATSAFE_SCENARIO=heatwave \
-HEATSAFE_ENABLE_AI=1 \
-streamlit run app.py
+./scripts/run_local_like_cloud_run.sh
 ```
+
+This requires an active `gcloud` login and Application Default Credentials. The
+launcher mirrors only allowlisted app settings, including the pinned Production
+bundle; it does not copy secrets or mutate Cloud Run. The application default
+Production evidence is decision tick 40.
 
 Run Offline Snapshot mode (monitoring-only, fail-closed):
 

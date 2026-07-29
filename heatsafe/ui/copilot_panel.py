@@ -10,11 +10,13 @@ from heatsafe.models import DecisionConstraints, ZoneSnapshot
 from heatsafe.replay_copilot import ReplayCopilot, ReplayCopilotFrame
 from heatsafe.repository import HybridRepository
 
-COPILOT_STATE_VERSION = 16
-COPILOT_CONTEXT_KEY = "gemini_copilot_context"
-COPILOT_SCOPE_KEY = "gemini_copilot_scope"
-COPILOT_MESSAGES_KEY = "gemini_copilot_messages"
-COPILOT_SUGGESTION_NONCE_KEY = "gemini_copilot_suggestion_nonce"
+COPILOT_STATE_VERSION = 17
+PRODUCTION_COPILOT_NAMESPACE = "production_copilot"
+REPLAY_COPILOT_NAMESPACE = "replay_copilot"
+
+
+def _state_key(namespace: str, suffix: str) -> str:
+    return f"{namespace}_{suffix}"
 
 
 def _source_caption(tool: object, source_label: object) -> str:
@@ -55,6 +57,7 @@ def create_copilot(
 
 def _render_chat(
     *,
+    namespace: str,
     scope: str,
     context: str,
     caption: str | None,
@@ -68,6 +71,11 @@ def _render_chat(
     source_label: str | None = None,
 ) -> None:
     """Render the shared chat shell around one context-bound answer function."""
+    context_key = _state_key(namespace, "context")
+    scope_key = _state_key(namespace, "scope")
+    messages_key = _state_key(namespace, "messages")
+    pending_prompt_key = _state_key(namespace, "pending_prompt")
+    suggestion_nonce_key = _state_key(namespace, "suggestion_nonce")
     with st.container(key="gemini-copilot-header"):
         title_column, clear_column = st.columns([5, 1], vertical_alignment="center")
         with title_column:
@@ -77,22 +85,24 @@ def _render_chat(
                 "",
                 icon=":material/delete_sweep:",
                 help="Clear chat history",
-                key="gemini-copilot-clear",
+                key=f"{namespace}-clear",
                 width="stretch",
             )
         if caption:
             st.caption(caption)
-    previous_scope = st.session_state.get(COPILOT_SCOPE_KEY)
-    previous_context = st.session_state.get(COPILOT_CONTEXT_KEY)
+    previous_scope = st.session_state.get(scope_key)
+    previous_context = st.session_state.get(context_key)
     if previous_scope != scope or (
         reset_on_context_change and previous_context != context
     ):
-        st.session_state[COPILOT_MESSAGES_KEY] = []
-    st.session_state[COPILOT_SCOPE_KEY] = scope
-    st.session_state[COPILOT_CONTEXT_KEY] = context
+        st.session_state[messages_key] = []
+        st.session_state.pop(pending_prompt_key, None)
+    st.session_state[scope_key] = scope
+    st.session_state[context_key] = context
     if clear_requested:
-        st.session_state[COPILOT_MESSAGES_KEY] = []
-    messages = st.session_state.setdefault(COPILOT_MESSAGES_KEY, [])
+        st.session_state[messages_key] = []
+        st.session_state.pop(pending_prompt_key, None)
+    messages = st.session_state.setdefault(messages_key, [])
 
     limit = max(1, int(max_messages))
     history_container = st.container(
@@ -117,17 +127,17 @@ def _render_chat(
                     )
 
     suggestion_nonce = int(
-        st.session_state.setdefault(COPILOT_SUGGESTION_NONCE_KEY, 0)
+        st.session_state.setdefault(suggestion_nonce_key, 0)
     )
     with st.container(key="gemini-copilot-composer"):
         selected_suggestion = st.pills(
             "Suggested prompts",
             options=list(suggested_prompts),
-            key=f"gemini-copilot-suggestions-{context}-{suggestion_nonce}",
+            key=f"{namespace}-suggestions-{context}-{suggestion_nonce}",
         )
         typed_question = st.chat_input(
             "Ask Gemini Copilot...",
-            key="gemini-copilot-input",
+            key=f"{namespace}-input",
         )
     suggested_question = (
         suggested_prompts.get(selected_suggestion) if selected_suggestion else None
@@ -135,8 +145,9 @@ def _render_chat(
     question = suggested_question or typed_question
     if not question:
         return
+    st.session_state[pending_prompt_key] = question
     if selected_suggestion:
-        st.session_state[COPILOT_SUGGESTION_NONCE_KEY] = suggestion_nonce + 1
+        st.session_state[suggestion_nonce_key] = suggestion_nonce + 1
 
     history = tuple(messages[-10:])
     messages.append({"role": "user", "content": question})
@@ -172,6 +183,7 @@ def _render_chat(
             "source_label": source_label,
         }
     )
+    st.session_state.pop(pending_prompt_key, None)
     st.rerun()
 
 
@@ -208,24 +220,19 @@ def render_copilot_panel(
     }
 
     def answer_question(
-        question: str, _history: Sequence[Mapping[str, Any]]
+        question: str, history: Sequence[Mapping[str, Any]]
     ) -> tuple[str, str]:
         return create_copilot(
             zones, scenario, constraints, repository=repository
-        ).answer(question)
+        ).answer(question, history)
 
     with st.container(key="gemini-copilot-shell"):
         _render_chat(
+            namespace=PRODUCTION_COPILOT_NAMESPACE,
             scope="current",
             context=context,
-            caption=(
-                "Ask about current heat risk, demand, or SafePause options. "
-                "Answers use verified evidence and cannot approve decisions."
-            ),
-            welcome=(
-                f"I can explain verified conditions for **{selected_zone.name}** "
-                "or compare areas across Hanoi. What would you like to know?"
-            ),
+            caption=None,
+            welcome=None,
             suggested_prompts=prompts,
             answer_question=answer_question,
             max_messages=max_messages,
@@ -266,6 +273,7 @@ def render_replay_copilot_panel(
     copilot = ReplayCopilot(replay_frame)
     with st.container(key="gemini-copilot-shell"):
         _render_chat(
+            namespace=REPLAY_COPILOT_NAMESPACE,
             scope="operations",
             context=context,
             caption=None,
@@ -279,11 +287,9 @@ def render_replay_copilot_panel(
 
 
 __all__ = [
-    "COPILOT_CONTEXT_KEY",
-    "COPILOT_MESSAGES_KEY",
-    "COPILOT_SCOPE_KEY",
     "COPILOT_STATE_VERSION",
-    "COPILOT_SUGGESTION_NONCE_KEY",
+    "PRODUCTION_COPILOT_NAMESPACE",
+    "REPLAY_COPILOT_NAMESPACE",
     "create_copilot",
     "render_copilot_panel",
     "render_replay_copilot_panel",
