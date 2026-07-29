@@ -32,6 +32,10 @@ class SettingsContractTests(unittest.TestCase):
             "cohort2track2.heatsafe_sim_staging",
         )
         self.assertIsNone(settings.simulation_model_dataset)
+        self.assertFalse(settings.production_bundle_enabled)
+        self.assertIsNone(settings.production_bundle_dataset_id)
+        self.assertIsNone(settings.production_bundle_run_id)
+        self.assertEqual(settings.production_bundle_tick_index, 41)
 
     def test_external_identifiers_fail_closed(self):
         invalid = {
@@ -68,6 +72,12 @@ class SettingsContractTests(unittest.TestCase):
                 "heatsafe_data", "project.Data", "project.dataset.extra",
                 "project.dataset`",
             ],
+            "HEATSAFE_PRODUCTION_BUNDLE_DATASET": [
+                "Data", "1data", "data-set", "../bundle",
+            ],
+            "HEATSAFE_PRODUCTION_BUNDLE_RUN_ID": [
+                "abc", "A" * 32, "g" * 32, "../" + "a" * 32,
+            ],
         }
         for variable, values in invalid.items():
             for value in values:
@@ -84,11 +94,35 @@ class SettingsContractTests(unittest.TestCase):
             "HEATSAFE_SIMULATION_SEED": "-1",
             "HEATSAFE_SIMULATION_TICK_MINUTES": "10",
             "HEATSAFE_SIMULATION_LEASE_SECONDS": "59",
+            "HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX": "96",
         }
         for variable, value in cases.items():
             with self.subTest(variable=variable):
                 with patch.dict(os.environ, {variable: value}, clear=True):
                     with self.assertRaises(ValueError):
+                        Settings.from_env()
+
+    def test_production_bundle_configuration_is_atomic(self):
+        valid = {
+            "HEATSAFE_PRODUCTION_BUNDLE_DATASET": "heatsafe_bundle_20260729",
+            "HEATSAFE_PRODUCTION_BUNDLE_RUN_ID": "a" * 32,
+            "HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX": "41",
+        }
+        with patch.dict(os.environ, valid, clear=True):
+            settings = Settings.from_env()
+        self.assertTrue(settings.production_bundle_enabled)
+        self.assertEqual(
+            settings.production_bundle_dataset_id,
+            "heatsafe_bundle_20260729",
+        )
+        for missing in (
+            "HEATSAFE_PRODUCTION_BUNDLE_DATASET",
+            "HEATSAFE_PRODUCTION_BUNDLE_RUN_ID",
+        ):
+            incomplete = {key: value for key, value in valid.items() if key != missing}
+            with self.subTest(missing=missing):
+                with patch.dict(os.environ, incomplete, clear=True):
+                    with self.assertRaisesRegex(ValueError, "must be set together"):
                         Settings.from_env()
 
 

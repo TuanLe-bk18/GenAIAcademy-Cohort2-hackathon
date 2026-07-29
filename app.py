@@ -9,6 +9,12 @@ from uuid import uuid4
 import streamlit as st
 
 from heatsafe.audit import HybridInterventionAuditStore
+from heatsafe.cloud_bundle import (
+    CloudProductionBundle,
+    ProductionBundleUnavailable,
+    load_cloud_production_bundle,
+)
+from heatsafe.config import Settings
 from heatsafe.models import (
     DecisionConstraints,
     PredictiveCityPlan,
@@ -97,6 +103,38 @@ def load_current_session() -> ProductionSession:
     if session.status != "AWAITING_DECISION" or session.decision_evidence is None:
         raise RuntimeError("verified current conditions did not reach a decision state")
     return session
+
+
+@st.cache_resource(show_spinner="Loading live conditions…")
+def load_current_cloud_bundle() -> CloudProductionBundle:
+    """Load and validate one configured five-tick cloud bundle."""
+    started = time.perf_counter()
+    bundle = load_cloud_production_bundle(Settings.from_env())
+    log_event(
+        "production_bundle_cache_miss_completed",
+        duration_ms=round((time.perf_counter() - started) * 1_000),
+        simulation_run_id=bundle.simulation_run_id,
+        tick_index=bundle.tick_index,
+    )
+    return bundle
+
+
+@st.cache_resource(
+    show_spinner="Preparing the city safety plan…",
+    max_entries=8,
+)
+def load_current_cloud_plan(
+    constraints: DecisionConstraints,
+) -> PredictiveCityPlan:
+    """Cache immutable-bundle planning across Streamlit reruns."""
+    started = time.perf_counter()
+    plan = load_current_cloud_bundle().build_plan(constraints)
+    log_event(
+        "production_plan_cache_miss_completed",
+        duration_ms=round((time.perf_counter() - started) * 1_000),
+        portfolio_id=plan.portfolio_id,
+    )
+    return plan
 
 
 def _playback_view(session: ProductionSession) -> OperatorPlaybackView:
@@ -258,9 +296,9 @@ def _apply_action(
         st.session_state.production_window_last_advance = time.monotonic()
         return
 
-    audit = HybridInterventionAuditStore()
     receipt: SimulatedControlReceipt
     if action == "ACTIVATE":
+        audit = HybridInterventionAuditStore()
         receipt = activate_simulated_plan(
             plan,
             audit_store=audit,
@@ -340,10 +378,30 @@ if isinstance(active_session, ProductionSession) and sidebar_result.playback_act
     st.rerun()
 
 def live_operator_workspace() -> None:
+    workspace_started = time.perf_counter()
     mode = str(st.session_state.get(MODE_KEY, "current"))
     accelerated = mode == "accelerated-production"
     session = get_production_session() if accelerated else None
-    evidence_session = session if session is not None else load_current_session()
+    settings = Settings.from_env()
+    cloud_bundle: CloudProductionBundle | None = None
+    evidence_session: ProductionSession | None = session
+    if session is None and settings.production_bundle_enabled:
+        try:
+            cloud_bundle = load_current_cloud_bundle()
+        except ProductionBundleUnavailable as exc:
+            log_event(
+                "production_bundle_unavailable",
+                severity="ERROR",
+                error_type=type(exc).__name__,
+            )
+            st.error(
+                "Live conditions are temporarily unavailable because the "
+                "configured evidence bundle did not pass integrity checks.",
+                icon=":material/cloud_off:",
+            )
+            return
+    elif session is None:
+        evidence_session = load_current_session()
 
     if session is not None and session.status == "RUNNING":
         interval = {
@@ -354,18 +412,23 @@ def live_operator_workspace() -> None:
         _advance_once(session, interval)
 
     constraints = _constraints()
-    evidence = (
-        evidence_session.decision_evidence
-        if evidence_session.status == "AWAITING_DECISION"
-        and evidence_session.decision_evidence is not None
-        else build_production_evidence(
-            evidence_session.actual_result,
-            fixture=evidence_session.fixture,
-            zones=evidence_session.zones,
-            constraints=constraints,
+    evidence = None
+    if cloud_bundle is not None:
+        zones = cloud_bundle.zones
+    else:
+        assert evidence_session is not None
+        evidence = (
+            evidence_session.decision_evidence
+            if evidence_session.status == "AWAITING_DECISION"
+            and evidence_session.decision_evidence is not None
+            else build_production_evidence(
+                evidence_session.actual_result,
+                fixture=evidence_session.fixture,
+                zones=evidence_session.zones,
+                constraints=constraints,
+            )
         )
-    )
-    zones = tuple(evidence.zones)
+        zones = tuple(evidence.zones)
     valid_zone_ids = {zone.zone_id for zone in zones}
     selected_zone_id = str(
         st.session_state.get(AREA_KEY)
@@ -382,14 +445,18 @@ def live_operator_workspace() -> None:
     plan: PredictiveCityPlan | None = None
     planning_issue: str | None = None
     try:
-        forecast_input = build_accelerated_forecast_input(
-            evidence_session.actual_result,
-            fixture=evidence_session.fixture,
-            zones=evidence_session.zones,
-        )
-        plan = build_predictive_city_plan(
-            project_city_forecast(forecast_input), constraints
-        )
+        if cloud_bundle is not None:
+            plan = load_current_cloud_plan(constraints)
+        else:
+            assert evidence_session is not None
+            forecast_input = build_accelerated_forecast_input(
+                evidence_session.actual_result,
+                fixture=evidence_session.fixture,
+                zones=evidence_session.zones,
+            )
+            plan = build_predictive_city_plan(
+                project_city_forecast(forecast_input), constraints
+            )
     except Exception as exc:
         planning_issue = type(exc).__name__
         log_event(
@@ -398,9 +465,16 @@ def live_operator_workspace() -> None:
             error_type=planning_issue,
         )
 
-    selected_decision = _selected_decision(
-        evidence, zones, selected_zone_id, constraints
-    )
+    if cloud_bundle is not None:
+        # The city plan already owns the authoritative proposal for every zone.
+        # Avoid repeating forecast reads and recommendation scoring for the
+        # selected zone merely to rebuild the same evidence proposal.
+        selected_decision = None
+    else:
+        assert evidence is not None
+        selected_decision = _selected_decision(
+            evidence, zones, selected_zone_id, constraints
+        )
     outcome = None
     if session is not None and session.choice == "ACTIVATE":
         outcome = build_safepause_outcome_view(
@@ -472,6 +546,7 @@ def live_operator_workspace() -> None:
         and plan is not None
         and recorded is None
     ):
+        action_started = time.perf_counter()
         st.session_state.operator_recording = True
         try:
             _apply_action(
@@ -483,6 +558,13 @@ def live_operator_workspace() -> None:
             )
         finally:
             st.session_state.operator_recording = False
+        log_event(
+            "production_action_applied",
+            action=operations_result.decision_action,
+            duration_ms=round(
+                (time.perf_counter() - action_started) * 1_000
+            ),
+        )
         st.rerun()
 
     with st.sidebar:
@@ -491,9 +573,22 @@ def live_operator_workspace() -> None:
             selected_zone,
             selected_zone.scenario_id,
             constraints,
-            repository=evidence,
+            repository=(
+                cloud_bundle.repository
+                if cloud_bundle is not None
+                else evidence
+            ),
             max_messages=8,
             refresh_token=str(st.session_state.get("refresh_token", "current")),
+        )
+    if cloud_bundle is not None:
+        log_event(
+            "production_workspace_render_completed",
+            duration_ms=round(
+                (time.perf_counter() - workspace_started) * 1_000
+            ),
+            recorded_action=recorded,
+            selected_zone_id=selected_zone_id,
         )
 
 

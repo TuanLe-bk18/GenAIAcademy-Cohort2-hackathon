@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, TypedDict, cast
@@ -258,11 +259,28 @@ def build_current_forecast_input(
     ordered = _validated_zones(zones, expected_zone_count=expected_zone_count)
     zone_ids = [zone.zone_id for zone in ordered]
     snapshot_id = ordered[0].snapshot_id
-    features_by_zone = repository.load_driver_features_many(zone_ids, snapshot_id)
-    predictions_by_zone = repository.load_driver_predictions_many(
-        zone_ids, snapshot_id
-    )
-    forecasts = repository.forecast_demand_many(zone_ids, 120)
+    with ThreadPoolExecutor(
+        max_workers=3,
+        thread_name_prefix="heatsafe-current-evidence",
+    ) as pool:
+        features_future = pool.submit(
+            repository.load_driver_features_many,
+            zone_ids,
+            snapshot_id,
+        )
+        predictions_future = pool.submit(
+            repository.load_driver_predictions_many,
+            zone_ids,
+            snapshot_id,
+        )
+        forecasts_future = pool.submit(
+            repository.forecast_demand_many,
+            zone_ids,
+            120,
+        )
+        features_by_zone = features_future.result()
+        predictions_by_zone = predictions_future.result()
+        forecasts = forecasts_future.result()
     heat_by_zone = _current_heat(ordered)
 
     zone_inputs: list[ForecastZoneInput] = []
@@ -281,6 +299,14 @@ def build_current_forecast_input(
             zone_id=zone.zone_id,
             snapshot_id=snapshot_id,
         )
+        predictions_by_driver: dict[
+            str, list[DriverActionPrediction]
+        ] = {}
+        for prediction in predictions:
+            predictions_by_driver.setdefault(
+                prediction.driver_id_hash,
+                [],
+            ).append(prediction)
         prediction_run_ids.update(runs)
         model_versions.update(versions)
         if (
@@ -319,11 +345,7 @@ def build_current_forecast_input(
                     top_factors=item.top_factors,
                 )
                 for item in sorted(
-                    (
-                        prediction
-                        for prediction in predictions
-                        if prediction.driver_id_hash == feature.driver_id_hash
-                    ),
+                    predictions_by_driver.get(feature.driver_id_hash, ()),
                     key=lambda item: (
                         item.pause_start_delay_minutes,
                         item.pause_duration_minutes,

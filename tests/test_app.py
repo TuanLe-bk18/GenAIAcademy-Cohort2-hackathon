@@ -212,8 +212,8 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertEqual(len(app.sidebar.chat_input), 1)
         self.assertTrue(
             any(
-                "Replaying a historical heatwave scenario, fully pre-processed by "
-                "BigQuery ML, TimeFM, and the Safety Optimizer."
+                "Replaying the reviewed historical heatwave scenario with the "
+                "deterministic Safety Optimizer."
                 in str(item.value)
                 for item in app.sidebar.caption
             )

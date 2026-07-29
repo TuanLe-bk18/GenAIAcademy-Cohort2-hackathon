@@ -25,6 +25,7 @@ _SIMULATION_GENERATOR_VERSIONS = frozenset(
     {"stateful-replay-v1", "stateful-replay-v2"}
 )
 _SIMULATION_STATE_MODES = frozenset({"oracle", "checkpoint"})
+_RUN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _require_match(name: str, value: str, pattern: re.Pattern[str]) -> None:
@@ -92,6 +93,9 @@ class Settings:
     simulation_state_mode: str = "oracle"
     simulation_staging_workers: int = 1
     simulation_model_dataset: str | None = None
+    production_bundle_dataset_id: str | None = None
+    production_bundle_run_id: str | None = None
+    production_bundle_tick_index: int = 41
 
     def __post_init__(self) -> None:
         _require_match("GOOGLE_CLOUD_PROJECT", self.project_id, _PROJECT_ID_RE)
@@ -160,6 +164,32 @@ class Settings:
             raise ValueError(
                 "HEATSAFE_SIMULATION_MODEL_DATASET must be project.dataset"
             )
+        if (
+            self.production_bundle_dataset_id is not None
+            and not _DATASET_ID_RE.fullmatch(self.production_bundle_dataset_id)
+        ):
+            raise ValueError(
+                "HEATSAFE_PRODUCTION_BUNDLE_DATASET has an invalid value"
+            )
+        if (
+            self.production_bundle_run_id is not None
+            and not _RUN_ID_RE.fullmatch(self.production_bundle_run_id)
+        ):
+            raise ValueError(
+                "HEATSAFE_PRODUCTION_BUNDLE_RUN_ID must be a lowercase "
+                "32-character hex ID"
+            )
+        if not 0 <= self.production_bundle_tick_index <= 95:
+            raise ValueError(
+                "HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX must be in 0..95"
+            )
+        if (self.production_bundle_dataset_id is None) != (
+            self.production_bundle_run_id is None
+        ):
+            raise ValueError(
+                "HEATSAFE_PRODUCTION_BUNDLE_DATASET and "
+                "HEATSAFE_PRODUCTION_BUNDLE_RUN_ID must be set together"
+            )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -227,6 +257,18 @@ class Settings:
             simulation_model_dataset=(
                 os.getenv("HEATSAFE_SIMULATION_MODEL_DATASET") or None
             ),
+            production_bundle_dataset_id=(
+                os.getenv("HEATSAFE_PRODUCTION_BUNDLE_DATASET") or None
+            ),
+            production_bundle_run_id=(
+                os.getenv("HEATSAFE_PRODUCTION_BUNDLE_RUN_ID") or None
+            ),
+            production_bundle_tick_index=_parse_int(
+                "HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX",
+                "41",
+                minimum=0,
+                maximum=95,
+            ),
         )
 
     @property
@@ -236,3 +278,10 @@ class Settings:
     @property
     def simulation_staging_dataset_path(self) -> str:
         return f"{self.project_id}.{self.simulation_staging_dataset_id}"
+
+    @property
+    def production_bundle_enabled(self) -> bool:
+        return (
+            self.production_bundle_dataset_id is not None
+            and self.production_bundle_run_id is not None
+        )

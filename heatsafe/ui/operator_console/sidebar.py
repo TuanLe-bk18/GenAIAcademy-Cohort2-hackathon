@@ -173,8 +173,8 @@ def render_sidebar(
                 playback_speed = playback_speed_value
         elif resolved_mode == "accelerated-production":
             st.caption(
-                "Replaying a historical heatwave scenario, fully pre-processed by "
-                "BigQuery ML, TimeFM, and the Safety Optimizer."
+                "Replaying the reviewed historical heatwave scenario with the "
+                "deterministic Safety Optimizer."
             )
 
         refresh_requested = False

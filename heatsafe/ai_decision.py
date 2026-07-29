@@ -91,6 +91,7 @@ def _build_candidate(
     model_version: str,
     mandatory_ids: set[str] | None = None,
     preventive_ids: set[str] | None = None,
+    exposure_by_driver: dict[str, int] | None = None,
     start_delay_minutes: int = 0,
     min_action_reduction: float = MIN_ACTION_RISK_REDUCTION,
 ) -> SafePauseProposal | None:
@@ -111,17 +112,13 @@ def _build_candidate(
     if waves > len(available_wave_delays):
         return None
     waves = max(1, min(waves, len(available_wave_delays), selected_count))
-    exposure_by_driver = {
-        driver_id: next(
-            (
-                item.exposure_minutes
-                for key, item in actions.items()
-                if key[0] == driver_id
-            ),
-            0,
-        )
-        for driver_id in eligible_ids
-    }
+    if exposure_by_driver is None:
+        exposure_by_driver = {}
+        for item in actions.values():
+            exposure_by_driver.setdefault(
+                item.driver_id_hash,
+                item.exposure_minutes,
+            )
     mandatory_remaining = sorted(
         mandatory_ids,
         key=lambda driver_id: (
@@ -430,6 +427,12 @@ def recommend_ai_intervention(
     preventive_ids = (
         frozenset(preventive_ids) & frozenset(exposure_by_driver)
     ) - mandatory_ids
+    max_reduction_by_driver: dict[str, float] = {}
+    for item in actions.values():
+        max_reduction_by_driver[item.driver_id_hash] = max(
+            max_reduction_by_driver.get(item.driver_id_hash, 0.0),
+            item.risk_reduction,
+        )
     missing_mandatory_actions = {
         driver_id
         for driver_id in mandatory_ids
@@ -459,14 +462,7 @@ def recommend_ai_intervention(
             driver_id
             for driver_id, risk in baseline.items()
             if risk >= MIN_BASELINE_RISK
-            and max(
-                (
-                    item.risk_reduction
-                    for key, item in actions.items()
-                    if key[0] == driver_id
-                ),
-                default=0.0,
-            )
+            and max_reduction_by_driver.get(driver_id, 0.0)
             >= MIN_ACTION_RISK_REDUCTION
         },
         key=lambda driver_id: (
@@ -518,6 +514,7 @@ def recommend_ai_intervention(
                         model_version=next(iter(model_versions)),
                         mandatory_ids=mandatory_ids,
                         preventive_ids=set(preventive_ids),
+                        exposure_by_driver=exposure_by_driver,
                         start_delay_minutes=start_delay,
                     )
                     if candidate is not None:
@@ -598,6 +595,9 @@ def evaluate_rule_reference(
     if not predictions:
         return None
     baseline, actions = _prediction_index(predictions)
+    exposure_by_driver = {
+        item.driver_id_hash: item.exposure_minutes for item in predictions
+    }
     rule_ids = sorted(
         {
             item.driver_id_hash
@@ -626,12 +626,8 @@ def evaluate_rule_reference(
         mandatory_ids={
             driver_id
             for driver_id in rule_ids
-            if next(
-                item.exposure_minutes
-                for item in predictions
-                if item.driver_id_hash == driver_id
-            )
-            >= MANDATORY_EXPOSURE_MINUTES
+            if exposure_by_driver[driver_id] >= MANDATORY_EXPOSURE_MINUTES
         },
+        exposure_by_driver=exposure_by_driver,
         min_action_reduction=0.0,
     )
