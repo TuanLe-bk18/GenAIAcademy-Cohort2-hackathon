@@ -1,13 +1,14 @@
 """Browser-local, display-only operator playback.
 
-Streamlit fragments still clear and redraw their child elements. This CCv2 surface
-keeps one stable DOM and advances a precomputed timeline entirely in the browser so
-Play and Next do not run Python, the simulator, the optimizer, or a Streamlit rerun.
+This CCv2 surface advances a precomputed timeline in the browser and emits only the
+current tick, branch, and selected zone back to Streamlit for replay-bound features.
+Playback never reruns the simulator or optimizer.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from functools import lru_cache
@@ -31,10 +32,12 @@ DEFAULT_TIMELINE = (
 
 @dataclass(frozen=True)
 class OperatorDashboardResult:
-    """Python intents emitted only by the live Current-plan dashboard."""
+    """Bounded intents and replay context emitted by the shared dashboard."""
 
     selected_zone_id: str | None = None
     decision_action: str | None = None
+    replay_tick_index: int | None = None
+    replay_branch: str | None = None
 
 
 def _json_safe(value: Any) -> Any:
@@ -339,6 +342,7 @@ function selectZone(state, zoneId) {
   state.selectedZone = zoneId
   render(state)
   if (isCurrent(state)) state.setTriggerValue?.("selected_zone_id", zoneId)
+  else emitReplayState(state)
 }
 function tweenNumber(node, next) {
   if (!node) return
@@ -369,6 +373,20 @@ function currentFrame(state) {
   const frames = displayFrames(state)
   return frames[Math.min(state.index, Math.max(0, frames.length - 1))]
 }
+function emitReplayState(state) {
+  if (isCurrent(state)) return
+  const frame = currentFrame(state)
+  if (!frame || !state.selectedZone) return
+  const value = {
+    tick: Number(frame.tick),
+    selected_zone_id: state.selectedZone,
+    branch: state.choice || frame.branch || "PRE_DECISION",
+  }
+  const signature = JSON.stringify(value)
+  if (signature === state.lastEmittedReplayState) return
+  state.lastEmittedReplayState = signature
+  state.setStateValue?.("replay_state", value)
+}
 function stop(state) {
   if (state.timer) clearInterval(state.timer)
   state.timer = null
@@ -383,6 +401,7 @@ function step(state) {
   if (!canAdvance(state)) { stop(state); render(state); return }
   state.index += 1
   render(state)
+  emitReplayState(state)
   if (!canAdvance(state)) { stop(state); render(state) }
 }
 function start(state) {
@@ -1012,12 +1031,12 @@ function render(state) {
   renderDecision(state, frame, zone)
   renderInsights(state, frame, zone)
 }
-function mount(root, data, setTriggerValue) {
+function mount(root, data, setTriggerValue, setStateValue) {
   const selected = data.pre_decision?.[0]?.zones?.find((zone) => zone.selected)
-  const state = { root, data, setTriggerValue, index:0, choice:null, selectedZone:selected?.id || null, speed:"normal", mapMetric:"heat", mapZoom:11, insightView:"timing", insightScope:"selected", running:false, timer:null }
+  const state = { root, data, setTriggerValue, setStateValue, index:0, choice:null, selectedZone:selected?.id || null, speed:"normal", mapMetric:"heat", mapZoom:11, insightView:"timing", insightScope:"selected", running:false, timer:null, lastEmittedReplayState:null }
   q(root, '[data-action="play"]').onclick = () => { if (state.running) { stop(state); render(state) } else start(state) }
   q(root, '[data-action="next"]').onclick = () => step(state)
-  q(root, '[data-action="reset"]').onclick = () => { stop(state); state.index=0; state.choice=null; state.selectedZone=null; render(state) }
+  q(root, '[data-action="reset"]').onclick = () => { stop(state); state.index=0; state.choice=null; state.selectedZone=null; render(state); emitReplayState(state) }
   q(root, "[data-speed]").onchange = (event) => { state.speed=event.target.value; if (state.running) start(state) }
   q(root, "[data-map-metric]").onchange = (event) => { state.mapMetric=event.target.value; render(state) }
   q(root, "[data-map-zoom-in]").onclick = () => { state.mapZoom=Math.min(12, state.mapZoom + 1); render(state) }
@@ -1030,6 +1049,7 @@ function mount(root, data, setTriggerValue) {
       if (isCurrent(state)) state.setTriggerValue?.("decision_action", button.dataset.choice)
       else state.choice=button.dataset.choice
       render(state)
+      emitReplayState(state)
     }
   })
   state.resizeObserver = new ResizeObserver(() => render(state))
@@ -1039,13 +1059,14 @@ function mount(root, data, setTriggerValue) {
   return state
 }
 export default function(component) {
-  const { data, parentElement, setTriggerValue } = component
+  const { data, parentElement, setTriggerValue, setStateValue } = component
   let state = INSTANCES.get(parentElement)
-  if (!state) state = mount(parentElement, data, setTriggerValue)
+  if (!state) state = mount(parentElement, data, setTriggerValue, setStateValue)
   else {
     const modeChanged = state.data.mode !== data.mode
     state.data = data
     state.setTriggerValue = setTriggerValue
+    state.setStateValue = setStateValue
     state.index = Math.min(state.index, sequence(state).length - 1)
     if (modeChanged) {
       stop(state); state.index=0; state.choice=null
@@ -1081,6 +1102,79 @@ def load_presentation_timeline(path: str = str(DEFAULT_TIMELINE)) -> dict[str, A
     return value
 
 
+def _parse_replay_state(
+    data: Mapping[str, Any], value: Any
+) -> tuple[int | None, str | None, str | None]:
+    """Resolve one atomic browser cursor against the immutable replay payload."""
+    if data.get("mode") != "replay":
+        return None, None, None
+    pre_decision = data.get("pre_decision")
+    if not isinstance(pre_decision, list) or not pre_decision:
+        return None, None, None
+
+    default_frame = pre_decision[0]
+    if not isinstance(default_frame, Mapping):
+        return None, None, None
+    default_zones = default_frame.get("zones")
+    if not isinstance(default_zones, list) or not default_zones:
+        return None, None, None
+    default_zone = next(
+        (
+            zone
+            for zone in default_zones
+            if isinstance(zone, Mapping) and zone.get("selected")
+        ),
+        default_zones[0],
+    )
+    if not isinstance(default_zone, Mapping):
+        return None, None, None
+    default_tick = default_frame.get("tick")
+    default_zone_id = default_zone.get("id")
+    default_branch = default_frame.get("branch", "PRE_DECISION")
+    fallback = (
+        default_tick if isinstance(default_tick, int) and not isinstance(default_tick, bool) else None,
+        default_zone_id if isinstance(default_zone_id, str) and default_zone_id else None,
+        default_branch if default_branch in {"PRE_DECISION", "ACTIVATE", "CONTINUE"} else "PRE_DECISION",
+    )
+    if not isinstance(value, Mapping):
+        return fallback
+
+    tick = value.get("tick")
+    zone_id = value.get("selected_zone_id")
+    branch = value.get("branch")
+    if (
+        not isinstance(tick, int)
+        or isinstance(tick, bool)
+        or not isinstance(zone_id, str)
+        or not zone_id
+        or branch not in {"PRE_DECISION", "ACTIVATE", "CONTINUE"}
+    ):
+        return fallback
+
+    candidate_frames = list(pre_decision)
+    branches = data.get("branches")
+    if branch in {"ACTIVATE", "CONTINUE"} and isinstance(branches, Mapping):
+        branch_frames = branches.get(branch)
+        if isinstance(branch_frames, list):
+            candidate_frames.extend(branch_frames)
+    frame = next(
+        (
+            item
+            for item in candidate_frames
+            if isinstance(item, Mapping) and item.get("tick") == tick
+        ),
+        None,
+    )
+    if not isinstance(frame, Mapping):
+        return fallback
+    zones = frame.get("zones")
+    if not isinstance(zones, list) or not any(
+        isinstance(zone, Mapping) and zone.get("id") == zone_id for zone in zones
+    ):
+        return fallback
+    return tick, zone_id, str(branch)
+
+
 def _render_dashboard_component(
     data: dict[str, Any],
     *,
@@ -1103,20 +1197,30 @@ def _render_dashboard_component(
         height="content",
         on_selected_zone_id_change=lambda: None,
         on_decision_action_change=lambda: None,
+        on_replay_state_change=lambda: None,
     )
     selected_zone_id = getattr(result, "selected_zone_id", None)
     decision_action = getattr(result, "decision_action", None)
+    replay_tick, replay_zone, replay_branch = _parse_replay_state(
+        data, getattr(result, "replay_state", None)
+    )
     return OperatorDashboardResult(
         selected_zone_id=(
-            selected_zone_id
-            if isinstance(selected_zone_id, str) and selected_zone_id
-            else None
+            replay_zone
+            if data.get("mode") == "replay"
+            else (
+                selected_zone_id
+                if isinstance(selected_zone_id, str) and selected_zone_id
+                else None
+            )
         ),
         decision_action=(
             str(decision_action)
             if decision_action in {"ACTIVATE", "CONTINUE"}
             else None
         ),
+        replay_tick_index=replay_tick,
+        replay_branch=replay_branch,
     )
 
 
@@ -1144,9 +1248,9 @@ def render_presentation_playback(
     timeline: dict[str, Any] | None = None,
     *,
     key: str = "operator-dashboard",
-) -> None:
-    """Render immutable replay through the shared operator dashboard."""
-    _render_dashboard_component(
+) -> OperatorDashboardResult:
+    """Render immutable replay and return its bounded browser context."""
+    return _render_dashboard_component(
         timeline or load_presentation_timeline(),
         key=key,
     )

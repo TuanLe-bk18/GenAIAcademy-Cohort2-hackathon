@@ -1,6 +1,10 @@
 """Composable Streamlit UI for HeatSafe AI Ops."""
 
-from .copilot_panel import create_copilot, render_copilot_panel
+from .copilot_panel import (
+    create_copilot,
+    render_copilot_panel,
+    render_replay_copilot_panel,
+)
 from .city_planner import (
     build_city_planner_view,
     build_unavailable_city_planner_view,
@@ -44,6 +48,7 @@ __all__ = [
     "render_city_plan_copilot",
     "render_city_planner",
     "render_copilot_panel",
+    "render_replay_copilot_panel",
     "render_decision_workspace",
     "render_driver_evidence",
     "render_evidence_tabs",

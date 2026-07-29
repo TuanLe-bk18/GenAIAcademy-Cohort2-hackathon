@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Iterable, Literal
@@ -26,7 +26,12 @@ from .models import (
     SafePauseProposal,
     ZoneSnapshot,
 )
-from .repository import DemandForecast, ForecastPoint
+from .repository import (
+    AIModelUnavailable,
+    DemandForecast,
+    ForecastPoint,
+    ForecastUnavailable,
+)
 from .services.decision_service import CityPlanRow, CityWidePlan, UnavailableZone
 from .services.preventive_planning import (
     build_accelerated_forecast_input,
@@ -139,6 +144,53 @@ class ProductionEvidence:
             (forecast for forecast in self.forecasts if forecast.zone_id == zone_id),
             None,
         )
+
+    def load(self) -> ProductionEvidence:
+        """Expose this exact decision point through the Copilot repository contract."""
+        return self
+
+    def forecast_demand(
+        self, zone_id: str, horizon_minutes: int = 60
+    ) -> DemandForecast:
+        forecast = self.forecast_for(zone_id)
+        if forecast is None:
+            raise ForecastUnavailable(f"No current forecast for zone {zone_id!r}")
+        horizon = max(15, min(240, int(horizon_minutes)))
+        interval_count = max(1, round(horizon / 15))
+        if horizon > forecast.horizon_minutes or interval_count > len(forecast.points):
+            raise ForecastUnavailable(
+                f"Current evidence covers {forecast.horizon_minutes} minutes, not {horizon}"
+            )
+        points = forecast.points[:interval_count]
+        return replace(
+            forecast,
+            horizon_minutes=horizon,
+            predicted_requests=sum(point.predicted_requests for point in points),
+            points=points,
+        )
+
+    def forecast_demand_many(
+        self, zone_ids: list[str], horizon_minutes: int = 60
+    ) -> dict[str, DemandForecast]:
+        return {
+            zone_id: self.forecast_demand(zone_id, horizon_minutes)
+            for zone_id in zone_ids
+        }
+
+    def load_driver_predictions(
+        self, zone_id: str, snapshot_id: str
+    ) -> tuple[DriverActionPrediction, ...]:
+        zone = next((item for item in self.zones if item.zone_id == zone_id), None)
+        if zone is None or zone.snapshot_id != snapshot_id:
+            raise AIModelUnavailable("Copilot evidence does not match the active decision point")
+        predictions = tuple(
+            item
+            for item in self.predictions
+            if item.zone_id == zone_id and item.snapshot_id == snapshot_id
+        )
+        if not predictions:
+            raise AIModelUnavailable("No current driver predictions for the selected zone")
+        return predictions
 
 
 @dataclass(frozen=True)

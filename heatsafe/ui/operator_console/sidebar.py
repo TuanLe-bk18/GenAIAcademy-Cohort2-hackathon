@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,7 +44,6 @@ def render_sidebar(
     playback: OperatorPlaybackView | None = None,
     mode: str | None = None,
     area_options: Sequence[tuple[str, str]] = (),
-    system_details: Mapping[str, str] | None = None,
     key_prefix: str = "operator-sidebar",
 ) -> OperatorSidebarResult:
     """Render app-level controls and return intents without executing domain commands."""
@@ -54,19 +53,25 @@ def render_sidebar(
         else "current"
     )
     with st.sidebar:
-        logo_column, brand_column = st.columns([1.2, 2.0], vertical_alignment="center")
-        with logo_column:
+        with st.container(
+            horizontal=True,
+            horizontal_alignment="left",
+            vertical_alignment="center",
+            gap="small",
+        ):
             st.image(str(_LOGO_PATH), width=90)
-        with brand_column:
             st.markdown(
-                '<div class="operator-sidebar-brand" style="line-height: 1.1; margin-bottom: 4px;">'
-                '<span style="color: #ff8c00;">Heat</span><span style="color: #00e5ff;">Safe</span><span style="color: #ffffff;">AI</span><br>'
-                '<span style="color: #ffffff;">OPS</span></div>'
-                '<div style="font-size: 0.65em; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px;">MONITOR — ALERT — PROTECT</div>',
+                '<div class="operator-sidebar-copy">'
+                '<div class="operator-sidebar-brand">'
+                '<span class="operator-brand-heat">Heat</span>'
+                '<span class="operator-brand-safe">Safe</span>'
+                '<span class="operator-brand-text">AI</span><br>'
+                '<span class="operator-brand-text">OPS</span></div>'
+                '<div class="operator-sidebar-tagline">MONITOR — ALERT — PROTECT</div>'
+                '</div>',
                 unsafe_allow_html=True,
             )
 
-        st.subheader("Operator controls")
         mode = st.segmented_control(
             "Mode",
             ("current", "accelerated-production"),
@@ -75,6 +80,7 @@ def render_sidebar(
                 "PRODUCTION" if item == "current" else "EVENT REPLAY"
             ),
             key=f"{key_prefix}:mode",
+            label_visibility="collapsed",
         )
         resolved_mode = (
             mode
@@ -167,8 +173,8 @@ def render_sidebar(
                 playback_speed = playback_speed_value
         elif resolved_mode == "accelerated-production":
             st.caption(
-                "Play, Next 15 min, Reset, speed, area selection, and the "
-                "decision path run inside the smooth display replay."
+                "Replaying a historical heatwave scenario, fully pre-processed by "
+                "BigQuery ML, TimeFM, and the Safety Optimizer."
             )
 
         refresh_requested = False
@@ -184,12 +190,7 @@ def render_sidebar(
                 key=f"{key_prefix}:reset",
                 width="stretch",
             )
-        with st.expander("Advanced system details", expanded=False):
-            if system_details:
-                for label, value in system_details.items():
-                    st.caption(f"{label}: {value}")
-            else:
-                st.caption("No additional system details are available for this view.")
+
 
     return OperatorSidebarResult(
         mode=resolved_mode,

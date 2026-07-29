@@ -92,6 +92,20 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertIn("renderBasemap(state, projection)", component.js_content)
         self.assertIn('data-insight-scope', component.html_content)
         self.assertIn('data-choice="ACTIVATE"', component.html_content)
+        self.assertEqual(len(app.sidebar.chat_input), 1)
+        self.assertEqual(
+            app.sidebar.chat_input[0].placeholder,
+            "Ask Gemini Copilot...",
+        )
+        self.assertIsNotNone(
+            self.widget(app.sidebar.get("button_group"), "Suggested prompts")
+        )
+        self.assertTrue(
+            any(
+                "Gemini Copilot" in str(item.value)
+                for item in app.sidebar.markdown
+            )
+        )
         self.assert_operator_vocabulary(app)
 
         initial_token = app.session_state["refresh_token"]
@@ -190,8 +204,43 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertIn("frame.city.coverage?.mandatory", component.js_content)
         self.assertIn('data-action="play"', component.html_content)
         self.assertIn("setInterval", component.js_content)
-        self.assertNotIn("setStateValue", component.js_content)
+        self.assertIn('setStateValue?.("replay_state"', component.js_content)
+        self.assertIn("lastEmittedReplayState", component.js_content)
+        self.assertIn("selected_zone_id: state.selectedZone", component.js_content)
+        self.assertIn("branch: state.choice || frame.branch", component.js_content)
         self.assertIn("setTriggerValue", component.js_content)
+        self.assertEqual(len(app.sidebar.chat_input), 1)
+        self.assertTrue(
+            any(
+                "Replaying a historical heatwave scenario, fully pre-processed by "
+                "BigQuery ML, TimeFM, and the Safety Optimizer."
+                in str(item.value)
+                for item in app.sidebar.caption
+            )
+        )
+
+        app.sidebar.chat_input[0].set_value("Compare SafePause options")
+        with mock.patch.dict(os.environ, ENVIRONMENT, clear=False):
+            app.run()
+        self.assertFalse(app.exception)
+        replay_messages = app.session_state["gemini_copilot_messages"]
+        self.assertEqual(
+            replay_messages[-1]["tool"],
+            "safepause_decision_pending",
+        )
+        self.assertIn(
+            "The Safety Optimizer has evaluated conditions",
+            replay_messages[-1]["content"],
+        )
+        self.assertIn(
+            "No SafePause scenario is needed",
+            replay_messages[-1]["content"],
+        )
+        self.assertNotIn("10:00", replay_messages[-1]["content"])
+        self.assertNotIn(
+            "| Area | SafePause plan | Guardrails (cost/ETA) |",
+            replay_messages[-1]["content"],
+        )
 
     def test_current_dashboard_emits_only_bounded_live_intents(self):
         app = self.run_app()
@@ -201,7 +250,8 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertIsNone(payload["current_actions"]["recorded_action"])
         self.assertIn('setTriggerValue?.("selected_zone_id"', component.js_content)
         self.assertIn('setTriggerValue?.("decision_action"', component.js_content)
-        self.assertNotIn("setStateValue", component.js_content)
+        self.assertIn("if (isCurrent(state)) return", component.js_content)
+        self.assertNotIn("emitReplayState(state)\n  const preventiveCoverage", component.js_content)
         self.assert_operator_vocabulary(app)
 
 

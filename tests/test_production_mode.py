@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import unittest
 
+from heatsafe.copilot import HeatSafeCopilot
 from heatsafe.ingestion import calculate_heat_index
 from heatsafe.models import DecisionConstraints
 from heatsafe.production_mode import (
@@ -12,6 +13,7 @@ from heatsafe.production_mode import (
     controls_from_proposals,
     state_before_tick,
 )
+from heatsafe.repository import AIModelUnavailable
 from heatsafe.services.preventive_planning import (
     build_accelerated_forecast_input,
     build_predictive_city_plan,
@@ -214,6 +216,37 @@ class ProductionModeTests(unittest.TestCase):
         self.assertTrue(
             all(item.pause_start_delay_minutes in {0, 15, 30, 45} for item in controls)
         )
+
+    def test_copilot_uses_exact_current_evidence_for_safepause_comparison(self):
+        state = advance_tick(
+            self.warm, fixture=self.fixture, zones=self.zones
+        ).state
+        result = advance_tick(state, fixture=self.fixture, zones=self.zones)
+        constraints = DecisionConstraints(
+            horizon_minutes=120,
+            budget_cap_vnd=3_000_000,
+            sponsor_per_driver_vnd=8_000,
+        )
+        evidence = build_production_evidence(
+            result,
+            fixture=self.fixture,
+            zones=self.zones,
+            constraints=constraints,
+        )
+        selected_zone = evidence.city_plan.rows[0].zone
+        copilot = HeatSafeCopilot(
+            list(evidence.zones), evidence, default_constraints=constraints
+        )
+        copilot.settings = replace(copilot.settings, enable_ai=False)
+
+        answer, tool = copilot.answer(
+            f"Compare SafePause options in {selected_zone.name} with the current budget"
+        )
+
+        self.assertEqual(tool, "simulate_safepause")
+        self.assertIn("BigQuery ML recommends", answer)
+        with self.assertRaises(AIModelUnavailable):
+            evidence.load_driver_predictions(selected_zone.zone_id, "stale-evidence")
 
     def test_zone_heat_index_uses_documented_microclimate_offsets(self):
         state = advance_tick(

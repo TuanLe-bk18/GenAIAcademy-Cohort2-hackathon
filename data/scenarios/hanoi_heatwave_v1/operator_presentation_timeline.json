@@ -2746,6 +2746,9 @@
           "active_drivers": 372,
           "urgent_drivers": 0,
           "requests_15m": 179,
+          "priority_order": 1,
+          "projected_mandatory_120m": 224,
+          "expected_crossers_120m": 193.516,
           "included": false
         },
         {
@@ -2758,6 +2761,9 @@
           "active_drivers": 330,
           "urgent_drivers": 0,
           "requests_15m": 145,
+          "priority_order": 5,
+          "projected_mandatory_120m": 191,
+          "expected_crossers_120m": 164.547,
           "included": false
         },
         {
@@ -2770,6 +2776,9 @@
           "active_drivers": 346,
           "urgent_drivers": 0,
           "requests_15m": 133,
+          "priority_order": 2,
+          "projected_mandatory_120m": 213,
+          "expected_crossers_120m": 183.609,
           "included": false
         },
         {
@@ -2782,6 +2791,9 @@
           "active_drivers": 277,
           "urgent_drivers": 0,
           "requests_15m": 98,
+          "priority_order": 7,
+          "projected_mandatory_120m": 168,
+          "expected_crossers_120m": 144.203,
           "included": false
         },
         {
@@ -2794,6 +2806,9 @@
           "active_drivers": 360,
           "urgent_drivers": 0,
           "requests_15m": 157,
+          "priority_order": 3,
+          "projected_mandatory_120m": 212,
+          "expected_crossers_120m": 182.766,
           "included": false
         },
         {
@@ -2806,6 +2821,9 @@
           "active_drivers": 323,
           "urgent_drivers": 0,
           "requests_15m": 135,
+          "priority_order": 4,
+          "projected_mandatory_120m": 198,
+          "expected_crossers_120m": 169.266,
           "included": false
         },
         {
@@ -2818,6 +2836,9 @@
           "active_drivers": 294,
           "urgent_drivers": 0,
           "requests_15m": 125,
+          "priority_order": 6,
+          "projected_mandatory_120m": 185,
+          "expected_crossers_120m": 159.75,
           "included": false
         },
         {
@@ -2830,6 +2851,9 @@
           "active_drivers": 271,
           "urgent_drivers": 0,
           "requests_15m": 102,
+          "priority_order": 8,
+          "projected_mandatory_120m": 165,
+          "expected_crossers_120m": 140.953,
           "included": false
         },
         {
@@ -2842,6 +2866,9 @@
           "active_drivers": 249,
           "urgent_drivers": 0,
           "requests_15m": 119,
+          "priority_order": 9,
+          "projected_mandatory_120m": 146,
+          "expected_crossers_120m": 125.859,
           "included": false
         },
         {
@@ -2854,6 +2881,9 @@
           "active_drivers": 215,
           "urgent_drivers": 0,
           "requests_15m": 79,
+          "priority_order": 10,
+          "projected_mandatory_120m": 127,
+          "expected_crossers_120m": 109.344,
           "included": false
         }
       ]
@@ -2898,6 +2928,9 @@
           "active_drivers": 363,
           "urgent_drivers": 0,
           "requests_15m": 152,
+          "priority_order": 1,
+          "projected_mandatory_120m": 255,
+          "expected_crossers_120m": 220.906,
           "included": false
         },
         {
@@ -2910,6 +2943,9 @@
           "active_drivers": 321,
           "urgent_drivers": 0,
           "requests_15m": 143,
+          "priority_order": 5,
+          "projected_mandatory_120m": 214,
+          "expected_crossers_120m": 185.828,
           "included": false
         },
         {
@@ -2922,6 +2958,9 @@
           "active_drivers": 337,
           "urgent_drivers": 0,
           "requests_15m": 151,
+          "priority_order": 2,
+          "projected_mandatory_120m": 242,
+          "expected_crossers_120m": 209.812,
           "included": false
         },
         {
@@ -2934,6 +2973,9 @@
           "active_drivers": 270,
           "urgent_drivers": 0,
           "requests_15m": 83,
+          "priority_order": 8,
+          "projected_mandatory_120m": 183,
+          "expected_crossers_120m": 158.578,
           "included": false
         },
         {
@@ -2946,6 +2988,9 @@
           "active_drivers": 351,
           "urgent_drivers": 0,
           "requests_15m": 148,
+          "priority_order": 3,
+          "projected_mandatory_120m": 234,
+          "expected_crossers_120m": 202.266,
           "included": false
         },
         {
@@ -2958,6 +3003,9 @@
           "active_drivers": 314,
           "urgent_drivers": 0,
           "requests_15m": 146,
+          "priority_order": 4,
+          "projected_mandatory_120m": 217,
+          "expected_crossers_120m": 186.766,
           "included": false
         },
         {
@@ -2970,6 +3018,9 @@
           "active_drivers": 287,
           "urgent_drivers": 0,
           "requests_15m": 119,
+          "priority_order": 6,
+          "projected_mandatory_120m": 201,
+          "expected_crossers_120m": 173.953,
           "included": false
         },
         {
@@ -2982,6 +3033,9 @@
           "active_drivers": 264,
           "urgent_drivers": 0,
           "requests_15m": 86,
+          "priority_order": 7,
+          "projected_mandatory_120m": 185,
+          "expected_crossers_120m": 158.953,
           "included": false
         },
         {
@@ -2994,6 +3048,9 @@
           "active_drivers": 242,
           "urgent_drivers": 0,
           "requests_15m": 86,
+          "priority_order": 9,
+          "projected_mandatory_120m": 159,
+          "expected_crossers_120m": 137.922,
           "included": false
         },
         {
@@ -3006,6 +3063,9 @@
           "active_drivers": 210,
           "urgent_drivers": 0,
           "requests_15m": 90,
+          "priority_order": 10,
+          "projected_mandatory_120m": 146,
+          "expected_crossers_120m": 126.391,
           "included": false
         }
       ]
@@ -3050,6 +3110,9 @@
           "active_drivers": 353,
           "urgent_drivers": 0,
           "requests_15m": 145,
+          "priority_order": 1,
+          "projected_mandatory_120m": 265,
+          "expected_crossers_120m": 230.812,
           "included": false
         },
         {
@@ -3062,6 +3125,9 @@
           "active_drivers": 313,
           "urgent_drivers": 0,
           "requests_15m": 119,
+          "priority_order": 4,
+          "projected_mandatory_120m": 233,
+          "expected_crossers_120m": 202.031,
           "included": false
         },
         {
@@ -3074,6 +3140,9 @@
           "active_drivers": 328,
           "urgent_drivers": 0,
           "requests_15m": 122,
+          "priority_order": 2,
+          "projected_mandatory_120m": 250,
+          "expected_crossers_120m": 217.172,
           "included": false
         },
         {
@@ -3086,6 +3155,9 @@
           "active_drivers": 263,
           "urgent_drivers": 0,
           "requests_15m": 73,
+          "priority_order": 7,
+          "projected_mandatory_120m": 196,
+          "expected_crossers_120m": 169.844,
           "included": false
         },
         {
@@ -3098,6 +3170,9 @@
           "active_drivers": 341,
           "urgent_drivers": 0,
           "requests_15m": 119,
+          "priority_order": 3,
+          "projected_mandatory_120m": 245,
+          "expected_crossers_120m": 211.984,
           "included": false
         },
         {
@@ -3110,6 +3185,9 @@
           "active_drivers": 306,
           "urgent_drivers": 0,
           "requests_15m": 125,
+          "priority_order": 5,
+          "projected_mandatory_120m": 227,
+          "expected_crossers_120m": 196.484,
           "included": false
         },
         {
@@ -3122,6 +3200,9 @@
           "active_drivers": 279,
           "urgent_drivers": 0,
           "requests_15m": 118,
+          "priority_order": 6,
+          "projected_mandatory_120m": 209,
+          "expected_crossers_120m": 181.828,
           "included": false
         },
         {
@@ -3134,6 +3215,9 @@
           "active_drivers": 257,
           "urgent_drivers": 0,
           "requests_15m": 103,
+          "priority_order": 8,
+          "projected_mandatory_120m": 192,
+          "expected_crossers_120m": 165.5,
           "included": false
         },
         {
@@ -3146,6 +3230,9 @@
           "active_drivers": 236,
           "urgent_drivers": 0,
           "requests_15m": 98,
+          "priority_order": 9,
+          "projected_mandatory_120m": 169,
+          "expected_crossers_120m": 146.953,
           "included": false
         },
         {
@@ -3158,6 +3245,9 @@
           "active_drivers": 204,
           "urgent_drivers": 0,
           "requests_15m": 66,
+          "priority_order": 10,
+          "projected_mandatory_120m": 152,
+          "expected_crossers_120m": 131.688,
           "included": false
         }
       ]
@@ -3228,6 +3318,9 @@
           "active_drivers": 344,
           "urgent_drivers": 0,
           "requests_15m": 151,
+          "priority_order": 1,
+          "projected_mandatory_120m": 246,
+          "expected_crossers_120m": 215.766,
           "included": true
         },
         {
@@ -3240,6 +3333,9 @@
           "active_drivers": 304,
           "urgent_drivers": 0,
           "requests_15m": 111,
+          "priority_order": 4,
+          "projected_mandatory_120m": 214,
+          "expected_crossers_120m": 186.359,
           "included": true
         },
         {
@@ -3252,6 +3348,9 @@
           "active_drivers": 320,
           "urgent_drivers": 0,
           "requests_15m": 115,
+          "priority_order": 2,
+          "projected_mandatory_120m": 231,
+          "expected_crossers_120m": 202.766,
           "included": true
         },
         {
@@ -3264,6 +3363,9 @@
           "active_drivers": 256,
           "urgent_drivers": 0,
           "requests_15m": 86,
+          "priority_order": 7,
+          "projected_mandatory_120m": 188,
+          "expected_crossers_120m": 164.688,
           "included": true
         },
         {
@@ -3276,6 +3378,9 @@
           "active_drivers": 332,
           "urgent_drivers": 0,
           "requests_15m": 122,
+          "priority_order": 3,
+          "projected_mandatory_120m": 226,
+          "expected_crossers_120m": 196.422,
           "included": true
         },
         {
@@ -3288,6 +3393,9 @@
           "active_drivers": 298,
           "urgent_drivers": 0,
           "requests_15m": 125,
+          "priority_order": 5,
+          "projected_mandatory_120m": 212,
+          "expected_crossers_120m": 185.203,
           "included": true
         },
         {
@@ -3300,6 +3408,9 @@
           "active_drivers": 272,
           "urgent_drivers": 0,
           "requests_15m": 98,
+          "priority_order": 6,
+          "projected_mandatory_120m": 193,
+          "expected_crossers_120m": 169.266,
           "included": true
         },
         {
@@ -3312,6 +3423,9 @@
           "active_drivers": 250,
           "urgent_drivers": 0,
           "requests_15m": 88,
+          "priority_order": 8,
+          "projected_mandatory_120m": 177,
+          "expected_crossers_120m": 154.266,
           "included": true
         },
         {
@@ -3324,6 +3438,9 @@
           "active_drivers": 230,
           "urgent_drivers": 0,
           "requests_15m": 77,
+          "priority_order": 9,
+          "projected_mandatory_120m": 161,
+          "expected_crossers_120m": 141.094,
           "included": true
         },
         {
@@ -3336,6 +3453,9 @@
           "active_drivers": 199,
           "urgent_drivers": 0,
           "requests_15m": 77,
+          "priority_order": 10,
+          "projected_mandatory_120m": 142,
+          "expected_crossers_120m": 124.234,
           "included": true
         }
       ]
@@ -3409,6 +3529,9 @@
             "active_drivers": 231,
             "urgent_drivers": 2,
             "requests_15m": 91,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -3421,6 +3544,9 @@
             "active_drivers": 342,
             "urgent_drivers": 1,
             "requests_15m": 164,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -3433,6 +3559,9 @@
             "active_drivers": 305,
             "urgent_drivers": 1,
             "requests_15m": 127,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -3445,6 +3574,9 @@
             "active_drivers": 317,
             "urgent_drivers": 1,
             "requests_15m": 137,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -3457,6 +3589,9 @@
             "active_drivers": 333,
             "urgent_drivers": 1,
             "requests_15m": 133,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -3469,6 +3604,9 @@
             "active_drivers": 268,
             "urgent_drivers": 1,
             "requests_15m": 124,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -3481,6 +3619,9 @@
             "active_drivers": 253,
             "urgent_drivers": 0,
             "requests_15m": 83,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -3493,6 +3634,9 @@
             "active_drivers": 296,
             "urgent_drivers": 0,
             "requests_15m": 139,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -3505,6 +3649,9 @@
             "active_drivers": 252,
             "urgent_drivers": 0,
             "requests_15m": 106,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -3517,6 +3664,9 @@
             "active_drivers": 197,
             "urgent_drivers": 0,
             "requests_15m": 80,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -3587,6 +3737,9 @@
             "active_drivers": 336,
             "urgent_drivers": 4,
             "requests_15m": 171,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -3599,6 +3752,9 @@
             "active_drivers": 289,
             "urgent_drivers": 2,
             "requests_15m": 126,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -3611,6 +3767,9 @@
             "active_drivers": 264,
             "urgent_drivers": 2,
             "requests_15m": 122,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -3623,6 +3782,9 @@
             "active_drivers": 300,
             "urgent_drivers": 1,
             "requests_15m": 146,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -3635,6 +3797,9 @@
             "active_drivers": 312,
             "urgent_drivers": 1,
             "requests_15m": 142,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -3647,6 +3812,9 @@
             "active_drivers": 334,
             "urgent_drivers": 1,
             "requests_15m": 149,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -3659,6 +3827,9 @@
             "active_drivers": 251,
             "urgent_drivers": 1,
             "requests_15m": 94,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -3671,6 +3842,9 @@
             "active_drivers": 250,
             "urgent_drivers": 0,
             "requests_15m": 102,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -3683,6 +3857,9 @@
             "active_drivers": 226,
             "urgent_drivers": 0,
             "requests_15m": 111,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -3695,6 +3872,9 @@
             "active_drivers": 193,
             "urgent_drivers": 0,
             "requests_15m": 72,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -3765,6 +3945,9 @@
             "active_drivers": 294,
             "urgent_drivers": 3,
             "requests_15m": 146,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -3777,6 +3960,9 @@
             "active_drivers": 301,
             "urgent_drivers": 2,
             "requests_15m": 120,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -3789,6 +3975,9 @@
             "active_drivers": 332,
             "urgent_drivers": 1,
             "requests_15m": 147,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -3801,6 +3990,9 @@
             "active_drivers": 313,
             "urgent_drivers": 1,
             "requests_15m": 138,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -3813,6 +4005,9 @@
             "active_drivers": 222,
             "urgent_drivers": 1,
             "requests_15m": 84,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -3825,6 +4020,9 @@
             "active_drivers": 192,
             "urgent_drivers": 1,
             "requests_15m": 75,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -3837,6 +4035,9 @@
             "active_drivers": 255,
             "urgent_drivers": 0,
             "requests_15m": 114,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -3849,6 +4050,9 @@
             "active_drivers": 330,
             "urgent_drivers": 0,
             "requests_15m": 149,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -3861,6 +4065,9 @@
             "active_drivers": 265,
             "urgent_drivers": 0,
             "requests_15m": 160,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -3873,6 +4080,9 @@
             "active_drivers": 250,
             "urgent_drivers": 0,
             "requests_15m": 99,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -3943,6 +4153,9 @@
             "active_drivers": 305,
             "urgent_drivers": 3,
             "requests_15m": 131,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -3955,6 +4168,9 @@
             "active_drivers": 335,
             "urgent_drivers": 2,
             "requests_15m": 152,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -3967,6 +4183,9 @@
             "active_drivers": 298,
             "urgent_drivers": 2,
             "requests_15m": 166,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -3979,6 +4198,9 @@
             "active_drivers": 226,
             "urgent_drivers": 2,
             "requests_15m": 106,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -3991,6 +4213,9 @@
             "active_drivers": 317,
             "urgent_drivers": 1,
             "requests_15m": 137,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -4003,6 +4228,9 @@
             "active_drivers": 258,
             "urgent_drivers": 1,
             "requests_15m": 95,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -4015,6 +4243,9 @@
             "active_drivers": 329,
             "urgent_drivers": 1,
             "requests_15m": 151,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -4027,6 +4258,9 @@
             "active_drivers": 270,
             "urgent_drivers": 0,
             "requests_15m": 100,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -4039,6 +4273,9 @@
             "active_drivers": 250,
             "urgent_drivers": 0,
             "requests_15m": 114,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -4051,6 +4288,9 @@
             "active_drivers": 196,
             "urgent_drivers": 0,
             "requests_15m": 81,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -4119,6 +4359,9 @@
             "active_drivers": 298,
             "urgent_drivers": 4,
             "requests_15m": 169,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -4131,6 +4374,9 @@
             "active_drivers": 338,
             "urgent_drivers": 3,
             "requests_15m": 161,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -4143,6 +4389,9 @@
             "active_drivers": 277,
             "urgent_drivers": 2,
             "requests_15m": 158,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -4155,6 +4404,9 @@
             "active_drivers": 302,
             "urgent_drivers": 1,
             "requests_15m": 113,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -4167,6 +4419,9 @@
             "active_drivers": 322,
             "urgent_drivers": 1,
             "requests_15m": 157,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -4179,6 +4434,9 @@
             "active_drivers": 333,
             "urgent_drivers": 1,
             "requests_15m": 122,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -4191,6 +4449,9 @@
             "active_drivers": 252,
             "urgent_drivers": 1,
             "requests_15m": 107,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -4203,6 +4464,9 @@
             "active_drivers": 230,
             "urgent_drivers": 1,
             "requests_15m": 93,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -4215,6 +4479,9 @@
             "active_drivers": 261,
             "urgent_drivers": 0,
             "requests_15m": 112,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -4227,6 +4494,9 @@
             "active_drivers": 202,
             "urgent_drivers": 0,
             "requests_15m": 74,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -4289,6 +4559,9 @@
             "active_drivers": 282,
             "urgent_drivers": 10,
             "requests_15m": 124,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -4301,6 +4574,9 @@
             "active_drivers": 330,
             "urgent_drivers": 8,
             "requests_15m": 171,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -4313,6 +4589,9 @@
             "active_drivers": 299,
             "urgent_drivers": 4,
             "requests_15m": 153,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -4325,6 +4604,9 @@
             "active_drivers": 253,
             "urgent_drivers": 4,
             "requests_15m": 113,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -4337,6 +4619,9 @@
             "active_drivers": 345,
             "urgent_drivers": 1,
             "requests_15m": 169,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -4349,6 +4634,9 @@
             "active_drivers": 302,
             "urgent_drivers": 1,
             "requests_15m": 127,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -4361,6 +4649,9 @@
             "active_drivers": 260,
             "urgent_drivers": 1,
             "requests_15m": 94,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -4373,6 +4664,9 @@
             "active_drivers": 228,
             "urgent_drivers": 1,
             "requests_15m": 100,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -4385,6 +4679,9 @@
             "active_drivers": 330,
             "urgent_drivers": 0,
             "requests_15m": 163,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -4397,6 +4694,9 @@
             "active_drivers": 204,
             "urgent_drivers": 0,
             "requests_15m": 85,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -4464,6 +4764,9 @@
             "active_drivers": 340,
             "urgent_drivers": 13,
             "requests_15m": 173,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -4476,6 +4779,9 @@
             "active_drivers": 333,
             "urgent_drivers": 11,
             "requests_15m": 177,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -4488,6 +4794,9 @@
             "active_drivers": 267,
             "urgent_drivers": 10,
             "requests_15m": 109,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -4500,6 +4809,9 @@
             "active_drivers": 314,
             "urgent_drivers": 8,
             "requests_15m": 154,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -4512,6 +4824,9 @@
             "active_drivers": 256,
             "urgent_drivers": 8,
             "requests_15m": 134,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -4524,6 +4839,9 @@
             "active_drivers": 357,
             "urgent_drivers": 7,
             "requests_15m": 183,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -4536,6 +4854,9 @@
             "active_drivers": 303,
             "urgent_drivers": 7,
             "requests_15m": 165,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -4548,6 +4869,9 @@
             "active_drivers": 208,
             "urgent_drivers": 7,
             "requests_15m": 84,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -4560,6 +4884,9 @@
             "active_drivers": 277,
             "urgent_drivers": 6,
             "requests_15m": 137,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -4572,6 +4899,9 @@
             "active_drivers": 235,
             "urgent_drivers": 6,
             "requests_15m": 106,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           }
         ]
@@ -4634,6 +4964,9 @@
             "active_drivers": 313,
             "urgent_drivers": 11,
             "requests_15m": 156,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -4646,6 +4979,9 @@
             "active_drivers": 345,
             "urgent_drivers": 10,
             "requests_15m": 164,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -4658,6 +4994,9 @@
             "active_drivers": 266,
             "urgent_drivers": 9,
             "requests_15m": 132,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -4670,6 +5009,9 @@
             "active_drivers": 368,
             "urgent_drivers": 8,
             "requests_15m": 172,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -4682,6 +5024,9 @@
             "active_drivers": 318,
             "urgent_drivers": 7,
             "requests_15m": 139,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -4694,6 +5039,9 @@
             "active_drivers": 264,
             "urgent_drivers": 7,
             "requests_15m": 99,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -4706,6 +5054,9 @@
             "active_drivers": 242,
             "urgent_drivers": 4,
             "requests_15m": 83,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -4718,6 +5069,9 @@
             "active_drivers": 209,
             "urgent_drivers": 4,
             "requests_15m": 85,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -4730,6 +5084,9 @@
             "active_drivers": 327,
             "urgent_drivers": 3,
             "requests_15m": 152,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -4742,6 +5099,9 @@
             "active_drivers": 277,
             "urgent_drivers": 3,
             "requests_15m": 128,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           }
         ]
@@ -4801,6 +5161,9 @@
             "active_drivers": 323,
             "urgent_drivers": 13,
             "requests_15m": 148,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -4813,6 +5176,9 @@
             "active_drivers": 270,
             "urgent_drivers": 10,
             "requests_15m": 105,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -4825,6 +5191,9 @@
             "active_drivers": 371,
             "urgent_drivers": 9,
             "requests_15m": 176,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -4837,6 +5206,9 @@
             "active_drivers": 322,
             "urgent_drivers": 8,
             "requests_15m": 148,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -4849,6 +5221,9 @@
             "active_drivers": 347,
             "urgent_drivers": 8,
             "requests_15m": 190,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -4861,6 +5236,9 @@
             "active_drivers": 267,
             "urgent_drivers": 7,
             "requests_15m": 114,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -4873,6 +5251,9 @@
             "active_drivers": 335,
             "urgent_drivers": 6,
             "requests_15m": 136,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -4885,6 +5266,9 @@
             "active_drivers": 282,
             "urgent_drivers": 3,
             "requests_15m": 138,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -4897,6 +5281,9 @@
             "active_drivers": 244,
             "urgent_drivers": 3,
             "requests_15m": 98,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -4909,6 +5296,9 @@
             "active_drivers": 206,
             "urgent_drivers": 3,
             "requests_15m": 80,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -4968,6 +5358,9 @@
             "active_drivers": 376,
             "urgent_drivers": 12,
             "requests_15m": 176,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -4980,6 +5373,9 @@
             "active_drivers": 325,
             "urgent_drivers": 12,
             "requests_15m": 149,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -4992,6 +5388,9 @@
             "active_drivers": 273,
             "urgent_drivers": 12,
             "requests_15m": 116,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -5004,6 +5403,9 @@
             "active_drivers": 328,
             "urgent_drivers": 10,
             "requests_15m": 129,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5016,6 +5418,9 @@
             "active_drivers": 275,
             "urgent_drivers": 9,
             "requests_15m": 121,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -5028,6 +5433,9 @@
             "active_drivers": 356,
             "urgent_drivers": 9,
             "requests_15m": 171,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -5040,6 +5448,9 @@
             "active_drivers": 344,
             "urgent_drivers": 6,
             "requests_15m": 163,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5052,6 +5463,9 @@
             "active_drivers": 294,
             "urgent_drivers": 6,
             "requests_15m": 125,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5064,6 +5478,9 @@
             "active_drivers": 249,
             "urgent_drivers": 5,
             "requests_15m": 98,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5076,6 +5493,9 @@
             "active_drivers": 212,
             "urgent_drivers": 3,
             "requests_15m": 81,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -5135,6 +5555,9 @@
             "active_drivers": 328,
             "urgent_drivers": 14,
             "requests_15m": 147,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -5147,6 +5570,9 @@
             "active_drivers": 379,
             "urgent_drivers": 12,
             "requests_15m": 181,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -5159,6 +5585,9 @@
             "active_drivers": 366,
             "urgent_drivers": 12,
             "requests_15m": 166,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -5171,6 +5600,9 @@
             "active_drivers": 335,
             "urgent_drivers": 11,
             "requests_15m": 165,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5183,6 +5615,9 @@
             "active_drivers": 282,
             "urgent_drivers": 11,
             "requests_15m": 115,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -5195,6 +5630,9 @@
             "active_drivers": 276,
             "urgent_drivers": 11,
             "requests_15m": 108,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -5207,6 +5645,9 @@
             "active_drivers": 351,
             "urgent_drivers": 7,
             "requests_15m": 166,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5219,6 +5660,9 @@
             "active_drivers": 299,
             "urgent_drivers": 7,
             "requests_15m": 132,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5231,6 +5675,9 @@
             "active_drivers": 253,
             "urgent_drivers": 5,
             "requests_15m": 108,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5243,6 +5690,9 @@
             "active_drivers": 218,
             "urgent_drivers": 3,
             "requests_15m": 85,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -5302,6 +5752,9 @@
             "active_drivers": 338,
             "urgent_drivers": 13,
             "requests_15m": 139,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5314,6 +5767,9 @@
             "active_drivers": 284,
             "urgent_drivers": 13,
             "requests_15m": 111,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -5326,6 +5782,9 @@
             "active_drivers": 369,
             "urgent_drivers": 12,
             "requests_15m": 172,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -5338,6 +5797,9 @@
             "active_drivers": 355,
             "urgent_drivers": 11,
             "requests_15m": 141,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5350,6 +5812,9 @@
             "active_drivers": 331,
             "urgent_drivers": 10,
             "requests_15m": 158,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -5362,6 +5827,9 @@
             "active_drivers": 302,
             "urgent_drivers": 9,
             "requests_15m": 127,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5374,6 +5842,9 @@
             "active_drivers": 255,
             "urgent_drivers": 7,
             "requests_15m": 99,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5386,6 +5857,9 @@
             "active_drivers": 382,
             "urgent_drivers": 5,
             "requests_15m": 182,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -5398,6 +5872,9 @@
             "active_drivers": 278,
             "urgent_drivers": 5,
             "requests_15m": 100,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -5410,6 +5887,9 @@
             "active_drivers": 221,
             "urgent_drivers": 4,
             "requests_15m": 89,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -5454,6 +5934,9 @@
             "active_drivers": 296,
             "urgent_drivers": 12,
             "requests_15m": 125,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5466,6 +5949,9 @@
             "active_drivers": 332,
             "urgent_drivers": 11,
             "requests_15m": 125,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5478,6 +5964,9 @@
             "active_drivers": 279,
             "urgent_drivers": 9,
             "requests_15m": 104,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -5490,6 +5979,9 @@
             "active_drivers": 362,
             "urgent_drivers": 7,
             "requests_15m": 165,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -5502,6 +5994,9 @@
             "active_drivers": 325,
             "urgent_drivers": 7,
             "requests_15m": 137,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -5514,6 +6009,9 @@
             "active_drivers": 348,
             "urgent_drivers": 6,
             "requests_15m": 128,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5526,6 +6024,9 @@
             "active_drivers": 273,
             "urgent_drivers": 2,
             "requests_15m": 107,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -5538,6 +6039,9 @@
             "active_drivers": 250,
             "urgent_drivers": 2,
             "requests_15m": 109,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5550,6 +6054,9 @@
             "active_drivers": 217,
             "urgent_drivers": 2,
             "requests_15m": 56,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -5562,6 +6069,9 @@
             "active_drivers": 375,
             "urgent_drivers": 1,
             "requests_15m": 175,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           }
         ]
@@ -5608,6 +6118,9 @@
             "active_drivers": 274,
             "urgent_drivers": 7,
             "requests_15m": 124,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5620,6 +6133,9 @@
             "active_drivers": 347,
             "urgent_drivers": 6,
             "requests_15m": 164,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -5632,6 +6148,9 @@
             "active_drivers": 322,
             "urgent_drivers": 6,
             "requests_15m": 137,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5644,6 +6163,9 @@
             "active_drivers": 258,
             "urgent_drivers": 5,
             "requests_15m": 83,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -5656,6 +6178,9 @@
             "active_drivers": 301,
             "urgent_drivers": 5,
             "requests_15m": 139,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -5668,6 +6193,9 @@
             "active_drivers": 201,
             "urgent_drivers": 4,
             "requests_15m": 80,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -5680,6 +6208,9 @@
             "active_drivers": 307,
             "urgent_drivers": 3,
             "requests_15m": 127,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5692,6 +6223,9 @@
             "active_drivers": 335,
             "urgent_drivers": 3,
             "requests_15m": 133,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -5704,6 +6238,9 @@
             "active_drivers": 232,
             "urgent_drivers": 3,
             "requests_15m": 91,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5716,6 +6253,9 @@
             "active_drivers": 253,
             "urgent_drivers": 1,
             "requests_15m": 106,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -5760,6 +6300,9 @@
             "active_drivers": 350,
             "urgent_drivers": 18,
             "requests_15m": 171,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -5772,6 +6315,9 @@
             "active_drivers": 303,
             "urgent_drivers": 16,
             "requests_15m": 126,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -5784,6 +6330,9 @@
             "active_drivers": 277,
             "urgent_drivers": 15,
             "requests_15m": 122,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5796,6 +6345,9 @@
             "active_drivers": 325,
             "urgent_drivers": 14,
             "requests_15m": 142,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5808,6 +6360,9 @@
             "active_drivers": 310,
             "urgent_drivers": 11,
             "requests_15m": 146,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5820,6 +6375,9 @@
             "active_drivers": 260,
             "urgent_drivers": 10,
             "requests_15m": 102,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -5832,6 +6390,9 @@
             "active_drivers": 203,
             "urgent_drivers": 10,
             "requests_15m": 72,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -5844,6 +6405,9 @@
             "active_drivers": 234,
             "urgent_drivers": 8,
             "requests_15m": 111,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5856,6 +6420,9 @@
             "active_drivers": 338,
             "urgent_drivers": 5,
             "requests_15m": 149,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -5868,6 +6435,9 @@
             "active_drivers": 255,
             "urgent_drivers": 5,
             "requests_15m": 94,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -5912,6 +6482,9 @@
             "active_drivers": 353,
             "urgent_drivers": 26,
             "requests_15m": 147,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -5924,6 +6497,9 @@
             "active_drivers": 328,
             "urgent_drivers": 21,
             "requests_15m": 138,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -5936,6 +6512,9 @@
             "active_drivers": 306,
             "urgent_drivers": 20,
             "requests_15m": 146,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -5948,6 +6527,9 @@
             "active_drivers": 279,
             "urgent_drivers": 20,
             "requests_15m": 160,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -5960,6 +6542,9 @@
             "active_drivers": 204,
             "urgent_drivers": 17,
             "requests_15m": 75,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -5972,6 +6557,9 @@
             "active_drivers": 236,
             "urgent_drivers": 16,
             "requests_15m": 84,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -5984,6 +6572,9 @@
             "active_drivers": 313,
             "urgent_drivers": 15,
             "requests_15m": 120,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -5996,6 +6587,9 @@
             "active_drivers": 263,
             "urgent_drivers": 13,
             "requests_15m": 114,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -6008,6 +6602,9 @@
             "active_drivers": 341,
             "urgent_drivers": 13,
             "requests_15m": 149,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6020,6 +6617,9 @@
             "active_drivers": 257,
             "urgent_drivers": 8,
             "requests_15m": 99,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -6064,6 +6664,9 @@
             "active_drivers": 357,
             "urgent_drivers": 35,
             "requests_15m": 152,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -6076,6 +6679,9 @@
             "active_drivers": 331,
             "urgent_drivers": 27,
             "requests_15m": 137,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -6088,6 +6694,9 @@
             "active_drivers": 309,
             "urgent_drivers": 26,
             "requests_15m": 166,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -6100,6 +6709,9 @@
             "active_drivers": 282,
             "urgent_drivers": 22,
             "requests_15m": 100,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -6112,6 +6724,9 @@
             "active_drivers": 315,
             "urgent_drivers": 21,
             "requests_15m": 131,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -6124,6 +6739,9 @@
             "active_drivers": 238,
             "urgent_drivers": 21,
             "requests_15m": 106,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -6136,6 +6754,9 @@
             "active_drivers": 344,
             "urgent_drivers": 20,
             "requests_15m": 151,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6148,6 +6769,9 @@
             "active_drivers": 206,
             "urgent_drivers": 20,
             "requests_15m": 81,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -6160,6 +6784,9 @@
             "active_drivers": 265,
             "urgent_drivers": 16,
             "requests_15m": 95,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -6172,6 +6799,9 @@
             "active_drivers": 259,
             "urgent_drivers": 12,
             "requests_15m": 114,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -6216,6 +6846,9 @@
             "active_drivers": 360,
             "urgent_drivers": 44,
             "requests_15m": 161,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -6228,6 +6861,9 @@
             "active_drivers": 312,
             "urgent_drivers": 34,
             "requests_15m": 169,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -6240,6 +6876,9 @@
             "active_drivers": 334,
             "urgent_drivers": 31,
             "requests_15m": 157,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -6252,6 +6891,9 @@
             "active_drivers": 318,
             "urgent_drivers": 30,
             "requests_15m": 113,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -6264,6 +6906,9 @@
             "active_drivers": 347,
             "urgent_drivers": 27,
             "requests_15m": 122,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6276,6 +6921,9 @@
             "active_drivers": 284,
             "urgent_drivers": 27,
             "requests_15m": 158,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -6288,6 +6936,9 @@
             "active_drivers": 240,
             "urgent_drivers": 25,
             "requests_15m": 93,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -6300,6 +6951,9 @@
             "active_drivers": 208,
             "urgent_drivers": 22,
             "requests_15m": 74,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -6312,6 +6966,9 @@
             "active_drivers": 267,
             "urgent_drivers": 19,
             "requests_15m": 112,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -6324,6 +6981,9 @@
             "active_drivers": 262,
             "urgent_drivers": 16,
             "requests_15m": 107,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -6368,6 +7028,9 @@
             "active_drivers": 363,
             "urgent_drivers": 42,
             "requests_15m": 169,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -6380,6 +7043,9 @@
             "active_drivers": 314,
             "urgent_drivers": 37,
             "requests_15m": 153,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -6392,6 +7058,9 @@
             "active_drivers": 351,
             "urgent_drivers": 36,
             "requests_15m": 163,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6404,6 +7073,9 @@
             "active_drivers": 321,
             "urgent_drivers": 35,
             "requests_15m": 127,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -6416,6 +7088,9 @@
             "active_drivers": 337,
             "urgent_drivers": 33,
             "requests_15m": 171,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -6428,6 +7103,9 @@
             "active_drivers": 287,
             "urgent_drivers": 30,
             "requests_15m": 124,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -6440,6 +7118,9 @@
             "active_drivers": 242,
             "urgent_drivers": 30,
             "requests_15m": 100,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -6452,6 +7133,9 @@
             "active_drivers": 264,
             "urgent_drivers": 25,
             "requests_15m": 113,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -6464,6 +7148,9 @@
             "active_drivers": 210,
             "urgent_drivers": 21,
             "requests_15m": 85,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -6476,6 +7163,9 @@
             "active_drivers": 270,
             "urgent_drivers": 20,
             "requests_15m": 94,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           }
         ]
@@ -6520,6 +7210,9 @@
             "active_drivers": 354,
             "urgent_drivers": 47,
             "requests_15m": 173,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6532,6 +7225,9 @@
             "active_drivers": 366,
             "urgent_drivers": 37,
             "requests_15m": 183,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -6544,6 +7240,9 @@
             "active_drivers": 324,
             "urgent_drivers": 35,
             "requests_15m": 154,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -6556,6 +7255,9 @@
             "active_drivers": 340,
             "urgent_drivers": 34,
             "requests_15m": 177,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -6568,6 +7270,9 @@
             "active_drivers": 317,
             "urgent_drivers": 32,
             "requests_15m": 165,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -6580,6 +7285,9 @@
             "active_drivers": 244,
             "urgent_drivers": 30,
             "requests_15m": 106,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -6592,6 +7300,9 @@
             "active_drivers": 289,
             "urgent_drivers": 27,
             "requests_15m": 137,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -6604,6 +7315,9 @@
             "active_drivers": 266,
             "urgent_drivers": 27,
             "requests_15m": 134,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -6616,6 +7330,9 @@
             "active_drivers": 272,
             "urgent_drivers": 24,
             "requests_15m": 109,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -6628,6 +7345,9 @@
             "active_drivers": 212,
             "urgent_drivers": 22,
             "requests_15m": 84,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -6672,6 +7392,9 @@
             "active_drivers": 357,
             "urgent_drivers": 44,
             "requests_15m": 164,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6684,6 +7407,9 @@
             "active_drivers": 327,
             "urgent_drivers": 36,
             "requests_15m": 139,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -6696,6 +7422,9 @@
             "active_drivers": 320,
             "urgent_drivers": 32,
             "requests_15m": 156,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -6708,6 +7437,9 @@
             "active_drivers": 369,
             "urgent_drivers": 30,
             "requests_15m": 172,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -6720,6 +7452,9 @@
             "active_drivers": 343,
             "urgent_drivers": 29,
             "requests_15m": 152,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -6732,6 +7467,9 @@
             "active_drivers": 275,
             "urgent_drivers": 26,
             "requests_15m": 99,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -6744,6 +7482,9 @@
             "active_drivers": 269,
             "urgent_drivers": 26,
             "requests_15m": 132,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -6756,6 +7497,9 @@
             "active_drivers": 292,
             "urgent_drivers": 25,
             "requests_15m": 128,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -6768,6 +7512,9 @@
             "active_drivers": 246,
             "urgent_drivers": 23,
             "requests_15m": 83,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -6780,6 +7527,9 @@
             "active_drivers": 214,
             "urgent_drivers": 17,
             "requests_15m": 85,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -6824,6 +7574,9 @@
             "active_drivers": 360,
             "urgent_drivers": 40,
             "requests_15m": 190,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6836,6 +7589,9 @@
             "active_drivers": 330,
             "urgent_drivers": 33,
             "requests_15m": 148,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -6848,6 +7604,9 @@
             "active_drivers": 323,
             "urgent_drivers": 28,
             "requests_15m": 148,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -6860,6 +7619,9 @@
             "active_drivers": 346,
             "urgent_drivers": 26,
             "requests_15m": 136,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -6872,6 +7634,9 @@
             "active_drivers": 294,
             "urgent_drivers": 26,
             "requests_15m": 138,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -6884,6 +7649,9 @@
             "active_drivers": 277,
             "urgent_drivers": 25,
             "requests_15m": 114,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -6896,6 +7664,9 @@
             "active_drivers": 271,
             "urgent_drivers": 23,
             "requests_15m": 105,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -6908,6 +7679,9 @@
             "active_drivers": 372,
             "urgent_drivers": 22,
             "requests_15m": 176,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -6920,6 +7694,9 @@
             "active_drivers": 249,
             "urgent_drivers": 19,
             "requests_15m": 98,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -6932,6 +7709,9 @@
             "active_drivers": 215,
             "urgent_drivers": 17,
             "requests_15m": 80,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -6976,6 +7756,9 @@
             "active_drivers": 363,
             "urgent_drivers": 34,
             "requests_15m": 171,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -6988,6 +7771,9 @@
             "active_drivers": 332,
             "urgent_drivers": 26,
             "requests_15m": 129,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -7000,6 +7786,9 @@
             "active_drivers": 279,
             "urgent_drivers": 24,
             "requests_15m": 121,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -7012,6 +7801,9 @@
             "active_drivers": 297,
             "urgent_drivers": 24,
             "requests_15m": 125,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -7024,6 +7816,9 @@
             "active_drivers": 349,
             "urgent_drivers": 23,
             "requests_15m": 163,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -7036,6 +7831,9 @@
             "active_drivers": 273,
             "urgent_drivers": 21,
             "requests_15m": 116,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -7048,6 +7846,9 @@
             "active_drivers": 325,
             "urgent_drivers": 20,
             "requests_15m": 149,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -7060,6 +7861,9 @@
             "active_drivers": 251,
             "urgent_drivers": 17,
             "requests_15m": 98,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -7072,6 +7876,9 @@
             "active_drivers": 376,
             "urgent_drivers": 16,
             "requests_15m": 176,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -7084,6 +7891,9 @@
             "active_drivers": 217,
             "urgent_drivers": 15,
             "requests_15m": 81,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           }
         ]
@@ -7128,6 +7938,9 @@
             "active_drivers": 366,
             "urgent_drivers": 25,
             "requests_15m": 166,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -7140,6 +7953,9 @@
             "active_drivers": 282,
             "urgent_drivers": 20,
             "requests_15m": 115,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -7152,6 +7968,9 @@
             "active_drivers": 335,
             "urgent_drivers": 19,
             "requests_15m": 165,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -7164,6 +7983,9 @@
             "active_drivers": 352,
             "urgent_drivers": 16,
             "requests_15m": 166,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -7176,6 +7998,9 @@
             "active_drivers": 299,
             "urgent_drivers": 15,
             "requests_15m": 132,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -7188,6 +8013,9 @@
             "active_drivers": 328,
             "urgent_drivers": 14,
             "requests_15m": 147,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -7200,6 +8028,9 @@
             "active_drivers": 379,
             "urgent_drivers": 12,
             "requests_15m": 181,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -7212,6 +8043,9 @@
             "active_drivers": 219,
             "urgent_drivers": 12,
             "requests_15m": 85,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -7224,6 +8058,9 @@
             "active_drivers": 276,
             "urgent_drivers": 11,
             "requests_15m": 108,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -7236,6 +8073,9 @@
             "active_drivers": 253,
             "urgent_drivers": 10,
             "requests_15m": 108,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           }
         ]
@@ -7280,6 +8120,9 @@
             "active_drivers": 338,
             "urgent_drivers": 13,
             "requests_15m": 139,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -7292,6 +8135,9 @@
             "active_drivers": 284,
             "urgent_drivers": 13,
             "requests_15m": 111,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -7304,6 +8150,9 @@
             "active_drivers": 369,
             "urgent_drivers": 12,
             "requests_15m": 172,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -7316,6 +8165,9 @@
             "active_drivers": 302,
             "urgent_drivers": 12,
             "requests_15m": 127,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -7328,6 +8180,9 @@
             "active_drivers": 355,
             "urgent_drivers": 11,
             "requests_15m": 141,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -7340,6 +8195,9 @@
             "active_drivers": 331,
             "urgent_drivers": 10,
             "requests_15m": 158,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -7352,6 +8210,9 @@
             "active_drivers": 255,
             "urgent_drivers": 7,
             "requests_15m": 99,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -7364,6 +8225,9 @@
             "active_drivers": 221,
             "urgent_drivers": 6,
             "requests_15m": 89,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -7376,6 +8240,9 @@
             "active_drivers": 382,
             "urgent_drivers": 5,
             "requests_15m": 182,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           },
           {
@@ -7388,6 +8255,9 @@
             "active_drivers": 278,
             "urgent_drivers": 5,
             "requests_15m": 100,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           }
         ]
@@ -7432,6 +8302,9 @@
             "active_drivers": 296,
             "urgent_drivers": 12,
             "requests_15m": 125,
+            "priority_order": 6,
+            "projected_mandatory_120m": 193,
+            "expected_crossers_120m": 169.266,
             "included": true
           },
           {
@@ -7444,6 +8317,9 @@
             "active_drivers": 332,
             "urgent_drivers": 11,
             "requests_15m": 125,
+            "priority_order": 4,
+            "projected_mandatory_120m": 214,
+            "expected_crossers_120m": 186.359,
             "included": true
           },
           {
@@ -7456,6 +8332,9 @@
             "active_drivers": 279,
             "urgent_drivers": 9,
             "requests_15m": 104,
+            "priority_order": 7,
+            "projected_mandatory_120m": 188,
+            "expected_crossers_120m": 164.688,
             "included": true
           },
           {
@@ -7468,6 +8347,9 @@
             "active_drivers": 362,
             "urgent_drivers": 7,
             "requests_15m": 165,
+            "priority_order": 3,
+            "projected_mandatory_120m": 226,
+            "expected_crossers_120m": 196.422,
             "included": true
           },
           {
@@ -7480,6 +8362,9 @@
             "active_drivers": 325,
             "urgent_drivers": 7,
             "requests_15m": 137,
+            "priority_order": 5,
+            "projected_mandatory_120m": 212,
+            "expected_crossers_120m": 185.203,
             "included": true
           },
           {
@@ -7492,6 +8377,9 @@
             "active_drivers": 348,
             "urgent_drivers": 6,
             "requests_15m": 128,
+            "priority_order": 2,
+            "projected_mandatory_120m": 231,
+            "expected_crossers_120m": 202.766,
             "included": true
           },
           {
@@ -7504,6 +8392,9 @@
             "active_drivers": 273,
             "urgent_drivers": 2,
             "requests_15m": 107,
+            "priority_order": 8,
+            "projected_mandatory_120m": 177,
+            "expected_crossers_120m": 154.266,
             "included": true
           },
           {
@@ -7516,6 +8407,9 @@
             "active_drivers": 250,
             "urgent_drivers": 2,
             "requests_15m": 109,
+            "priority_order": 9,
+            "projected_mandatory_120m": 161,
+            "expected_crossers_120m": 141.094,
             "included": true
           },
           {
@@ -7528,6 +8422,9 @@
             "active_drivers": 217,
             "urgent_drivers": 2,
             "requests_15m": 56,
+            "priority_order": 10,
+            "projected_mandatory_120m": 142,
+            "expected_crossers_120m": 124.234,
             "included": true
           },
           {
@@ -7540,6 +8437,9 @@
             "active_drivers": 375,
             "urgent_drivers": 1,
             "requests_15m": 175,
+            "priority_order": 1,
+            "projected_mandatory_120m": 246,
+            "expected_crossers_120m": 215.766,
             "included": true
           }
         ]

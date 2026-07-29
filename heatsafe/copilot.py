@@ -5,17 +5,35 @@ import re
 import unicodedata
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Protocol
 
 from .ai_decision import recommend_ai_intervention
 from .config import Settings
 from .currency import USD_TO_VND, usd_to_vnd
-from .models import DecisionConstraints, ZoneSnapshot
-from .repository import HybridRepository
+from .models import DecisionConstraints, DriverActionPrediction, ZoneSnapshot
+from .repository import DemandForecast, HybridRepository
 from .risk import TIER_LABELS, heat_tier, operational_priority
 from .telemetry import log_event
 
 GEMINI_REQUEST_TIMEOUT_MS = 20_000
+
+
+class CopilotEvidenceRepository(Protocol):
+    """Read-only evidence operations available to deterministic Copilot tools."""
+
+    def load(self) -> object: ...
+
+    def forecast_demand(
+        self, zone_id: str, horizon_minutes: int = 60
+    ) -> DemandForecast: ...
+
+    def forecast_demand_many(
+        self, zone_ids: list[str], horizon_minutes: int = 60
+    ) -> dict[str, DemandForecast]: ...
+
+    def load_driver_predictions(
+        self, zone_id: str, snapshot_id: str
+    ) -> tuple[DriverActionPrediction, ...]: ...
 
 
 @dataclass(frozen=True)
@@ -219,7 +237,7 @@ def explain_zone(zone: ZoneSnapshot) -> ToolResult:
 
 def _evaluate_zone_action(
     zone: ZoneSnapshot,
-    repository: HybridRepository,
+    repository: CopilotEvidenceRepository,
     constraints: DecisionConstraints,
     forecast: Any | None = None,
 ) -> ToolResult:
@@ -294,7 +312,7 @@ def _evaluate_zone_action(
 
 def simulate_zone_action(
     zone: ZoneSnapshot,
-    repository: HybridRepository | None = None,
+    repository: CopilotEvidenceRepository | None = None,
     budget_cap_vnd: int = 1_000_000,
     sponsor_per_driver_vnd: int = 8_000,
     horizon_minutes: int = 240,
@@ -313,7 +331,7 @@ def simulate_zone_action(
 
 def forecast_zone_demand(
     zone: ZoneSnapshot,
-    repository: HybridRepository,
+    repository: CopilotEvidenceRepository,
     horizon_minutes: int,
 ) -> ToolResult:
     horizon_minutes = max(15, min(240, horizon_minutes))
@@ -333,7 +351,7 @@ def forecast_zone_demand(
 
 def recommend_intervention(
     zones: list[ZoneSnapshot],
-    repository: HybridRepository,
+    repository: CopilotEvidenceRepository,
     horizon_minutes: int,
     budget_cap_vnd: int,
     sponsor_per_driver_vnd: int = 8_000,
@@ -428,7 +446,7 @@ class HeatSafeCopilot:
     def __init__(
         self,
         zones: list[ZoneSnapshot],
-        repository: HybridRepository | None = None,
+        repository: CopilotEvidenceRepository | None = None,
         default_constraints: DecisionConstraints | None = None,
     ):
         self.zones = zones
@@ -764,7 +782,8 @@ class HeatSafeCopilot:
                     "accommodation/rest options as SafePause options. Mark forecasts and "
                     "counterfactual impacts as estimates, never turn MODEL_UNAVAILABLE, "
                     "TOOL_UNAVAILABLE, or NO_FEASIBLE into a recommendation, refer to "
-                    "cost/fulfillment/ETA as guardrails, and clarify that actions are simulated."
+                    "cost/fulfillment/ETA as guardrails, and state that actions require "
+                    "operator confirmation and verified execution checks."
                 ),
                 temperature=0.1,
                 max_output_tokens=550,

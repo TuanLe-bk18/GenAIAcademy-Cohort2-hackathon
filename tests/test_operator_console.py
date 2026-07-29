@@ -21,7 +21,10 @@ from heatsafe.models import (
 )
 from heatsafe.simulation.models import TickResult
 from heatsafe.ui.operator_console.outcomes import build_safepause_outcome_view
-from heatsafe.ui.operator_console.presentation import load_presentation_timeline
+from heatsafe.ui.operator_console.presentation import (
+    _parse_replay_state,
+    load_presentation_timeline,
+)
 from heatsafe.ui.operator_console.view_models import (
     MAX_DRIVER_ROWS,
     MAX_HISTORY_ROWS,
@@ -277,6 +280,43 @@ class VocabularyAndTimeTests(unittest.TestCase):
 
 
 class PresentationTimelineTests(unittest.TestCase):
+    def test_replay_cursor_is_atomic_and_validated_against_the_timeline(self):
+        timeline = load_presentation_timeline()
+        initial = timeline["pre_decision"][0]
+        initial_zone = next(
+            (zone for zone in initial["zones"] if zone.get("selected")),
+            initial["zones"][0],
+        )
+
+        self.assertEqual(
+            _parse_replay_state(timeline, None),
+            (initial["tick"], initial_zone["id"], "PRE_DECISION"),
+        )
+        activated = timeline["branches"]["ACTIVATE"][0]
+        activated_zone = activated["zones"][2]["id"]
+        self.assertEqual(
+            _parse_replay_state(
+                timeline,
+                {
+                    "tick": activated["tick"],
+                    "selected_zone_id": activated_zone,
+                    "branch": "ACTIVATE",
+                },
+            ),
+            (activated["tick"], activated_zone, "ACTIVATE"),
+        )
+        self.assertEqual(
+            _parse_replay_state(
+                timeline,
+                {
+                    "tick": 999,
+                    "selected_zone_id": "not-a-zone",
+                    "branch": "CONTINUE",
+                },
+            ),
+            (initial["tick"], initial_zone["id"], "PRE_DECISION"),
+        )
+
     def test_display_timeline_is_bounded_and_clock_aligned(self):
         timeline = load_presentation_timeline()
         pre = timeline["pre_decision"]

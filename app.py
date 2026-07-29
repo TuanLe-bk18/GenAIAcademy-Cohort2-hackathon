@@ -23,6 +23,7 @@ from heatsafe.production_mode import (
     SessionChoice,
     build_production_evidence,
 )
+from heatsafe.replay_copilot import ReplayCopilotFrame
 from heatsafe.services.decision_service import SelectedZoneDecision
 from heatsafe.services.preventive_planning import (
     build_accelerated_forecast_input,
@@ -31,7 +32,11 @@ from heatsafe.services.preventive_planning import (
 )
 from heatsafe.simulation.engine import load_zone_priors
 from heatsafe.telemetry import log_event
-from heatsafe.ui import advance_refresh_token
+from heatsafe.ui import (
+    advance_refresh_token,
+    render_copilot_panel,
+    render_replay_copilot_panel,
+)
 from heatsafe.ui.operator_console import (
     OperatorPlaybackView,
     OperatorRecommendationView,
@@ -39,6 +44,7 @@ from heatsafe.ui.operator_console import (
     build_safepause_outcome_view,
     format_hanoi_range,
     format_hanoi_time,
+    load_presentation_timeline,
     render_evidence,
     render_operator_dashboard,
     render_presentation_playback,
@@ -283,15 +289,6 @@ sidebar_result = render_sidebar(
     area_options=tuple(
         (area.zone_id, area.name) for area in load_zone_priors()
     ),
-    system_details={
-        "Environment": "Synthetic Hanoi operations",
-        "Appearance": f"{(st.context.theme.type or 'dark').title()} theme",
-        "Decision state": (
-            "Display-only replay"
-            if active_mode == "accelerated-production"
-            else "Ready"
-        ),
-    },
     key_prefix="operator-console:sidebar",
 )
 selected_surface = st.segmented_control(
@@ -299,6 +296,7 @@ selected_surface = st.segmented_control(
     ("Operations", "Evidence & history"),
     default="Operations",
     key=SURFACE_KEY,
+    label_visibility="collapsed",
 )
 surface = (
     selected_surface
@@ -377,6 +375,9 @@ def live_operator_workspace() -> None:
     if selected_zone_id not in valid_zone_ids:
         selected_zone_id = zones[0].zone_id
     st.session_state.selected_zone_id = selected_zone_id
+    selected_zone = next(
+        zone for zone in zones if zone.zone_id == selected_zone_id
+    )
 
     plan: PredictiveCityPlan | None = None
     planning_issue: str | None = None
@@ -484,8 +485,49 @@ def live_operator_workspace() -> None:
             st.session_state.operator_recording = False
         st.rerun()
 
+    with st.sidebar:
+        render_copilot_panel(
+            zones,
+            selected_zone,
+            selected_zone.scenario_id,
+            constraints,
+            repository=evidence,
+            max_messages=8,
+            refresh_token=str(st.session_state.get("refresh_token", "current")),
+        )
+
 
 if presentation_mode:
-    render_presentation_playback()
+    replay_timeline = load_presentation_timeline()
+    replay_result = render_presentation_playback(replay_timeline)
+    replay_tick = replay_result.replay_tick_index
+    replay_zone_id = replay_result.selected_zone_id
+    replay_branch = replay_result.replay_branch
+    if (
+        replay_tick is not None
+        and replay_zone_id is not None
+        and replay_branch is not None
+    ):
+        try:
+            replay_frame = ReplayCopilotFrame.from_timeline(
+                replay_timeline,
+                tick_index=replay_tick,
+                selected_zone_id=replay_zone_id,
+                branch=replay_branch,
+            )
+        except (TypeError, ValueError) as exc:
+            log_event(
+                "replay_copilot_context_rejected",
+                severity="WARNING",
+                error_type=type(exc).__name__,
+            )
+            with st.sidebar:
+                st.warning(
+                    "Copilot could not verify the selected replay frame.",
+                    icon=":material/warning:",
+                )
+        else:
+            with st.sidebar:
+                render_replay_copilot_panel(replay_frame)
 else:
     live_operator_workspace()

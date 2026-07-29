@@ -21,7 +21,12 @@ from heatsafe.production_mode import (
     build_production_evidence,
     load_production_window,
 )
-from heatsafe.services.preventive_planning import MANDATORY_EXPOSURE_MINUTES
+from heatsafe.services.preventive_planning import (
+    MANDATORY_EXPOSURE_MINUTES,
+    build_accelerated_forecast_input,
+    build_predictive_city_plan,
+    project_city_forecast,
+)
 from heatsafe.simulation.models import ACTIVE_STATUSES
 from heatsafe.ui.operator_console.view_models import build_operator_console_view
 from heatsafe.ui.operator_console.vocabulary import format_heat_state
@@ -102,11 +107,26 @@ def _frame(
         zones=session.zones,
         constraints=CONSTRAINTS,
     )
+    priority_plan = plan or build_predictive_city_plan(
+        project_city_forecast(
+            build_accelerated_forecast_input(
+                result,
+                fixture=session.fixture,
+                zones=session.zones,
+            )
+        ),
+        CONSTRAINTS,
+    )
+    priority_by_id = {row.zone_id: row for row in priority_plan.rows}
     projection_by_id = {item.zone_id: item for item in result.zones}
     selected_ids = set(plan.selected_zone_ids) if plan is not None else set()
     zones: list[dict[str, Any]] = []
     for snapshot in evidence.zones:
         projection = projection_by_id[snapshot.zone_id]
+        priority = priority_by_id[snapshot.zone_id]
+        future = next(
+            horizon for horizon in priority.horizons if horizon.minutes_ahead == 120
+        )
         zones.append(
             {
                 "id": snapshot.zone_id,
@@ -118,6 +138,9 @@ def _frame(
                 "active_drivers": snapshot.active_drivers,
                 "urgent_drivers": snapshot.exposed_4h,
                 "requests_15m": projection.requests_15m,
+                "priority_order": priority.future_safety_rank,
+                "projected_mandatory_120m": future.projected_mandatory,
+                "expected_crossers_120m": round(future.expected_crossers, 3),
                 "included": snapshot.zone_id in selected_ids,
             }
         )
