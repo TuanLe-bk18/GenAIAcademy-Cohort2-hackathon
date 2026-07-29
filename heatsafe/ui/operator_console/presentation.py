@@ -262,7 +262,7 @@ button, select { font: inherit; }
 .playback-actions select { border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:7px 8px; cursor:pointer; }
 .progress-track { position:absolute; height:4px; background:var(--raised); left:0; right:0; bottom:0; }
 .progress-track span { display:block; height:100%; width:0; background:var(--primary); transition:width .42s cubic-bezier(.2,.8,.2,1); }
-.action-strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}.action-strip button{width:100%;font-weight:700}.action-strip .primary{color:#102218;background:var(--primary);border-color:var(--primary)}.action-strip .primary:hover{background:var(--safe)}.action-strip button.selected{border-color:var(--safe);box-shadow:inset 0 0 0 1px var(--safe)}
+.action-strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}.action-strip button{width:100%;color:var(--warning);font-weight:700}.action-strip .primary{color:var(--warning);background:var(--primary);border-color:var(--primary)}.action-strip .primary:hover{background:var(--safe)}.action-strip button.selected{border-color:var(--safe);box-shadow:inset 0 0 0 1px var(--safe)}
 .kpi-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 .kpi-card { min-height:104px; padding:13px 15px; border:1px solid var(--border); border-radius:12px; background:var(--surface); display:flex; flex-direction:column; justify-content:center; overflow:hidden; position:relative; }
 .kpi-card::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--primary); }

@@ -111,6 +111,10 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertIn('data-choice="ACTIVATE"', component.html_content)
         self.assertIn(">Activate SafePause</button>", component.html_content)
         self.assertIn(">Continue Monitoring</button>", component.html_content)
+        self.assertIn(
+            ".action-strip button{width:100%;color:var(--warning)",
+            component.css_content,
+        )
         self.assertNotIn("status-strip", component.html_content)
         self.assertNotIn("decision-panel", component.html_content)
         self.assertNotIn("Synthetic Hanoi operations", component.html_content)
