@@ -118,6 +118,12 @@ class OperatorAreaView:
     priority_order: int | None = None
     exposed_2h: int = 0
     forecast_requests_30m: int = 0
+    fulfillment_drop_percent: float | None = None
+    eta_impact_minutes: float | None = None
+    safepause_driver_count: int | None = None
+    expected_risk_prevented: float | None = None
+    high_demand_reserved_cost_usd: float | None = None
+    expected_crossers_120m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -220,7 +226,7 @@ class OperatorDecisionInsightsView:
 
     @property
     def available_views(self) -> tuple[str, ...]:
-        base = ("Timing", "Trade-offs", "Stress test")
+        base = ("Timing", "Trade-offs")
         return (*base, "Outcome") if self.outcome_available else base
 
 
@@ -343,10 +349,16 @@ def _operator_areas(
         now = _horizon(row, 0) if row is not None else None
         future = _horizon(row, 120) if row is not None else None
         window = row.best_window if row is not None else None
+        proposal = window.proposal if window is not None else None
         mandatory_now = (
             int(now.mandatory_now) if now is not None else max(0, zone.exposed_4h)
         )
         future_count = int(future.projected_mandatory) if future is not None else None
+        expected_crossers = (
+            max(0.0, float(future.expected_crossers))
+            if future is not None
+            else None
+        )
         status = row.portfolio_status if row is not None else "UNAVAILABLE"
         result.append(
             OperatorAreaView(
@@ -379,6 +391,37 @@ def _operator_areas(
                 priority_order=(row.future_safety_rank if row is not None else None),
                 exposed_2h=max(0, int(zone.exposed_2h)),
                 forecast_requests_30m=max(0, int(zone.forecast_requests_30m)),
+                fulfillment_drop_percent=(
+                    max(
+                        0.0,
+                        proposal.baseline_stress_fulfillment_rate
+                        - proposal.p90_fulfillment_rate,
+                    )
+                    * 100
+                    if proposal is not None
+                    else None
+                ),
+                eta_impact_minutes=(
+                    max(0.0, proposal.p90_eta_increase_minutes)
+                    if proposal is not None
+                    else None
+                ),
+                safepause_driver_count=(
+                    max(0, proposal.selected_drivers)
+                    if proposal is not None
+                    else None
+                ),
+                expected_risk_prevented=(
+                    max(0.0, proposal.expected_risk_events_prevented)
+                    if proposal is not None
+                    else None
+                ),
+                high_demand_reserved_cost_usd=(
+                    max(0.0, window.p95_reserved_cost_vnd / 25_000)
+                    if window is not None
+                    else None
+                ),
+                expected_crossers_120m=expected_crossers,
             )
         )
     return tuple(result)
@@ -808,9 +851,9 @@ def build_area_evidence_table(
     columns = (
         "Area",
         "Heat",
-        "Need a break now",
-        f"By {endpoint_label}",
-        "Recommended start",
+        "Need now",
+        f"Need by {endpoint_label}",
+        "Demand (30 min)",
         "Plan status",
     )
     rows = tuple(
@@ -821,10 +864,49 @@ def build_area_evidence_table(
             area.expected_needing_protection_count
             if area.expected_needing_protection_count is not None
             else "Updating",
-            area.recommended_start_label,
+            area.forecast_requests_30m,
             area.plan_status_label,
         )
         for area in tuple(areas)[:MAX_AREAS]
+    )
+    return OperatorTable(columns=columns, rows=rows)
+
+
+def build_plan_evidence_table(areas: Sequence[OperatorAreaView]) -> OperatorTable:
+    """Build the concise city-plan review table from included operating areas."""
+    columns = (
+        "Area",
+        "Drivers protected",
+        "Start",
+        "Fulfillment impact",
+        "ETA impact",
+        "Reserved cost",
+    )
+    included = tuple(area for area in areas if area.included_in_plan)[:MAX_AREAS]
+    rows = tuple(
+        (
+            area.name,
+            area.safepause_driver_count
+            if area.safepause_driver_count is not None
+            else "Updating",
+            area.recommended_start_label,
+            (
+                f"-{area.fulfillment_drop_percent:.1f} pp"
+                if area.fulfillment_drop_percent is not None
+                else "Updating"
+            ),
+            (
+                f"+{area.eta_impact_minutes:.1f} min"
+                if area.eta_impact_minutes is not None
+                else "Updating"
+            ),
+            (
+                f"${area.high_demand_reserved_cost_usd:,.2f}"
+                if area.high_demand_reserved_cost_usd is not None
+                else "Updating"
+            ),
+        )
+        for area in included
     )
     return OperatorTable(columns=columns, rows=rows)
 
@@ -927,32 +1009,14 @@ def build_operator_console_view(
 ) -> OperatorConsoleView:
     """Build the complete immutable console view from authoritative inputs.
 
-    ``selected_decision`` is accepted for app integration, but proposal selection remains
-    owned by ``plan``. It is used only when its proposal is the exact proposal already
-    referenced by the selected city-plan row.
+    ``selected_decision`` remains accepted for app integration, but recommendation and
+    evidence selection are owned exclusively by the authoritative city plan.
     """
     del constraints  # The normalized values are already represented by the city plan.
     areas = _operator_areas(plan, zones, selected_zone_id=selected_zone_id)
     areas, selected_area = _select_area(areas, selected_zone_id)
     at = _plan_time(plan, zones)
-    selected_row = (
-        next((row for row in plan.rows if selected_area and row.zone_id == selected_area.zone_id), None)
-        if plan is not None
-        else None
-    )
-    authoritative_proposal = (
-        selected_row.best_window.proposal
-        if selected_row is not None and selected_row.best_window is not None
-        else None
-    )
-    decision_proposal = _get(selected_decision, "proposal")
-    evidence_proposal = (
-        decision_proposal
-        if authoritative_proposal is not None
-        and decision_proposal is not None
-        and decision_proposal.proposal_id == authoritative_proposal.proposal_id
-        else authoritative_proposal
-    )
+    del selected_decision  # Evidence follows the authoritative city plan only.
     endpoint = format_hanoi_after(at, 120)
     readiness = format_readiness_label(plan.status if plan is not None else None)
     effective_optimization_evidence = optimization_evidence
@@ -977,10 +1041,7 @@ def build_operator_console_view(
         ),
         evidence_summary=OperatorEvidenceSummary(
             areas=build_area_evidence_table(areas, endpoint),
-            drivers=build_driver_evidence_table(
-                evidence_proposal,
-                operational_time=at,
-            ),
+            drivers=build_plan_evidence_table(areas),
             history=build_history_evidence_table(history),
         ),
     )
@@ -1013,5 +1074,6 @@ __all__ = [
     "build_driver_evidence_table",
     "build_history_evidence_table",
     "build_operator_console_view",
+    "build_plan_evidence_table",
     "build_recommendation_view",
 ]

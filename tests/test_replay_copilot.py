@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import unittest
 from dataclasses import replace
@@ -7,6 +8,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 from heatsafe.replay_copilot import ReplayCopilot, ReplayCopilotFrame
+from heatsafe.ui.copilot_panel import (
+    _chat_context_requires_reset,
+    render_replay_copilot_panel,
+)
 from heatsafe.ui.operator_console.presentation import load_presentation_timeline
 
 
@@ -18,26 +23,147 @@ ENVIRONMENT = {
 
 
 class ReplayCopilotTests(unittest.TestCase):
-    def context(self, *, tick: int, branch: str) -> ReplayCopilotFrame:
+    def context(
+        self,
+        *,
+        tick: int,
+        branch: str,
+        district: bool = True,
+    ) -> ReplayCopilotFrame:
         timeline = load_presentation_timeline()
         frames = timeline["pre_decision"]
         if branch in {"ACTIVATE", "CONTINUE"}:
             frames = [*frames, *timeline["branches"][branch]]
         frame = next(item for item in frames if item["tick"] == tick)
-        selected_zone = next(
-            (zone for zone in frame["zones"] if zone.get("selected")),
-            frame["zones"][0],
-        )
+        selected_zone_id = None
+        if district:
+            selected_zone = next(
+                (zone for zone in frame["zones"] if zone.get("selected")),
+                frame["zones"][0],
+            )
+            selected_zone_id = selected_zone["id"]
         return ReplayCopilotFrame.from_timeline(
             timeline,
             tick_index=tick,
-            selected_zone_id=selected_zone["id"],
+            selected_zone_id=selected_zone_id,
             branch=branch,
         )
 
     def copilot(self, context: ReplayCopilotFrame) -> ReplayCopilot:
         with mock.patch.dict(os.environ, ENVIRONMENT, clear=False):
             return ReplayCopilot(context)
+
+    def test_citywide_frame_has_no_selected_zone_and_uses_snapshot_tool(self):
+        context = self.context(
+            tick=37,
+            branch="PRE_DECISION",
+            district=False,
+        )
+
+        self.assertEqual(context.scope, "citywide")
+        self.assertEqual(context.scope_label, "City")
+        self.assertIsNone(context.selected_zone_id)
+        self.assertIsNone(context.selected_zone)
+
+        answer, tool = self.copilot(context).answer("City conditions now")
+
+        self.assertEqual(tool, "get_replay_snapshot")
+        self.assertIn("Current conditions", answer)
+
+    def test_district_frame_infers_scope_and_uses_selected_area_tool(self):
+        context = self.context(tick=37, branch="PRE_DECISION", district=True)
+
+        self.assertEqual(context.scope, "district")
+        self.assertEqual(context.scope_label, context.selected_zone_name)
+        self.assertIsNotNone(context.selected_zone)
+
+        answer, tool = self.copilot(context).answer(
+            f"{context.selected_zone_name} conditions now"
+        )
+
+        self.assertEqual(tool, "explain_replay_zone")
+        self.assertIn(context.selected_zone_name, answer)
+
+    def test_replay_panel_prompts_follow_citywide_and_district_scope(self):
+        citywide = self.context(
+            tick=37,
+            branch="PRE_DECISION",
+            district=False,
+        )
+        district = self.context(
+            tick=37,
+            branch="PRE_DECISION",
+            district=True,
+        )
+
+        with (
+            mock.patch(
+                "heatsafe.ui.copilot_panel.st.container",
+                return_value=contextlib.nullcontext(),
+            ),
+            mock.patch("heatsafe.ui.copilot_panel._render_chat") as render_chat,
+        ):
+            render_replay_copilot_panel(citywide)
+            citywide_call = render_chat.call_args.kwargs
+            citywide_prompts = citywide_call["suggested_prompts"]
+            render_replay_copilot_panel(district)
+            district_call = render_chat.call_args.kwargs
+            district_prompts = district_call["suggested_prompts"]
+
+        self.assertIn("City conditions now", citywide_prompts)
+        self.assertEqual(
+            citywide_call["scope"],
+            "operations:PRE_DECISION:citywide:citywide",
+        )
+        self.assertEqual(citywide_call["position"], 37)
+        self.assertNotIn(
+            f"{district.selected_zone_name} conditions now",
+            citywide_prompts,
+        )
+        self.assertIn(
+            f"{district.selected_zone_name} conditions now",
+            district_prompts,
+        )
+        self.assertNotIn("City conditions now", district_prompts)
+        self.assertEqual(
+            district_call["scope"],
+            f"operations:PRE_DECISION:district:{district.selected_zone_id}",
+        )
+        self.assertEqual(district_call["position"], 37)
+
+    def test_replay_history_resets_on_scope_change_or_rewind_only(self):
+        base = {
+            "previous_scope": "operations:PRE_DECISION:citywide:citywide",
+            "scope": "operations:PRE_DECISION:citywide:citywide",
+            "previous_context": "tick-38",
+            "context": "tick-39",
+            "reset_on_context_change": False,
+            "previous_position": 38,
+            "position": 39,
+        }
+
+        self.assertFalse(_chat_context_requires_reset(**base))
+        self.assertTrue(
+            _chat_context_requires_reset(
+                **{**base, "position": 37},
+            )
+        )
+        self.assertTrue(
+            _chat_context_requires_reset(
+                **{
+                    **base,
+                    "scope": "operations:PRE_DECISION:district:hoan-kiem",
+                },
+            )
+        )
+        self.assertTrue(
+            _chat_context_requires_reset(
+                **{
+                    **base,
+                    "scope": "operations:ACTIVATE:citywide:citywide",
+                },
+            )
+        )
 
     def test_safepause_does_not_reveal_future_decision_evidence(self):
         context = self.context(tick=37, branch="PRE_DECISION")
@@ -67,7 +193,7 @@ class ReplayCopilotTests(unittest.TestCase):
         self.assertNotIn("monitoring-only", answer)
 
     def test_demand_answer_is_bound_to_selected_replay_frame(self):
-        context = self.context(tick=41, branch="ACTIVATE")
+        context = self.context(tick=41, branch="ACTIVATE", district=True)
 
         answer, tool = self.copilot(context).answer(
             f"Explain demand in {context.selected_zone_name}"
@@ -168,7 +294,7 @@ class ReplayCopilotTests(unittest.TestCase):
         self.assertIn("Đống Đa", answer)
 
     def test_safepause_tool_contains_all_areas_and_selected_alternatives(self):
-        context = self.context(tick=40, branch="PRE_DECISION")
+        context = self.context(tick=40, branch="PRE_DECISION", district=True)
         copilot = self.copilot(context)
         request = copilot._normalize_request(
             "compare_recorded_safepause_options",
@@ -278,7 +404,7 @@ class ReplayCopilotTests(unittest.TestCase):
         self.assertNotIn("running at **09:15**", answer)
 
     def test_gemini_cannot_scope_a_generic_question_to_the_selected_area(self):
-        context = self.context(tick=40, branch="PRE_DECISION")
+        context = self.context(tick=40, branch="PRE_DECISION", district=True)
         copilot = self.copilot(context)
         copilot.settings = replace(copilot.settings, enable_ai=True)
         generate = mock.Mock(

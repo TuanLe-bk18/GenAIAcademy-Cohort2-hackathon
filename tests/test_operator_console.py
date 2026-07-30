@@ -20,13 +20,15 @@ from heatsafe.models import (
     ZoneSnapshot,
 )
 from heatsafe.simulation.models import TickResult
+from heatsafe.ui.operator_console.evidence import build_replay_evidence_summary
 from heatsafe.ui.operator_console.outcomes import build_safepause_outcome_view
 from heatsafe.ui.operator_console.presentation import (
+    ReplayCursor,
     _parse_replay_state,
     load_presentation_timeline,
 )
 from heatsafe.ui.operator_console.view_models import (
-    MAX_DRIVER_ROWS,
+    MAX_AREAS,
     MAX_HISTORY_ROWS,
     MAX_PORTFOLIO_OPTIONS,
     MAX_PRIORITY_AREAS,
@@ -280,42 +282,128 @@ class VocabularyAndTimeTests(unittest.TestCase):
 
 
 class PresentationTimelineTests(unittest.TestCase):
-    def test_replay_cursor_is_atomic_and_validated_against_the_timeline(self):
+    def assert_replay_cursor(
+        self,
+        cursor: ReplayCursor | None,
+        *,
+        tick: int,
+        branch: str,
+        scope: str,
+        selected_zone_id: str | None,
+    ) -> None:
+        self.assertIsNotNone(cursor)
+        assert cursor is not None
+        self.assertEqual(cursor.tick, tick)
+        self.assertEqual(cursor.branch, branch)
+        self.assertEqual(cursor.scope, scope)
+        self.assertEqual(cursor.selected_zone_id, selected_zone_id)
+
+    def test_missing_replay_state_initializes_first_tick_citywide(self):
         timeline = load_presentation_timeline()
         initial = timeline["pre_decision"][0]
-        initial_zone = next(
-            (zone for zone in initial["zones"] if zone.get("selected")),
-            initial["zones"][0],
+
+        cursor = _parse_replay_state(timeline, None)
+
+        self.assert_replay_cursor(
+            cursor,
+            tick=initial["tick"],
+            branch="PRE_DECISION",
+            scope="citywide",
+            selected_zone_id=None,
         )
 
-        self.assertEqual(
-            _parse_replay_state(timeline, None),
-            (initial["tick"], initial_zone["id"], "PRE_DECISION"),
+    def test_explicit_citywide_replay_cursor_is_valid(self):
+        timeline = load_presentation_timeline()
+        activated = timeline["branches"]["ACTIVATE"][0]
+
+        cursor = _parse_replay_state(
+            timeline,
+            {
+                "tick": activated["tick"],
+                "branch": "ACTIVATE",
+                "scope": "citywide",
+                "selected_zone_id": None,
+            },
         )
+
+        self.assert_replay_cursor(
+            cursor,
+            tick=activated["tick"],
+            branch="ACTIVATE",
+            scope="citywide",
+            selected_zone_id=None,
+        )
+
+    def test_district_replay_cursor_validates_zone_in_selected_frame(self):
+        timeline = load_presentation_timeline()
         activated = timeline["branches"]["ACTIVATE"][0]
         activated_zone = activated["zones"][2]["id"]
-        self.assertEqual(
-            _parse_replay_state(
-                timeline,
-                {
-                    "tick": activated["tick"],
-                    "selected_zone_id": activated_zone,
-                    "branch": "ACTIVATE",
-                },
-            ),
-            (activated["tick"], activated_zone, "ACTIVATE"),
+
+        cursor = _parse_replay_state(
+            timeline,
+            {
+                "tick": activated["tick"],
+                "branch": "ACTIVATE",
+                "scope": "district",
+                "selected_zone_id": activated_zone,
+            },
         )
-        self.assertEqual(
-            _parse_replay_state(
-                timeline,
-                {
-                    "tick": 999,
-                    "selected_zone_id": "not-a-zone",
-                    "branch": "CONTINUE",
-                },
-            ),
-            (initial["tick"], initial_zone["id"], "PRE_DECISION"),
+
+        self.assert_replay_cursor(
+            cursor,
+            tick=activated["tick"],
+            branch="ACTIVATE",
+            scope="district",
+            selected_zone_id=activated_zone,
         )
+
+    def test_malformed_replay_cursor_is_rejected_without_fallback(self):
+        timeline = load_presentation_timeline()
+        initial_frame = timeline["pre_decision"][0]
+        initial_tick = initial_frame["tick"]
+        initial_zone_id = initial_frame["zones"][0]["id"]
+        malformed_values = (
+            "not-a-payload",
+            {
+                "tick": 999,
+                "branch": "CONTINUE",
+                "scope": "citywide",
+                "selected_zone_id": None,
+            },
+            {
+                "tick": initial_tick,
+                "branch": "PRE_DECISION",
+                "selected_zone_id": None,
+            },
+            {
+                "tick": initial_tick,
+                "branch": "PRE_DECISION",
+                "scope": "district",
+                "selected_zone_id": "not-a-zone",
+            },
+            {
+                "tick": initial_tick,
+                "branch": "PRE_DECISION",
+                "scope": "citywide",
+                "selected_zone_id": initial_zone_id,
+            },
+            {
+                "tick": initial_tick,
+                "branch": "PRE_DECISION",
+                "scope": "district",
+                "selected_zone_id": None,
+            },
+            {
+                "tick": initial_tick,
+                "branch": "PRE_DECISION",
+                "scope": "unsupported",
+                "selected_zone_id": None,
+            },
+        )
+
+        for value in malformed_values:
+            with self.subTest(value=value):
+                self.assertIsNone(_parse_replay_state(timeline, value))
 
     def test_display_timeline_is_bounded_and_clock_aligned(self):
         timeline = load_presentation_timeline()
@@ -401,6 +489,110 @@ class PresentationTimelineTests(unittest.TestCase):
         )
         self.assertTrue(
             all(len(frame["zones"]) == 10 for frame in (*pre, *activate, *continued))
+        )
+        initial_tradeoffs = pre[0]["zones"]
+        self.assertTrue(
+            all(
+                zone["priority_order"] is not None
+                and zone["forecast_requests_30m"] >= 0
+                for zone in initial_tradeoffs
+            )
+        )
+        initial_by_id = {zone["id"]: zone for zone in initial_tradeoffs}
+        next_by_id = {zone["id"]: zone for zone in pre[1]["zones"]}
+        self.assertNotEqual(
+            (
+                initial_by_id["hoan-kiem"]["needs_protection_120m"],
+                initial_by_id["hoan-kiem"]["forecast_requests_30m"],
+                initial_by_id["hoan-kiem"]["high_demand_reserved_cost_usd"],
+            ),
+            (
+                next_by_id["hoan-kiem"]["needs_protection_120m"],
+                next_by_id["hoan-kiem"]["forecast_requests_30m"],
+                next_by_id["hoan-kiem"]["high_demand_reserved_cost_usd"],
+            ),
+        )
+        self.assertTrue(
+            all(
+                zone["needs_protection_120m"]
+                == zone["projected_mandatory_120m"]
+                for zone in initial_tradeoffs
+            )
+        )
+        self.assertTrue(
+            all(
+                zone["urgent_drivers"] + zone["needs_protection_120m"] > 0
+                for zone in initial_tradeoffs
+            )
+        )
+        self.assertTrue(
+            all(
+                zone["safepause_driver_count"] is not None
+                and zone["expected_risk_prevented"] is not None
+                and zone["high_demand_reserved_cost_usd"] is not None
+                for zone in initial_tradeoffs
+            )
+        )
+        self.assertGreaterEqual(
+            len(
+                {
+                    (
+                        zone["fulfillment_drop_percent"],
+                        zone["eta_impact_minutes"],
+                    )
+                    for zone in initial_tradeoffs
+                }
+            ),
+            5,
+        )
+
+    def test_replay_evidence_hides_plan_before_decision_time(self):
+        timeline = load_presentation_timeline()
+        frame = timeline["pre_decision"][0]
+        cursor = ReplayCursor(
+            tick=frame["tick"],
+            branch="PRE_DECISION",
+            scope="citywide",
+        )
+
+        evidence = build_replay_evidence_summary(timeline, cursor)
+
+        self.assertEqual(len(evidence.areas.rows), 10)
+        self.assertEqual(len(evidence.drivers.rows), 0)
+        self.assertEqual(len(evidence.history.rows), 0)
+        self.assertTrue(all(row[-1] == "Monitoring" for row in evidence.areas.rows))
+
+    def test_replay_evidence_uses_action_recorded_at_decision_tick(self):
+        timeline = load_presentation_timeline()
+        frame = timeline["pre_decision"][-1]
+        cursor = ReplayCursor(
+            tick=frame["tick"],
+            branch="ACTIVATE",
+            scope="citywide",
+        )
+
+        evidence = build_replay_evidence_summary(timeline, cursor)
+
+        self.assertEqual(len(evidence.areas.rows), 10)
+        self.assertEqual(len(evidence.areas.columns), 6)
+        self.assertGreater(len(evidence.drivers.rows), 0)
+        self.assertEqual(
+            evidence.drivers.columns,
+            (
+                "Area",
+                "Drivers protected",
+                "Start",
+                "Fulfillment impact",
+                "ETA impact",
+                "Reserved cost",
+            ),
+        )
+        self.assertEqual(len(evidence.history.rows), 1)
+        self.assertEqual(evidence.history.rows[0][0], frame["time_label"])
+        self.assertEqual(evidence.history.rows[0][1], "Activate SafePause")
+        self.assertEqual(
+            evidence.history.rows[0][3],
+            "No mandatory gap · 43 preventive",
         )
 
     def test_decision_payload_is_shared_instead_of_repeated_per_frame(self):
@@ -545,6 +737,18 @@ class OperatorBuilderContractTests(unittest.TestCase):
             set(self.plan.selected_zone_ids),
         )
         self.assertEqual(view.recommendation.start_time_label, "11:30")
+        first_area = view.map_areas[0]
+        self.assertAlmostEqual(first_area.fulfillment_drop_percent or 0.0, 1.5)
+        self.assertEqual(first_area.eta_impact_minutes, 1.0)
+        self.assertEqual(first_area.safepause_driver_count, 25)
+        self.assertEqual(first_area.expected_risk_prevented, 3.0)
+        self.assertEqual(first_area.high_demand_reserved_cost_usd, 10.0)
+        self.assertEqual(first_area.expected_crossers_120m, 2.3)
+        self.assertEqual(
+            first_area.drivers_needing_break_now
+            + (first_area.expected_needing_protection_count or 0),
+            3,
+        )
 
     def test_generated_default_copy_contains_no_forbidden_terms(self):
         view = self.build_view()
@@ -620,7 +824,7 @@ class OperatorBuilderContractTests(unittest.TestCase):
         self.assertEqual(len(view.evidence_summary.areas.rows), 10)
         self.assertEqual(len(view.evidence_summary.drivers.columns), 6)
         self.assertLessEqual(
-            len(view.evidence_summary.drivers.rows), MAX_DRIVER_ROWS
+            len(view.evidence_summary.drivers.rows), MAX_AREAS
         )
         self.assertEqual(len(view.evidence_summary.history.columns), 5)
         self.assertLessEqual(
@@ -651,7 +855,10 @@ class OperatorBuilderContractTests(unittest.TestCase):
             selected_decision=types.SimpleNamespace(proposal=other),
             now=BASE_TIME,
         )
-        self.assertEqual(len(view.evidence_summary.drivers.rows), MAX_DRIVER_ROWS)
+        self.assertEqual(
+            len(view.evidence_summary.drivers.rows),
+            len(self.plan.selected_zone_ids),
+        )
         self.assertEqual(view.recommendation.driver_count, 25)
 
 

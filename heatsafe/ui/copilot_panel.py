@@ -10,13 +10,35 @@ from heatsafe.models import DecisionConstraints, ZoneSnapshot
 from heatsafe.replay_copilot import ReplayCopilot, ReplayCopilotFrame
 from heatsafe.repository import HybridRepository
 
-COPILOT_STATE_VERSION = 17
+COPILOT_STATE_VERSION = 18
 PRODUCTION_COPILOT_NAMESPACE = "production_copilot"
 REPLAY_COPILOT_NAMESPACE = "replay_copilot"
 
 
 def _state_key(namespace: str, suffix: str) -> str:
     return f"{namespace}_{suffix}"
+
+
+def _chat_context_requires_reset(
+    *,
+    previous_scope: object,
+    scope: str,
+    previous_context: object,
+    context: str,
+    reset_on_context_change: bool,
+    previous_position: object,
+    position: int | None,
+) -> bool:
+    rewound = (
+        isinstance(position, int)
+        and isinstance(previous_position, int)
+        and position < previous_position
+    )
+    return (
+        previous_scope != scope
+        or rewound
+        or (reset_on_context_change and previous_context != context)
+    )
 
 
 def _source_caption(tool: object, source_label: object) -> str:
@@ -69,12 +91,14 @@ def _render_chat(
     max_messages: int,
     reset_on_context_change: bool = True,
     source_label: str | None = None,
+    position: int | None = None,
 ) -> None:
     """Render the shared chat shell around one context-bound answer function."""
     context_key = _state_key(namespace, "context")
     scope_key = _state_key(namespace, "scope")
     messages_key = _state_key(namespace, "messages")
-    pending_prompt_key = _state_key(namespace, "pending_prompt")
+    state_version_key = _state_key(namespace, "state_version")
+    position_key = _state_key(namespace, "position")
     suggestion_nonce_key = _state_key(namespace, "suggestion_nonce")
     with st.container(key="gemini-copilot-header"):
         title_column, clear_column = st.columns([5, 1], vertical_alignment="center")
@@ -90,18 +114,29 @@ def _render_chat(
             )
         if caption:
             st.caption(caption)
+    if st.session_state.get(state_version_key) != COPILOT_STATE_VERSION:
+        st.session_state[messages_key] = []
+        st.session_state.pop(suggestion_nonce_key, None)
+    st.session_state[state_version_key] = COPILOT_STATE_VERSION
     previous_scope = st.session_state.get(scope_key)
     previous_context = st.session_state.get(context_key)
-    if previous_scope != scope or (
-        reset_on_context_change and previous_context != context
+    previous_position = st.session_state.get(position_key)
+    if _chat_context_requires_reset(
+        previous_scope=previous_scope,
+        scope=scope,
+        previous_context=previous_context,
+        context=context,
+        reset_on_context_change=reset_on_context_change,
+        previous_position=previous_position,
+        position=position,
     ):
         st.session_state[messages_key] = []
-        st.session_state.pop(pending_prompt_key, None)
     st.session_state[scope_key] = scope
     st.session_state[context_key] = context
+    if position is not None:
+        st.session_state[position_key] = position
     if clear_requested:
         st.session_state[messages_key] = []
-        st.session_state.pop(pending_prompt_key, None)
     messages = st.session_state.setdefault(messages_key, [])
 
     limit = max(1, int(max_messages))
@@ -145,12 +180,18 @@ def _render_chat(
     question = suggested_question or typed_question
     if not question:
         return
-    st.session_state[pending_prompt_key] = question
     if selected_suggestion:
         st.session_state[suggestion_nonce_key] = suggestion_nonce + 1
 
     history = tuple(messages[-10:])
-    messages.append({"role": "user", "content": question})
+    messages.append(
+        {
+            "role": "user",
+            "content": question,
+            "context": context,
+            "scope": scope,
+        }
+    )
     with history_container:
         with st.chat_message("user"):
             st.markdown(question)
@@ -181,9 +222,12 @@ def _render_chat(
             "content": answer,
             "tool": tool,
             "source_label": source_label,
+            "context": context,
+            "scope": scope,
         }
     )
-    st.session_state.pop(pending_prompt_key, None)
+    stored_limit = max(20, limit * 2)
+    messages[:] = messages[-stored_limit:]
     st.rerun()
 
 
@@ -247,10 +291,14 @@ def render_replay_copilot_panel(
     """Render Gemini against only the currently displayed EVENT REPLAY frame."""
     context = (
         f"{COPILOT_STATE_VERSION}:replay:{replay_frame.tick_index}:"
-        f"{replay_frame.branch}:{replay_frame.selected_zone_id}:"
+        f"{replay_frame.branch}:{replay_frame.scope}:"
+        f"{replay_frame.selected_zone_id or 'citywide'}:"
         f"{replay_frame.provenance.get('source_state_checksum', 'artifact')}"
     )
     zone_name = replay_frame.selected_zone_name
+    scope_label = (
+        zone_name if replay_frame.scope == "district" else "All Districts"
+    )
     safepause_label, safepause_question = (
         (
             "SafePause decision status",
@@ -262,27 +310,44 @@ def render_replay_copilot_panel(
             "Compare SafePause options across all areas",
         )
     )
-    prompts = {
-        f"{zone_name} conditions now": (
+    if replay_frame.scope == "district":
+        condition_label = f"{zone_name} conditions now"
+        condition_question = (
             f"Explain conditions in {zone_name} at the current operational time"
-        ),
+        )
+    else:
+        condition_label = "City conditions now"
+        condition_question = (
+            "Summarize conditions across all districts at the current operational time"
+        )
+    prompts = {
+        condition_label: condition_question,
         "Explain demand": "Explain trip demand across all areas at the current operational time",
         safepause_label: safepause_question,
         "Priority areas now": "Which areas have the highest current operational priority?",
     }
+    context_label = (
+        f"{replay_frame.time_label} · {scope_label} · "
+        f"{replay_frame.branch.replace('_', '-')}"
+    )
+    conversation_scope = (
+        f"operations:{replay_frame.branch}:{replay_frame.scope}:"
+        f"{replay_frame.selected_zone_id or 'citywide'}"
+    )
     copilot = ReplayCopilot(replay_frame)
     with st.container(key="gemini-copilot-shell"):
         _render_chat(
             namespace=REPLAY_COPILOT_NAMESPACE,
-            scope="operations",
+            scope=conversation_scope,
             context=context,
-            caption=None,
+            caption=context_label,
             welcome=None,
             suggested_prompts=prompts,
             answer_question=copilot.answer,
             max_messages=max_messages,
             reset_on_context_change=False,
-            source_label=replay_frame.time_label,
+            source_label=context_label,
+            position=replay_frame.tick_index,
         )
 
 

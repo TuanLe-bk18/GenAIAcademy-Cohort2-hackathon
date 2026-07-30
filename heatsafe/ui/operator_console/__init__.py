@@ -37,6 +37,7 @@ from .view_models import (
     build_driver_evidence_table,
     build_history_evidence_table,
     build_operator_console_view,
+    build_plan_evidence_table,
     build_recommendation_view,
 )
 from .vocabulary import (
@@ -61,7 +62,7 @@ if TYPE_CHECKING:
     from .city_map import map_records, render_city_map
     from .decision_card import render_decision_card
     from .decision_insights import render_decision_insights
-    from .evidence import render_evidence
+    from .evidence import build_replay_evidence_summary, render_evidence
     from .operations import (
         OperatorOperationsResult,
         render_city_kpis,
@@ -70,13 +71,16 @@ if TYPE_CHECKING:
     )
     from .presentation import (
         OperatorDashboardResult,
+        ReplayCursor,
         build_current_dashboard_payload,
         load_presentation_timeline,
+        replay_cursor_from_component_state,
+        replay_cursor_from_session_state,
         render_operator_dashboard,
         render_presentation_playback,
     )
     from .shell import OperatorConsoleResult, render_operator_console
-    from .sidebar import OperatorPlaybackView, OperatorSidebarResult, render_sidebar
+    from .sidebar import OperatorSidebarResult, render_sidebar
     from .state_panels import (
         render_complete_state,
         render_loading_state,
@@ -86,13 +90,21 @@ if TYPE_CHECKING:
     )
     from .styles import render_styles
 
-EVIDENCE_VIEWS = ("Areas", "Drivers", "History")
+EVIDENCE_VIEWS = (
+    "Area evidence",
+    "SafePause plan",
+    "Decision history",
+)
 
 _LAZY_EXPORTS = {
     "map_records": ("city_map", "map_records"),
     "render_city_map": ("city_map", "render_city_map"),
     "render_decision_card": ("decision_card", "render_decision_card"),
     "render_decision_insights": ("decision_insights", "render_decision_insights"),
+    "build_replay_evidence_summary": (
+        "evidence",
+        "build_replay_evidence_summary",
+    ),
     "render_evidence": ("evidence", "render_evidence"),
     "OperatorOperationsResult": ("operations", "OperatorOperationsResult"),
     "render_city_kpis": ("operations", "render_city_kpis"),
@@ -103,6 +115,7 @@ _LAZY_EXPORTS = {
         "load_presentation_timeline",
     ),
     "OperatorDashboardResult": ("presentation", "OperatorDashboardResult"),
+    "ReplayCursor": ("presentation", "ReplayCursor"),
     "build_current_dashboard_payload": (
         "presentation",
         "build_current_dashboard_payload",
@@ -111,13 +124,20 @@ _LAZY_EXPORTS = {
         "presentation",
         "render_operator_dashboard",
     ),
+    "replay_cursor_from_component_state": (
+        "presentation",
+        "replay_cursor_from_component_state",
+    ),
+    "replay_cursor_from_session_state": (
+        "presentation",
+        "replay_cursor_from_session_state",
+    ),
     "render_presentation_playback": (
         "presentation",
         "render_presentation_playback",
     ),
     "OperatorConsoleResult": ("shell", "OperatorConsoleResult"),
     "render_operator_console": ("shell", "render_operator_console"),
-    "OperatorPlaybackView": ("sidebar", "OperatorPlaybackView"),
     "OperatorSidebarResult": ("sidebar", "OperatorSidebarResult"),
     "render_sidebar": ("sidebar", "render_sidebar"),
     "render_complete_state": ("state_panels", "render_complete_state"),
@@ -164,13 +184,13 @@ __all__ = [
     "OperatorOperationsResult",
     "OperatorOutcomePoint",
     "OperatorOutcomeView",
-    "OperatorPlaybackView",
     "OperatorPortfolioOptionView",
     "OperatorRecommendationView",
     "OperatorSidebarResult",
     "OperatorStressMetricView",
     "OperatorTable",
     "OperatorTimingOptionView",
+    "ReplayCursor",
     "as_hanoi_time",
     "build_area_evidence_table",
     "build_city_kpis",
@@ -179,7 +199,9 @@ __all__ = [
     "build_driver_evidence_table",
     "build_history_evidence_table",
     "build_operator_console_view",
+    "build_plan_evidence_table",
     "build_recommendation_view",
+    "build_replay_evidence_summary",
     "build_safepause_outcome_view",
     "format_currency_vnd",
     "format_duration",
@@ -192,8 +214,8 @@ __all__ = [
     "format_plan_status_label",
     "format_readiness_label",
     "format_risk_level",
-    "map_records",
     "load_presentation_timeline",
+    "map_records",
     "operator_copy_violations",
     "render_city_kpis",
     "render_city_map",
@@ -205,10 +227,12 @@ __all__ = [
     "render_monitoring_state",
     "render_no_safe_plan",
     "render_operations",
-    "render_operator_dashboard",
     "render_operator_console",
+    "render_operator_dashboard",
     "render_operator_header",
     "render_presentation_playback",
+    "replay_cursor_from_component_state",
+    "replay_cursor_from_session_state",
     "render_recommendation_unavailable",
     "render_sidebar",
     "render_styles",

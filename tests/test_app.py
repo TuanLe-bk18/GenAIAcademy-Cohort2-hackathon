@@ -9,6 +9,7 @@ from unittest import mock
 
 from streamlit.testing.v1 import AppTest
 
+from heatsafe.ui.copilot_panel import COPILOT_STATE_VERSION
 from heatsafe.ui.operator_console.vocabulary import operator_copy_violations
 
 
@@ -28,8 +29,8 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
     AREA_COLUMNS: ClassVar[set[str]] = {
         "Area",
         "Heat",
-        "Need a break now",
-        "Recommended start",
+        "Need now",
+        "Demand (30 min)",
         "Plan status",
     }
 
@@ -94,8 +95,19 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
             self.KPI_LABELS,
         )
         self.assertEqual(len(payload["pre_decision"][0]["zones"]), 10)
+        self.assertGreater(payload["city_budget_usd"], 0)
+        self.assertTrue(
+            all(
+                zone["priority_order"] is not None
+                and zone["forecast_requests_30m"] >= 0
+                for zone in payload["pre_decision"][0]["zones"]
+            )
+        )
         self.assertIn("Hanoi operating areas", component.html_content)
         self.assertIn("Why this plan", component.html_content)
+        self.assertIn("data-district-detail", component.html_content)
+        self.assertIn("renderDistrictDetail", component.js_content)
+        self.assertIn("districtDecisionCopy", component.js_content)
         self.assertIn("data-map-basemap", component.html_content)
         self.assertIn("© OpenStreetMap · © CARTO", component.html_content)
         self.assertIn("basemaps.cartocdn.com", component.js_content)
@@ -155,7 +167,7 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
     def test_evidence_surface_renders_only_bounded_area_table(self):
         app = self.run_app()
         self.widget(app.segmented_control, "Console view").set_value(
-            "Evidence & history"
+            "Evidence & History"
         )
         app.run()
 
@@ -169,8 +181,102 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertTrue(self.AREA_COLUMNS <= set(frame.columns))
         self.assertEqual(
             self.widget(app.segmented_control, "Evidence view").value,
-            "Areas",
+            "Area evidence",
         )
+        self.widget(app.segmented_control, "Evidence view").set_value(
+            "SafePause plan"
+        )
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 1)
+        plan_frame = app.dataframe[0].value
+        self.assertEqual(
+            list(plan_frame.columns),
+            [
+                "Area",
+                "Drivers protected",
+                "Start",
+                "Fulfillment impact",
+                "ETA impact",
+                "Reserved cost",
+            ],
+        )
+        self.assertGreater(len(plan_frame), 0)
+        self.widget(app.segmented_control, "Evidence view").set_value(
+            "Decision history"
+        )
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            self.widget(app.segmented_control, "Evidence view").value,
+            "Decision history",
+        )
+        self.assertEqual(len(app.dataframe), 0)
+        self.assertTrue(
+            any("No records are available" in str(item.value) for item in app.caption)
+        )
+        self.assert_operator_vocabulary(app)
+
+    def test_replay_evidence_surface_uses_timeline_without_mounting_dashboard(self):
+        app = self.run_app()
+        self.widget(app.segmented_control, "Mode").set_value(
+            "accelerated-production"
+        )
+        app.run()
+        self.widget(app.segmented_control, "Console view").set_value(
+            "Evidence & History"
+        )
+        app.run()
+
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.get("bidi_component")), 0)
+        self.assertEqual(len(app.dataframe), 1)
+        self.assertEqual(len(app.dataframe[0].value.columns), 6)
+        self.assertEqual(
+            self.widget(app.segmented_control, "Evidence view").value,
+            "Area evidence",
+        )
+        self.assertTrue(
+            any(
+                "Current heat, safety need, demand" in str(item.value)
+                for item in app.caption
+            )
+        )
+        self.widget(app.segmented_control, "Evidence view").set_value(
+            "SafePause plan"
+        )
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 0)
+        self.assertTrue(
+            any("No records are available" in str(item.value) for item in app.caption)
+        )
+
+        app.session_state["operator-dashboard:persisted-replay-state"] = {
+            "tick": 40,
+            "branch": "ACTIVATE",
+            "scope": "citywide",
+            "selected_zone_id": None,
+        }
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 1)
+        self.assertEqual(len(app.dataframe[0].value.columns), 6)
+
+        self.widget(app.segmented_control, "Evidence view").set_value(
+            "Decision history"
+        )
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            self.widget(app.segmented_control, "Evidence view").value,
+            "Decision history",
+        )
+        self.assertEqual(len(app.dataframe), 1)
+        history = app.dataframe[0].value
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history.iloc[0]["Action"], "Activate SafePause")
+        self.assertEqual(history.iloc[0]["Time"], "10:00")
         self.assert_operator_vocabulary(app)
 
     def test_citywide_default_and_district_detail_share_one_evidence_surface(self):
@@ -184,10 +290,24 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertGreater(len(insights["timing_options"]), 0)
         self.assertGreater(len(insights["portfolio_options"]), 0)
         self.assertGreater(len(insights["stress_metrics"]), 0)
+        self.assertIsNotNone(selected["fulfillment_drop_percent"])
+        self.assertIsNotNone(selected["eta_impact_minutes"])
+        self.assertIsNotNone(selected["safepause_driver_count"])
+        self.assertIsNotNone(selected["expected_risk_prevented"])
+        self.assertIsNotNone(selected["high_demand_reserved_cost_usd"])
+        self.assertIsNotNone(selected["expected_crossers_120m"])
         self.assertNotIn("Selected district", component.html_content)
         self.assertIn(">All Districts</button>", component.html_content)
         self.assertIn("renderAllDistrictsInsight", component.js_content)
+        self.assertIn("Expected safety-limit crossings by district", component.js_content)
+        self.assertIn("Expected crossers / projected", component.js_content)
+        self.assertNotIn('<option value="stress">Stress test</option>', component.html_content)
+        self.assertIn("Drivers at the mandatory-break limit", component.js_content)
+        self.assertNotIn("ACTIVATE and CONTINUE are compared only through tick", component.js_content)
         self.assertIn("selectAllDistricts(state)", component.js_content)
+        self.assertIn('<option value="status" selected>SafePause status</option>', component.html_content)
+        self.assertIn('mapMetric:"status"', component.js_content)
+        self.assertIn("City-wide intervention tradeoffs", component.js_content)
         self.assert_operator_vocabulary(app)
 
     def test_fixed_server_policy_reaches_optimizer_and_fails_closed(self):
@@ -280,16 +400,34 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         self.assertIn("setInterval", component.js_content)
         self.assertIn('setStateValue?.("replay_state"', component.js_content)
         self.assertIn("lastEmittedReplayState", component.js_content)
-        self.assertIn("selected_zone_id: state.selectedZone", component.js_content)
-        self.assertIn("branch: state.choice || frame.branch", component.js_content)
+        select_all_source = component.js_content[
+            component.js_content.index("function selectAllDistricts(state)"):
+            component.js_content.index("function tweenNumber")
+        ]
+        self.assertIn("state.selectedZone = null", select_all_source)
+        self.assertIn("emitReplayState(state)", select_all_source)
+        emit_source = component.js_content[
+            component.js_content.index("function emitReplayState(state)"):
+            component.js_content.index("function stop(state)")
+        ]
+        self.assertNotIn("!state.selectedZone", emit_source)
+        self.assertIn(
+            'scope: state.selectedZone ? "district" : "citywide"',
+            emit_source,
+        )
+        self.assertIn("selected_zone_id: state.selectedZone", emit_source)
+        self.assertIn("branch: state.choice || frame.branch", emit_source)
         self.assertIn("setTriggerValue", component.js_content)
         self.assertEqual(len(app.sidebar.chat_input), 1)
+        replay_sidebar_shape = {
+            name: len(getattr(app.sidebar, name))
+            for name in current_sidebar_shape
+        }
+        expected_replay_sidebar_shape = dict(current_sidebar_shape)
+        expected_replay_sidebar_shape["caption"] += 1
         self.assertEqual(
-            {
-                name: len(getattr(app.sidebar, name))
-                for name in current_sidebar_shape
-            },
-            current_sidebar_shape,
+            replay_sidebar_shape,
+            expected_replay_sidebar_shape,
         )
         replay_sidebar_copy = " ".join(
             str(item.value)
@@ -304,10 +442,14 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
             "I can explain the verified replay frame",
             replay_sidebar_copy,
         )
+        self.assertIn(
+            "09:15 · All Districts · PRE-DECISION",
+            replay_sidebar_copy,
+        )
         self.assertTrue(
             any(
-                "Replaying the reviewed historical heatwave scenario with the "
-                "deterministic Safety Optimizer."
+                "Replaying a reviewed, precomputed Hanoi heatwave simulation "
+                "with the deterministic Safety Optimizer."
                 in str(item.value)
                 for item in app.sidebar.caption
             )
@@ -385,6 +527,40 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
         )
         self.assertNotIn("production_copilot_pending_prompt", app.session_state)
         self.assertNotIn("replay_copilot_pending_prompt", app.session_state)
+        self.assertEqual(
+            app.session_state["production_copilot_state_version"],
+            COPILOT_STATE_VERSION,
+        )
+        self.assertEqual(
+            app.session_state["replay_copilot_state_version"],
+            COPILOT_STATE_VERSION,
+        )
+
+    def test_stale_copilot_state_version_clears_only_its_namespace(self):
+        app = self.run_app()
+        app.session_state["production_copilot_messages"] = [
+            {"role": "assistant", "content": "stale production"}
+        ]
+        app.session_state["production_copilot_state_version"] = (
+            COPILOT_STATE_VERSION - 1
+        )
+        app.session_state["replay_copilot_messages"] = [
+            {"role": "assistant", "content": "keep replay"}
+        ]
+        app.session_state["replay_copilot_state_version"] = COPILOT_STATE_VERSION
+
+        with mock.patch.dict(os.environ, ENVIRONMENT, clear=False):
+            app.run()
+
+        self.assertEqual(app.session_state["production_copilot_messages"], [])
+        self.assertEqual(
+            app.session_state["replay_copilot_messages"],
+            [{"role": "assistant", "content": "keep replay"}],
+        )
+        self.assertEqual(
+            app.session_state["production_copilot_state_version"],
+            COPILOT_STATE_VERSION,
+        )
 
     def test_sidebar_source_has_no_removed_controls_or_handlers(self):
         source = Path(
@@ -401,6 +577,8 @@ class HeatSafeOperatorAppTests(unittest.TestCase):
             "refresh_requested",
             "reset_requested",
             "limits_applied",
+            "OperatorPlaybackView",
+            "playback=",
         ):
             self.assertNotIn(removed, source)
 

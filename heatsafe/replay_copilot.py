@@ -177,9 +177,9 @@ class ReplayCopilotFrame:
 
     tick_index: int
     branch: str
-    selected_zone_id: str
+    selected_zone_id: str | None
     frame: Mapping[str, Any]
-    selected_zone: Mapping[str, Any]
+    selected_zone: Mapping[str, Any] | None
     decision_view: Mapping[str, Any]
     decision_views: Mapping[str, Any]
     decision_tick: int
@@ -187,8 +187,18 @@ class ReplayCopilotFrame:
     knowledge_base: ReplayKnowledgeBase
 
     @property
-    def selected_zone_name(self) -> str:
+    def scope(self) -> str:
+        return "district" if self.selected_zone_id is not None else "citywide"
+
+    @property
+    def scope_label(self) -> str:
+        if self.selected_zone is None:
+            return "City"
         return str(self.selected_zone.get("name") or self.selected_zone_id)
+
+    @property
+    def selected_zone_name(self) -> str:
+        return self.scope_label
 
     @property
     def time_label(self) -> str:
@@ -200,14 +210,18 @@ class ReplayCopilotFrame:
         timeline: Mapping[str, Any],
         *,
         tick_index: int,
-        selected_zone_id: str,
+        selected_zone_id: str | None,
         branch: str,
     ) -> ReplayCopilotFrame:
         if branch not in _ALLOWED_BRANCHES:
             raise ValueError(f"Unsupported replay branch: {branch!r}")
         knowledge_base = ReplayKnowledgeBase(timeline)
         frame = knowledge_base.frame(tick_index, branch)
-        selected_zone = knowledge_base.zone(frame, selected_zone_id)
+        selected_zone = (
+            knowledge_base.zone(frame, selected_zone_id)
+            if selected_zone_id is not None
+            else None
+        )
         decision_views = (
             knowledge_base.decision_views
             if tick_index >= knowledge_base.decision_tick
@@ -219,7 +233,11 @@ class ReplayCopilotFrame:
             selected_zone_id=selected_zone_id,
             frame=frame,
             selected_zone=selected_zone,
-            decision_view=_mapping(decision_views.get(selected_zone_id)),
+            decision_view=(
+                _mapping(decision_views.get(selected_zone_id))
+                if selected_zone_id is not None
+                else {}
+            ),
             decision_views=decision_views,
             decision_tick=knowledge_base.decision_tick,
             provenance=_mapping(timeline.get("generated_from")),

@@ -1,127 +1,226 @@
 # HeatSafe AI Ops
 
-HeatSafe AI Ops is a GCP-native decision-support platform for protecting two-wheel ride-hailing drivers during extreme heat while keeping platform cost, fulfillment, and pickup delay within explicit operational guardrails.
+HeatSafe AI Ops is a GCP-native decision-support prototype for two-wheel ride-hailing operators during extreme heat. It turns weather, driver exposure, demand, and model evidence into a city-wide **SafePause** plan that balances driver protection with platform cost, fulfillment, and pickup-delay guardrails.
 
-> **Safety notice:** HeatSafe is a simulated operations demo. Heat Index is used as a screening indicator; risk scores and projected intervention benefits are not medical diagnoses or proof of reduced health incidents. The application does not dispatch drivers, send notifications, or execute real-world interventions.
+> **Project boundary:** HeatSafe is a working hackathon prototype for operational planning and decision audit. Heat Index is a screening indicator, not a medical diagnosis. The app does not autonomously dispatch drivers or send notifications, and projected impact is not proof of reduced real-world incidents.
 
-## What the current app provides
+## Why HeatSafe
 
-The Streamlit operator console has two modes and two workspace surfaces:
+Heat risk creates a difficult fleet-operations tradeoff: intervening too late increases driver exposure, while pausing too much supply can reduce fulfillment, increase pickup time, and raise platform cost.
 
-| Mode | Purpose | Evidence source |
+HeatSafe gives an operator one evidence-backed control surface to:
+
+- identify districts and drivers that need attention now or are likely to need it soon;
+- compare intervention timing before exposure crosses a hard policy threshold;
+- protect mandatory cases first while keeping a shared city budget and service-level constraints visible;
+- understand why an option was selected, deferred, or rejected;
+- record the human decision together with its source snapshot, forecast, model, and proposal lineage.
+
+The result is a safer and more explainable operating process without presenting AI as an autonomous safety authority.
+
+## Monitor → Alert → Decide → Protect
+
+| Stage | What HeatSafe does | Operator outcome |
 |---|---|---|
-| **PRODUCTION** | Review the current city-wide SafePause plan, inspect zone evidence, and record a simulated `ACTIVATE` or `CONTINUE` decision. | A pinned, integrity-checked BigQuery replay bundle at decision tick **40** when configured; otherwise the verified local Production window at **K=45**. |
-| **EVENT REPLAY** | Present the reviewed Hanoi heatwave from 09:15 to 13:15, compare `With SafePause` and `Without SafePause`, and inspect the policy outcome every 15 minutes. | A precomputed deterministic timeline generated from the stateful simulation engine. Browser playback does not rerun the optimizer. |
+| **1. Monitor** | Ingests weather and fleet-operating signals, calculates Heat Index, stores raw provider payloads in Cloud Storage, and maintains one coherent current snapshot in BigQuery. Snapshot freshness and component lineage are checked before planning. | A city map and operational KPIs grounded in a specific evidence point. |
+| **2. Alert** | Combines current exposure, BigQuery ML driver-risk scores, TimesFM demand forecasts, and 64-path preventive projections. Drivers are classified as `MANDATORY_4H`, `PROJECTED_MANDATORY`, `WATCHLIST`, or model-eligible; districts receive separate severity, future-safety, and intervention-opportunity ranks. | Prioritized operational alerts instead of a single opaque risk score. |
+| **3. Decide** | Evaluates SafePause start times, durations, and staggered waves per district, then searches city-wide portfolios under safety, cost, fulfillment, and ETA constraints. Gemini can explain the evidence through an allowlisted tool layer, but the recommendation remains deterministic and reviewable. | A recommended portfolio, feasible alternatives, near misses, and explicit rejection reasons. |
+| **4. Protect** | Converts the selected portfolio into staged SafePause waves, estimated earnings support, capacity reallocation, and CoolStop routing context. The operator chooses **Activate** or **Continue**; HeatSafe records that choice and its projected outcomes for audit. | A human-approved protection plan with traceability. External dispatch remains an integration boundary. |
 
-The workspace can switch between:
+HeatSafe fails closed when evidence is stale, incomplete, or mismatched. States such as `MODEL_UNAVAILABLE`, `FORECAST_UNAVAILABLE`, `SNAPSHOT_MISMATCH`, `EVIDENCE_UNAVAILABLE`, `NO_FEASIBLE`, and `SAFETY_CAPACITY_BREACH` remain visible instead of being converted into a confident recommendation.
 
-- **Operations** — city map, priority areas, safety KPIs, recommendation, guardrails, and simulated action controls.
-- **Evidence & history** — model lineage, forecasts, proposal evidence, and the decision/audit trail.
-
-Both modes include an evidence-bound Copilot. Production uses allowlisted operational tools and Gemini when enabled; Event Replay answers only from the selected, validated replay frame.
-
-## Architecture
+## GCP-native architecture
 
 ```text
-Weather + driver telemetry + intervention outcomes
-                         |
-                         v
-              Cloud Storage + BigQuery
-        raw lineage, snapshots, simulation ledger,
-          forecasts, predictions, and audit events
-                         |
-             +-----------+------------+
-             |                        |
-             v                        v
-    BigQuery ML risk model     TimesFM AI.FORECAST
-             |                        |
-             +-----------+------------+
-                         v
-          action-conditioned SafePause optimizer
-       mandatory coverage + cost + service guardrails
-                         |
-              verified Production bundle
-                         |
-                         v
-        Cloud Run / Streamlit operator console
-             |                        |
-             v                        v
-      simulated audit action    Gemini Copilot
-                                allowlisted tools
+Weather provider + fleet operating signals
+                     |
+                     v
+             Cloud Run Jobs
+          ingest / train / score
+                     |
+          +----------+-----------+
+          |                      |
+          v                      v
+  Cloud Storage              BigQuery
+  raw evidence          current operational state
+  and lineage           history, forecasts, audit
+          |                      |
+          +----------+-----------+
+                     |
+          +----------+-----------+
+          |                      |
+          v                      v
+ BigQuery ML classifier    TimesFM AI.FORECAST
+ action-conditioned risk   demand + uncertainty
+          |                      |
+          +----------+-----------+
+                     v
+      Evidence and preventive projection layer
+      snapshot matching · freshness · 64 paths
+                     |
+                     v
+        Safety-first SafePause optimizer
+   district candidates → city portfolio → guardrails
+                     |
+          +----------+-----------+
+          |                      |
+          v                      v
+ Cloud Run operator app   Vertex AI Gemini Copilot
+ map, evidence, action    allowlisted explanations
+          |
+          v
+   Human decision → BigQuery audit trail
 ```
 
-### Main components
+### Why this infrastructure structure is strong
 
-- **Cloud Storage** — immutable provider payloads, replay inputs, and compressed simulation checkpoints with checksum lineage.
-- **BigQuery** — operational snapshots, driver features, intervention outcomes, simulation runs/ticks, forecasts, predictions, proposals, and audit events.
-- **BigQuery ML** — boosted-tree driver risk scoring and TimesFM demand forecasting.
-- **Stateful simulation engine** — advances driver exposure, orders, service metrics, and SafePause controls in deterministic 15-minute ticks.
-- **SafePause optimizer** — evaluates action timing and duration against safety, budget, fulfillment, and ETA constraints.
-- **Verified cloud bundle loader** — validates the pinned five-tick slice before Production evidence is exposed.
-- **Vertex AI Gemini Copilot** — explains only allowlisted evidence and falls back to deterministic or monitoring-only responses when evidence cannot be verified.
-- **Cloud Run** — hosts the Streamlit app and manually triggered ingestion/training/scoring jobs.
+| GCP component | Role in HeatSafe | Technical value |
+|---|---|---|
+| **Cloud Storage** | Write-once landing area for raw provider payloads and evidence artifacts. | Preserves source lineage independently of transformed operational tables; uploads use generation preconditions to avoid accidental overwrite. |
+| **BigQuery** | System of record for observations, current snapshots, driver features, forecasts, predictions, proposals, model evaluation, and decision history. | Separates append-only history from `zone_snapshots_current`; uses partitioning, clustering, parameterized queries, bounded scan budgets, and staging-table `MERGE` upserts. |
+| **BigQuery ML** | Trains and evaluates the heat-risk classifier, scores baseline and SafePause actions, explains top factors, and produces demand forecasts with TimesFM. | Keeps model execution close to governed data and makes model/run/snapshot lineage queryable. |
+| **Cloud Run** | Hosts the Streamlit operator console and separate ingestion, training, and scoring jobs. | Decouples interactive serving from batch work, uses one reproducible container image, and supports bounded scaling and retry policies. |
+| **Vertex AI Gemini** | Evidence-bound operational Copilot. | Uses a fixed, allowlisted tool surface; recommendations come from the policy engine, while Gemini focuses on explanation and operator questions. |
+| **Cloud Logging path** | Collects one-line structured JSON telemetry emitted to stdout. | Makes ingestion, model, fallback, Copilot, and decision events observable without coupling the domain layer to a logging vendor. |
 
-## SafePause policy and guardrails
+The main deploy path uses a dedicated runtime service account and regional BigQuery, Cloud Storage, and Cloud Run resources in `asia-southeast1`. Ingestion, training, and scoring are explicit Cloud Run Jobs in the current setup, so data refresh and model changes remain controlled operations.
 
-SafePause compares the no-action baseline with action-conditioned pause options for each eligible driver:
+## Technical architecture
+
+The codebase separates evidence acquisition, forecasting, policy, execution boundary, and presentation:
+
+```text
+Repository adapters
+  └─ coherent snapshots, forecasts, features, predictions, audit history
+
+Forecast and evidence services
+  └─ lineage validation, 0/15/60/120-minute projection, driver safety tiers
+
+Decision services
+  └─ district candidates, city portfolio optimization, unavailable-state handling
+
+Operational boundary
+  └─ plan-expiry check, snapshot revalidation, Activate/Continue audit receipt
+
+Operator experience
+  └─ city map, decision card, guardrails, evidence/history, Copilot
+```
+
+This separation provides four important properties:
+
+1. **Evidence before recommendation.** Forecasts and driver predictions must match the active snapshot and model lineage.
+2. **Deterministic decision policy.** The same evidence and constraints produce the same forecast paths, rankings, and selected portfolio.
+3. **Human-in-the-loop control.** AI explains evidence; it does not bypass the policy engine or operator approval.
+4. **Fail-closed behavior.** Missing models, stale plans, mixed snapshots, unavailable forecasts, or insufficient safety capacity are explicit states.
+
+## Core algorithms
+
+### 1. Heat screening
+
+Weather ingestion calculates Heat Index from temperature and relative humidity using the NOAA-style regression and humidity adjustments. Heat Index remains a screening signal used alongside operational exposure and workload features.
+
+### 2. Action-conditioned driver risk
+
+The BigQuery ML boosted-tree classifier uses features including:
+
+- Heat Index and humidity;
+- continuous exposure duration;
+- recent trips and distance;
+- recent rest and hydration gap;
+- route heat load and workload intensity;
+- candidate SafePause delay and duration.
+
+For each driver, the scoring pipeline evaluates a no-action baseline and SafePause choices. `ML.EXPLAIN_PREDICT` materializes top contributing factors so the operator can inspect why risk is high and why an action changes it.
+
+### 3. Demand forecasting
+
+TimesFM through BigQuery `AI.FORECAST` produces 15-minute demand points with 90% prediction intervals. HeatSafe uses median and upper-demand paths separately so service guardrails are tested under expected and stressed demand rather than relying on one point estimate.
+
+### 4. Preventive exposure projection
+
+The projection layer evaluates common deterministic paths across every district at `0`, `15`, `60`, and `120` minutes:
+
+- **64 aligned paths** preserve the same city-level uncertainty IDs across zones;
+- online continuation depends on the driver state and the district demand ratio;
+- projected risk updates from current model risk, exposure change, heat change, and recovery;
+- a 15-minute recovery resets continuous exposure in the policy model;
+- path-level cost produces an aligned city P95 reserve rather than summing unrelated district percentiles.
+
+Driver safety tiers are policy-first:
+
+- `MANDATORY_4H`: continuous exposure is at least **240 minutes**;
+- `PROJECTED_MANDATORY`: probability of crossing 240 minutes before adequate recovery is at least **50%**;
+- `WATCHLIST`: crossing probability is above zero but below 50%;
+- model-eligible: baseline risk and expected action benefit pass the model thresholds.
+
+There is no single driver leaderboard. Mandatory cases are handled first; within each tier, ordering uses baseline risk, exposure, predicted cost of waiting, expected risk reduction, and a stable driver ID tie-break.
+
+### 5. SafePause candidate search
+
+For every eligible district, the planner evaluates:
 
 - start delay: `0`, `15`, `30`, or `45` minutes;
-- pause duration: `15` or `30` minutes;
-- mandatory protection once continuous extreme-heat exposure reaches **240 minutes**;
-- staggered waves to avoid removing supply all at once;
-- forecast evaluation under median and upper-demand conditions.
+- duration: `15` or `30` minutes;
+- `1` to `4` staggered waves;
+- median-demand and upper-demand service conditions.
 
-A recommendation is actionable only when all required evidence has matching lineage and the plan satisfies:
+Mandatory drivers are assigned to the earliest available waves. Remaining capacity prioritizes projected-mandatory drivers and then model-eligible drivers with the highest cost of waiting and expected risk reduction.
 
-1. **Mandatory coverage:** all currently mandatory drivers are covered.
-2. **Budget:** projected net platform cost remains within the configured cap.
-3. **Fulfillment:** upper-demand degradation remains within the service guardrail.
-4. **ETA:** upper-demand pickup-delay increase remains within the service guardrail.
+Each candidate estimates:
 
-If evidence is incomplete or no feasible plan exists, the system fails closed with monitoring-only states such as `MODEL_UNAVAILABLE`, `EVIDENCE_UNAVAILABLE`, `NO_FEASIBLE`, or `SAFETY_CAPACITY_BREACH` instead of fabricating a recommendation.
+- drivers covered and exposure minutes avoided;
+- residual risk at 60 and 120 minutes;
+- fulfillment and pickup-delay impact;
+- earnings support, lost platform contribution, partner support, and net platform cost;
+- P95 reserved cost across aligned forecast paths.
 
-### Rolling Event Replay policy
+### 6. City-wide portfolio optimization
 
-The Event Replay policy evaluates a narrow 15-minute supplement at each tick. It:
+HeatSafe evaluates combinations of feasible district plans under one shared P95 budget cap. The safety-first objective is lexicographic:
 
-- reserves a driver as soon as a control is scheduled so the driver cannot be selected twice;
-- prioritizes drivers already at the mandatory threshold;
-- can protect drivers forecast to cross the threshold before the next tick;
-- maintains a replay-wide P95 budget ledger and reserves part of the budget for mandatory protection;
-- reports a safety-capacity breach explicitly when mandatory demand exceeds available budget/capacity.
+1. maximize coverage of currently mandatory drivers;
+2. minimize projected 240-minute threshold crossings at 120 minutes;
+3. minimize the worst district residual risk;
+4. maximize expected risk reduction;
+5. minimize P95 reserved cost, expected cost, and service impact.
 
-## Verified Production evidence
+The app also exposes cheapest-feasible, highest-protection, lowest-service-impact, Pareto-frontier, and near-miss options. Operators can therefore inspect the tradeoff surface instead of receiving only one unexplained answer.
 
-A cloud-backed Production bundle is enabled when both of these variables are set:
+## Decision guardrails
 
-```text
-HEATSAFE_PRODUCTION_BUNDLE_DATASET
-HEATSAFE_PRODUCTION_BUNDLE_RUN_ID
-```
+A SafePause recommendation is actionable only when:
 
-`HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX` defaults to `40`. Before loading the selected snapshot, HeatSafe verifies that:
+1. all required evidence belongs to the active snapshot and compatible model/forecast lineage;
+2. all currently mandatory drivers in the selected scope are covered;
+3. city P95 reserved cost stays within the configured budget;
+4. upper-demand fulfillment degradation is no more than **2 percentage points**;
+5. upper-demand pickup-delay increase is no more than **2 minutes**;
+6. the proposal is still within its 15-minute validity window when the operator acts.
 
-- the run is paused and has no pending scoring operation;
-- ticks `37` through `41` all completed and were scored;
-- every tick uses generator lineage `stateful-replay-v2`;
-- the selected tick has snapshot and forecast lineage;
-- BigQuery ML model lineage and the TimesFM context version are present;
-- all loaded bundle components match the configured run and tick.
+If mandatory safety demand cannot be covered within available capacity and budget, HeatSafe reports `SAFETY_CAPACITY_BREACH`; it does not silently optimize mandatory cases away.
 
-A failed integrity check stops Production from presenting stale or mixed evidence.
+## Operator experience
 
-When no cloud bundle is configured, the app uses the checked-in deterministic Production window (`data/scenarios/hanoi_heatwave_v1/production_window/`) and advances its verified warm checkpoint from tick `37` to the local decision point `K=45`.
+The Streamlit console combines:
+
+- a Hanoi district map with heat, demand, exposure, and SafePause coverage;
+- city and district KPIs with explicit evidence time and provenance;
+- priority-area rankings and projected risk horizons;
+- a decision card with recommendation, alternatives, guardrails, and rejection reasons;
+- optimization evidence, model lineage, forecast details, and decision history;
+- an evidence-bound Copilot for operational questions;
+- explicit **Activate** and **Continue** controls at the human decision point.
+
+This helps an operator move from fragmented monitoring to a repeatable operating process: detect early, understand the tradeoff, decide with guardrails, and retain an auditable record.
 
 ## Run locally
 
 ### Prerequisites
 
 - Python 3.12
-- a virtual environment with dependencies from `requirements.txt`
-- Google Cloud CLI and Application Default Credentials for cloud-backed Production
-- `jq` when using the Cloud Run configuration launcher
-
-Install dependencies:
+- dependencies from `requirements.txt`
+- Google Cloud CLI and Application Default Credentials for GCP-backed evidence
+- `jq` for the Cloud Run configuration launcher
 
 ```bash
 python3 -m venv venv
@@ -129,7 +228,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Recommended: mirror the deployed Cloud Run configuration
+To mirror the deployed Cloud Run configuration locally:
 
 ```bash
 gcloud auth login
@@ -137,71 +236,65 @@ gcloud auth application-default login
 ./scripts/run_local_like_cloud_run.sh
 ```
 
-The launcher reads only allowlisted, non-secret environment settings from the deployed `heatsafe-ops` service, pins Production to tick `40`, and starts the app at <http://127.0.0.1:8501>. It does not mutate Cloud Run or copy secrets.
+The launcher copies only allowlisted, non-secret environment settings from the deployed `heatsafe-ops` service and starts the app at <http://127.0.0.1:8501>. It does not mutate Cloud Run or copy credentials.
 
-Optional launcher overrides:
-
-```bash
-HEATSAFE_LOCAL_CLOUD_PROJECT=cohort2track2 \
-HEATSAFE_LOCAL_CLOUD_REGION=asia-southeast1 \
-HEATSAFE_LOCAL_CLOUD_SERVICE=heatsafe-ops \
-HEATSAFE_LOCAL_PORT=8501 \
-./scripts/run_local_like_cloud_run.sh
-```
-
-### Local deterministic fallback
-
-To run without the configured cloud bundle or Gemini:
+To start directly with your current environment:
 
 ```bash
-HEATSAFE_MODE=snapshot HEATSAFE_ENABLE_AI=0 streamlit run app.py
+streamlit run app.py
 ```
 
-Production then uses the checked-in verified scenario artifacts. Event Replay remains available from its precomputed timeline.
+## Provision and deploy
 
-## Provision and deploy to Google Cloud
-
-Provision demo resources and train/score the initial models:
+Provision the GCS bucket and BigQuery schema:
 
 ```bash
 source venv/bin/activate
 export GOOGLE_CLOUD_PROJECT=cohort2track2
-python infra/provision_gcp.py --seed-demo
+python infra/provision_gcp.py
+```
+
+Train and score after the required source tables are populated:
+
+```bash
 python infra/ml_pipeline.py --all --scenario heatwave
 ```
 
-Deploy the public Cloud Run demo and its manual jobs:
+Deploy the Cloud Run service and jobs:
 
 ```bash
 chmod +x scripts/deploy_gcp.sh
-./scripts/deploy_gcp.sh --seed-demo
+./scripts/deploy_gcp.sh
 ```
 
 The deployment creates or updates:
 
 - Cloud Run service `heatsafe-ops`;
-- job `heatsafe-live-ingest`;
-- job `heatsafe-train-models`;
-- job `heatsafe-score-snapshot`.
+- Cloud Run Job `heatsafe-live-ingest`;
+- Cloud Run Job `heatsafe-train-models`;
+- Cloud Run Job `heatsafe-score-snapshot`.
 
-Use `--seed-demo` only when demo data/models must be refreshed explicitly. The deployed ingestion, training, and scoring jobs are intentionally run manually rather than through Cloud Scheduler.
+The current deployment keeps these jobs operator-triggered. Run ingestion when source evidence needs refreshing, training after changing training data, and scoring after a new snapshot is available.
 
 ## Project structure
 
 ```text
-app.py                         Streamlit entry point and mode orchestration
-heatsafe/                      domain models, repositories, optimizer, Copilot, UI
-heatsafe/simulation/           deterministic stateful simulation runtime
+app.py                         Streamlit entry point and operator workflow
+heatsafe/config.py             validated runtime configuration
+heatsafe/repository.py         BigQuery and local evidence adapters
+heatsafe/services/             forecast, preventive planning, decision services
+heatsafe/ai_decision.py        driver policy and SafePause candidate search
+heatsafe/cloud_bundle.py       fail-closed cloud evidence loader
+heatsafe/operational_runtime.py decision validation and audit boundary
+heatsafe/copilot.py            allowlisted Copilot tools and Gemini integration
+heatsafe/ui/                   operator console and evidence surfaces
 infra/                         GCP provisioning and BigQuery ML pipeline
-scripts/                       replay builders, cloud bundle runner, deploy/launch tools
-data/scenarios/                reviewed scenario, checkpoint, and replay artifacts
-tests/                         unit and integration-style contract tests
+scripts/                       deploy, launch, and operational tooling
+tests/                         unit and contract tests
 Dockerfile                     Python 3.12 Cloud Run image
 ```
 
 ## Validation
-
-Run the committed test suite and static runtime checks:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -217,14 +310,15 @@ pip check
 | `GOOGLE_CLOUD_REGION` | `asia-southeast1` | Cloud Run and BigQuery region |
 | `GOOGLE_CLOUD_LOCATION` | `global` | Vertex AI location |
 | `HEATSAFE_DATASET` | `heatsafe_data` | Primary BigQuery dataset |
-| `HEATSAFE_MODE` | `auto` | Repository mode: `auto`, `cloud`, or `snapshot` |
-| `HEATSAFE_SCENARIO` | `heatwave` | Operational scenario: `heatwave` or `live` |
-| `HEATSAFE_ENABLE_AI` | `1` | Enables Gemini-backed Copilot responses |
+| `HEATSAFE_RAW_BUCKET` | `<project>-heatsafe-raw` | Raw evidence bucket |
+| `HEATSAFE_CURRENT_SNAPSHOT_TABLE` | `zone_snapshots_current` | Current operational snapshot |
+| `HEATSAFE_ENABLE_AI` | `1` | Enables Gemini-backed explanations |
 | `HEATSAFE_GEMINI_MODEL` | `gemini-3.1-flash-lite` | Allowlisted Gemini model |
-| `HEATSAFE_PRODUCTION_BUNDLE_DATASET` | unset | BigQuery dataset containing the verified bundle |
-| `HEATSAFE_PRODUCTION_BUNDLE_RUN_ID` | unset | Lowercase 32-character bundle run ID |
-| `HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX` | `40` | Pinned Production evidence tick |
-| `HEATSAFE_OPERATOR_BUDGET_CAP_VND` | `3000000` | Server-side city planning budget cap |
-| `HEATSAFE_OPERATOR_SPONSOR_PER_DRIVER_VND` | `8000` | Support amount per selected driver |
+| `HEATSAFE_LIVE_FRESHNESS_MINUTES` | `30` | Maximum accepted age for live evidence |
+| `HEATSAFE_PRODUCTION_BUNDLE_DATASET` | unset | Dataset containing pinned production evidence |
+| `HEATSAFE_PRODUCTION_BUNDLE_RUN_ID` | unset | Evidence run identifier |
+| `HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX` | `40` | Pinned decision evidence point |
+| `HEATSAFE_OPERATOR_BUDGET_CAP_VND` | `3000000` | City-wide planning budget cap |
+| `HEATSAFE_OPERATOR_SPONSOR_PER_DRIVER_VND` | `8000` | Partner support per selected driver |
 
-Secrets must be provided through Google Cloud credentials/runtime configuration; do not commit credentials or API keys.
+Credentials and API keys must be supplied through Google Cloud authentication or managed runtime configuration and must not be committed to the repository.

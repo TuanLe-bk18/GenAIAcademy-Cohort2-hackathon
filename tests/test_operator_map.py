@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import unittest
+from typing import cast
 
-from heatsafe.ui.operator_console.city_map import MAP_METRICS, district_geojson, map_records
+from heatsafe.ui.operator_console.city_map import (
+    MAP_METRICS,
+    district_geojson,
+    map_records,
+    safepause_status_style,
+)
+from heatsafe.ui.operator_console.decision_insights import _tradeoff_figure
 from heatsafe.ui.operator_console.geography import load_hanoi_operator_districts
 from heatsafe.ui.operator_console.view_models import OperatorAreaView
 
@@ -25,6 +32,8 @@ def area(*, zone_id: str, selected: bool = False, included: bool = False) -> Ope
         included_in_plan=included,
         exposed_2h=45,
         forecast_requests_30m=180,
+        fulfillment_drop_percent=1.25,
+        eta_impact_minutes=0.8,
     )
 
 
@@ -57,8 +66,40 @@ class OperatorMapTests(unittest.TestCase):
         selected = map_records((area(zone_id="hoan-kiem", selected=True, included=True),))[0]
         included = map_records((area(zone_id="ba-dinh", included=True),))[0]
         ordinary = map_records((area(zone_id="cau-giay"),))[0]
-        self.assertGreater(selected["line_width"], included["line_width"])
-        self.assertGreater(included["line_width"], ordinary["line_width"])
+        self.assertGreater(
+            cast(int, selected["line_width"]), cast(int, included["line_width"])
+        )
+        self.assertGreater(
+            cast(int, included["line_width"]), cast(int, ordinary["line_width"])
+        )
+
+    def test_tradeoff_bubbles_share_safepause_colors_and_show_spec_limits(self):
+        included = area(zone_id="hoan-kiem", selected=True, included=True)
+        monitoring = area(zone_id="ba-dinh")
+        figure = _tradeoff_figure((included, monitoring))
+        self.assertIsNotNone(figure)
+        assert figure is not None
+
+        payload = figure.to_dict()
+        layout = payload["layout"]
+        self.assertEqual(layout["title"]["text"], "City-wide intervention tradeoffs")
+        self.assertEqual(layout["xaxis"]["title"]["text"], "Fulfillment Drop (%)")
+        self.assertEqual(layout["yaxis"]["title"]["text"], "ETA Impact (mins)")
+        self.assertEqual({shape["type"] for shape in layout["shapes"]}, {"line"})
+        self.assertEqual(len(layout["shapes"]), 2)
+
+        included_trace = next(
+            trace
+            for trace in payload["data"]
+            if trace["name"] == "Included in the SafePause plan"
+        )
+        map_color = safepause_status_style(included)[1]
+        expected_color = (
+            f"rgba({map_color[0]},{map_color[1]},{map_color[2]},"
+            f"{map_color[3] / 255:.3f})"
+        )
+        self.assertEqual(included_trace["marker"]["color"][0], expected_color)
+        self.assertEqual(included_trace["customdata"][0][3], 35)
 
 
 if __name__ == "__main__":

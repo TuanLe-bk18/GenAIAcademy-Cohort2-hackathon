@@ -39,7 +39,22 @@ _CSS = """
   --operator-unavailable: var(--st-gray-text-color);
   --operator-context: var(--st-blue-text-color);
 }
-[data-testid="stHeader"] { height: 2.5rem; background: transparent; }
+[data-testid="stHeader"] {
+  height: 2.5rem;
+  background: transparent;
+}
+[data-testid="stHeader"],
+[data-testid="stHeader"] * {
+  pointer-events: none !important;
+}
+[data-testid="stHeader"] button,
+[data-testid="stHeader"] a,
+[data-testid="stHeader"] [role="button"],
+[data-testid="stHeader"] [data-testid="stStatusWidget"],
+[data-testid="stHeader"] [data-testid="stStatusWidget"] * {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
 [data-testid="stMain"] .block-container {
   max-width: 1600px; padding-top: .35rem !important; padding-bottom: 2rem;
 }
@@ -49,6 +64,16 @@ _CSS = """
   height: 2.5rem !important;
   margin-bottom: 0 !important;
   z-index: 1;
+}
+[data-testid="stSidebarHeader"],
+[data-testid="stSidebarHeader"] * {
+  pointer-events: none !important;
+}
+[data-testid="stSidebarHeader"] button,
+[data-testid="stSidebarHeader"] a,
+[data-testid="stSidebarHeader"] [role="button"] {
+  pointer-events: auto !important;
+  cursor: pointer;
 }
 [data-testid="stSidebarUserContent"] {
   height: 100%;
@@ -216,6 +241,26 @@ _CSS = """
 [data-testid="stMetricValue"] { font-size: clamp(1.75rem, 2vw, 2.2rem); overflow-wrap: anywhere; }
 [data-testid="stMetricDelta"] { font-size: .95rem; white-space: normal; overflow-wrap: anywhere; }
 [data-testid="stDataFrame"] { border: 1px solid var(--operator-border); border-radius: 10px; overflow: hidden; }
+.st-key-operator-console-surface,
+.st-key-operator-console-evidence-selector,
+.st-key-operator-console-replay-evidence-selector {
+  position: relative;
+  z-index: 5;
+  pointer-events: auto !important;
+}
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+.st-key-operator-console-surface button,
+.st-key-operator-console-surface [role="radio"],
+.st-key-operator-console-evidence-selector button,
+.st-key-operator-console-evidence-selector [role="radio"],
+.st-key-operator-console-replay-evidence-selector button,
+.st-key-operator-console-replay-evidence-selector [role="radio"] {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+}
+button:disabled,
+[role="button"][aria-disabled="true"] { cursor: not-allowed !important; }
 button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
   outline: 2px solid var(--operator-primary) !important; outline-offset: 2px;
 }

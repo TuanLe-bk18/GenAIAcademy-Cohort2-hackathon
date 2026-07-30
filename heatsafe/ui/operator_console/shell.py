@@ -10,7 +10,7 @@ from heatsafe.models import DecisionConstraints
 
 from .evidence import render_evidence
 from .operations import OperatorOperationsResult, render_operations
-from .sidebar import OperatorPlaybackView, OperatorSidebarResult, render_sidebar
+from .sidebar import OperatorSidebarResult, render_sidebar
 from .styles import render_styles
 from .view_models import OperatorConsoleView
 
@@ -28,16 +28,17 @@ class OperatorConsoleResult:
 
     @property
     def selected_zone_id(self) -> str | None:
-        if self.operations is not None and self.operations.selected_zone_id is not None:
-            return self.operations.selected_zone_id
-        return self.sidebar.selected_zone_id
+        return (
+            self.operations.selected_zone_id
+            if self.operations is not None
+            else None
+        )
 
 
 def render_operator_console(
     view: OperatorConsoleView,
     constraints: DecisionConstraints,
     *,
-    playback: OperatorPlaybackView | None = None,
     decision_available: bool = True,
     recording: bool = False,
     recorded_action: str | None = None,
@@ -48,18 +49,19 @@ def render_operator_console(
     sidebar_result = render_sidebar(
         view,
         constraints,
-        playback=playback,
         key_prefix=f"{key_prefix}:sidebar",
     )
+    surface_key = f"{key_prefix}:surface"
+    if surface_key not in st.session_state:
+        st.session_state[surface_key] = "Operations"
     selected_surface = st.segmented_control(
         "Console view",
-        ("Operations", "Evidence & history"),
-        default="Operations",
-        key=f"{key_prefix}:surface",
+        ("Operations", "Evidence & History"),
+        key=surface_key,
     )
     surface = (
         selected_surface
-        if selected_surface in {"Operations", "Evidence & history"}
+        if selected_surface in {"Operations", "Evidence & History"}
         else "Operations"
     )
     operations_result: OperatorOperationsResult | None = None

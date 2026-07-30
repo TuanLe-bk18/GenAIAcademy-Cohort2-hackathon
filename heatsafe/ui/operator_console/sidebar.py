@@ -15,18 +15,8 @@ _LOGO_PATH = Path(__file__).with_name("assets") / "HeatsafeAIOps-logo.png"
 
 
 @dataclass(frozen=True)
-class OperatorPlaybackView:
-    range_label: str
-    current_time_label: str
-    decision_time_label: str
-    running: bool = False
-    complete: bool = False
-
-
-@dataclass(frozen=True)
 class OperatorSidebarResult:
     mode: str
-    selected_zone_id: str | None
     constraints: DecisionConstraints
 
 
@@ -34,7 +24,6 @@ def render_sidebar(
     view: OperatorConsoleView | None,
     constraints: DecisionConstraints,
     *,
-    playback: OperatorPlaybackView | None = None,
     mode: str | None = None,
     key_prefix: str = "operator-sidebar",
 ) -> OperatorSidebarResult:
@@ -43,7 +32,6 @@ def render_sidebar(
     Area selection and replay playback belong to the primary operator component.
     Policy constraints are validated server settings and are returned unchanged.
     """
-    del playback
     current_mode = mode if mode in {"current", "accelerated-production"} else (
         "accelerated-production"
         if view is not None and view.mode_label == "EVENT REPLAY"
@@ -86,24 +74,18 @@ def render_sidebar(
         )
         if resolved_mode == "accelerated-production":
             st.caption(
-                "Replaying the reviewed historical heatwave scenario with the "
-                "deterministic Safety Optimizer."
+                "Replaying a reviewed, precomputed Hanoi heatwave simulation "
+                "with the deterministic Safety Optimizer."
             )
-        else:
-            st.caption(
-                "Monitoring pinned hackathon simulation evidence with fixed "
-                "server-side safety policy."
-            )
+
 
     return OperatorSidebarResult(
         mode=resolved_mode,
-        selected_zone_id=None,
         constraints=constraints,
     )
 
 
 __all__ = [
-    "OperatorPlaybackView",
     "OperatorSidebarResult",
     "render_sidebar",
 ]

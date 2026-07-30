@@ -37,18 +37,15 @@ from heatsafe.services.preventive_planning import (
     project_city_forecast,
 )
 from heatsafe.telemetry import log_event
-from heatsafe.ui import (
-    render_copilot_panel,
-    render_replay_copilot_panel,
-)
+from heatsafe.ui import render_copilot_panel, render_replay_copilot_panel
 from heatsafe.ui.operator_console import (
-    OperatorPlaybackView,
     OperatorRecommendationView,
     build_operator_console_view,
+    build_replay_evidence_summary,
     build_safepause_outcome_view,
-    format_hanoi_range,
     format_hanoi_time,
     load_presentation_timeline,
+    replay_cursor_from_session_state,
     render_evidence,
     render_operator_dashboard,
     render_presentation_playback,
@@ -131,24 +128,12 @@ def load_current_cloud_plan(
     return plan
 
 
-def _playback_view(session: ProductionSession) -> OperatorPlaybackView:
+def _decision_time_label(session: ProductionSession) -> str:
     current = session.actual_result.simulation_time
-    start = current - timedelta(
-        minutes=(session.current_tick - session.window.start_tick) * 15
-    )
-    end = current + timedelta(
-        minutes=(session.window.end_tick - session.current_tick) * 15
-    )
     decision = current + timedelta(
         minutes=(session.window.decision_tick - session.current_tick) * 15
     )
-    return OperatorPlaybackView(
-        range_label=format_hanoi_range(start, end),
-        current_time_label=format_hanoi_time(current),
-        decision_time_label=format_hanoi_time(decision),
-        running=session.status == "RUNNING",
-        complete=session.status == "COMPLETED",
-    )
+    return format_hanoi_time(decision)
 
 
 def _advance_once(
@@ -311,30 +296,59 @@ def _apply_action(
 
 
 active_mode = str(st.session_state.get(MODE_KEY, "current"))
+# Streamlit reruns the entrypoint without necessarily reloading imported CSS
+# constants. Keep this hit-testing fix at the render boundary so the transparent
+# app/sidebar toolbars never cover the compact navigation below them.
 render_styles()
+with st.container(key="operator-interaction-layer-fix"):
+    st.markdown(
+        """
+    <style>
+    .st-key-operator-interaction-layer-fix,
+    [data-testid="stElementContainer"]:has(.st-key-operator-interaction-layer-fix) {
+      display: none !important;
+    }
+    [data-testid="stHeader"],
+    [data-testid="stHeader"] *,
+    [data-testid="stSidebarHeader"],
+    [data-testid="stSidebarHeader"] * {
+      pointer-events: none !important;
+    }
+    [data-testid="stHeader"] button,
+    [data-testid="stHeader"] a,
+    [data-testid="stHeader"] [role="button"],
+    [data-testid="stHeader"] [data-testid="stStatusWidget"],
+    [data-testid="stHeader"] [data-testid="stStatusWidget"] *,
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stSidebarHeader"] a,
+    [data-testid="stSidebarHeader"] [role="button"] {
+      pointer-events: auto !important;
+      cursor: pointer;
+    }
+    </style>
+        """,
+        unsafe_allow_html=True,
+    )
 sidebar_result = render_sidebar(
     None,
     _constraints(),
-    playback=None,
     mode=active_mode,
     key_prefix="operator-console:sidebar",
 )
+if SURFACE_KEY not in st.session_state:
+    st.session_state[SURFACE_KEY] = "Operations"
 selected_surface = st.segmented_control(
     "Console view",
-    ("Operations", "Evidence & history"),
-    default="Operations",
+    ("Operations", "Evidence & History"),
     key=SURFACE_KEY,
     label_visibility="collapsed",
 )
 surface = (
     selected_surface
-    if selected_surface in {"Operations", "Evidence & history"}
+    if selected_surface in {"Operations", "Evidence & History"}
     else "Operations"
 )
-presentation_mode = (
-    sidebar_result.mode == "accelerated-production"
-    and surface == "Operations"
-)
+replay_mode = sidebar_result.mode == "accelerated-production"
 def live_operator_workspace() -> None:
     workspace_started = time.perf_counter()
     mode = str(st.session_state.get(MODE_KEY, "current"))
@@ -455,7 +469,7 @@ def live_operator_workspace() -> None:
         view = replace(
             view,
             recommendation=_monitoring_recommendation(
-                _playback_view(session).decision_time_label
+                _decision_time_label(session)
             ),
         )
     snapshot_id = zones[0].snapshot_id
@@ -549,16 +563,37 @@ def live_operator_workspace() -> None:
         )
 
 
-if presentation_mode:
+if replay_mode:
     replay_timeline = load_presentation_timeline()
-    replay_result = render_presentation_playback(replay_timeline)
-    replay_tick = replay_result.replay_tick_index
-    replay_zone_id = replay_result.selected_zone_id
-    replay_branch = replay_result.replay_branch
+    if surface == "Operations":
+        replay_result = render_presentation_playback(replay_timeline)
+        replay_cursor = replay_cursor_from_session_state(
+            replay_timeline,
+            "operator-dashboard",
+        )
+        replay_tick = replay_result.replay_tick_index
+        replay_zone_id = replay_result.selected_zone_id
+        replay_branch = replay_result.replay_branch
+        replay_scope = replay_result.replay_scope
+    else:
+        replay_cursor = replay_cursor_from_session_state(
+            replay_timeline,
+            "operator-dashboard",
+        )
+        render_evidence(
+            build_replay_evidence_summary(replay_timeline, replay_cursor),
+            key_prefix="operator-console:replay-evidence",
+        )
+        replay_tick = replay_cursor.tick if replay_cursor is not None else None
+        replay_zone_id = (
+            replay_cursor.selected_zone_id if replay_cursor is not None else None
+        )
+        replay_branch = replay_cursor.branch if replay_cursor is not None else None
+        replay_scope = replay_cursor.scope if replay_cursor is not None else None
     if (
         replay_tick is not None
-        and replay_zone_id is not None
         and replay_branch is not None
+        and replay_scope in {"citywide", "district"}
     ):
         try:
             replay_frame = ReplayCopilotFrame.from_timeline(
@@ -581,5 +616,15 @@ if presentation_mode:
         else:
             with st.sidebar:
                 render_replay_copilot_panel(replay_frame)
+    else:
+        log_event(
+            "replay_copilot_cursor_unavailable",
+            severity="WARNING",
+        )
+        with st.sidebar:
+            st.warning(
+                "Copilot is waiting for a verified replay position.",
+                icon=":material/warning:",
+            )
 else:
     live_operator_workspace()

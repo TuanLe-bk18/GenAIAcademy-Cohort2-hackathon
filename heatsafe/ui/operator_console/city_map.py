@@ -47,14 +47,24 @@ def _sequential_color(value: float, *, lower: float, upper: float) -> list[int]:
     return [round(start[index] + (end[index] - start[index]) * blend) for index in range(3)] + [215]
 
 
+def safepause_status_style(area: OperatorAreaView) -> tuple[str, list[int]]:
+    """Return the shared SafePause status label and color for maps and charts."""
+    if area.included_in_plan:
+        return "Included in the SafePause plan", _INCLUDED_RGBA
+    if area.plan_status_label == "Data unavailable":
+        return "Plan status is updating", _MISSING_RGBA
+    return "Monitoring only", [77, 167, 179, 185]
+
+
 def _metric_value(area: OperatorAreaView, metric: str) -> tuple[float | None, str]:
     field, _, unit = MAP_METRICS[metric]
     if field == "safepause_status":
+        status_label, _ = safepause_status_style(area)
         if area.included_in_plan:
-            return 2.0, "Included in the SafePause plan"
+            return 2.0, status_label
         if area.plan_status_label == "Data unavailable":
-            return None, "Plan status is updating"
-        return 1.0, "Monitoring only"
+            return None, status_label
+        return 1.0, status_label
     value = getattr(area, field)
     if value is None:
         return None, "Updating"
@@ -103,8 +113,12 @@ def map_records(
                 "drivers": area.drivers_needing_break_now,
                 "plan_status": area.plan_status_label,
                 "radius": 760 + min(900, area.active_drivers * 2),
-                "fill_color": _metric_color(
-                    metric_value, metric=metric, lower=lower, upper=upper
+                "fill_color": (
+                    safepause_status_style(area)[1]
+                    if metric == "SafePause status"
+                    else _metric_color(
+                        metric_value, metric=metric, lower=lower, upper=upper
+                    )
                 ),
                 "line_color": line_color,
                 "line_width": 5 if area.selected else 3 if area.included_in_plan else 1,
@@ -165,10 +179,10 @@ def render_city_map(
     metric = st.segmented_control(
         "Map layer",
         tuple(MAP_METRICS),
-        default="Heat index",
+        default="SafePause status",
         key=f"{key_prefix}:metric",
     )
-    active_metric = metric if metric in MAP_METRICS else "Heat index"
+    active_metric = metric if metric in MAP_METRICS else "SafePause status"
     theme_type = st.context.theme.type or "dark"
     records = map_records(areas, metric=active_metric, theme_type=theme_type)
     is_light = theme_type == "light"
@@ -245,4 +259,10 @@ def render_city_map(
     return selected_zone_id
 
 
-__all__ = ["MAP_METRICS", "district_geojson", "map_records", "render_city_map"]
+__all__ = [
+    "MAP_METRICS",
+    "district_geojson",
+    "map_records",
+    "render_city_map",
+    "safepause_status_style",
+]

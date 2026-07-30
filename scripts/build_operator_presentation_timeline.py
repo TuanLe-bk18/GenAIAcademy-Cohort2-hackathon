@@ -127,6 +127,11 @@ def _frame(
         future = next(
             horizon for horizon in priority.horizons if horizon.minutes_ahead == 120
         )
+        proposal = (
+            priority.best_window.proposal
+            if priority.best_window is not None
+            else None
+        )
         zones.append(
             {
                 "id": snapshot.zone_id,
@@ -138,10 +143,46 @@ def _frame(
                 "active_drivers": snapshot.active_drivers,
                 "urgent_drivers": snapshot.exposed_4h,
                 "requests_15m": projection.requests_15m,
+                "forecast_requests_30m": snapshot.forecast_requests_30m,
                 "priority_order": priority.future_safety_rank,
+                "portfolio_status": priority.portfolio_status,
                 "projected_mandatory_120m": future.projected_mandatory,
+                "needs_protection_120m": future.projected_mandatory,
                 "expected_crossers_120m": round(future.expected_crossers, 3),
                 "included": snapshot.zone_id in selected_ids,
+                "fulfillment_drop_percent": (
+                    round(
+                        max(
+                            0.0,
+                            proposal.baseline_stress_fulfillment_rate
+                            - proposal.p90_fulfillment_rate,
+                        )
+                        * 100,
+                        4,
+                    )
+                    if proposal is not None
+                    else None
+                ),
+                "eta_impact_minutes": (
+                    max(0.0, proposal.p90_eta_increase_minutes)
+                    if proposal is not None
+                    else None
+                ),
+                "safepause_driver_count": (
+                    max(0, proposal.selected_drivers)
+                    if proposal is not None
+                    else None
+                ),
+                "expected_risk_prevented": (
+                    max(0.0, proposal.expected_risk_events_prevented)
+                    if proposal is not None
+                    else None
+                ),
+                "high_demand_reserved_cost_usd": (
+                    round(priority.best_window.p95_reserved_cost_vnd / 25_000, 4)
+                    if priority.best_window is not None
+                    else None
+                ),
             }
         )
     zones.sort(
