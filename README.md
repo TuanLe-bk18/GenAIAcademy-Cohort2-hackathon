@@ -230,24 +230,3 @@ scripts/                       deploy, launch, and operational tooling
 tests/                         unit and contract tests
 Dockerfile                     Python 3.12 Cloud Run image
 ```
-
-## Key runtime configuration
-
-| Variable | Default | Purpose |
-|---|---:|---|
-| `GOOGLE_CLOUD_PROJECT` | `cohort2track2` | GCP project ID |
-| `GOOGLE_CLOUD_REGION` | `asia-southeast1` | Cloud Run and BigQuery region |
-| `GOOGLE_CLOUD_LOCATION` | `global` | Vertex AI location |
-| `HEATSAFE_DATASET` | `heatsafe_data` | Primary BigQuery dataset |
-| `HEATSAFE_RAW_BUCKET` | `<project>-heatsafe-raw` | Raw evidence bucket |
-| `HEATSAFE_CURRENT_SNAPSHOT_TABLE` | `zone_snapshots_current` | Current operational snapshot |
-| `HEATSAFE_ENABLE_AI` | `1` | Enables Gemini-backed explanations |
-| `HEATSAFE_GEMINI_MODEL` | `gemini-3.1-flash-lite` | Allowlisted Gemini model |
-| `HEATSAFE_LIVE_FRESHNESS_MINUTES` | `30` | Maximum accepted age for live evidence |
-| `HEATSAFE_PRODUCTION_BUNDLE_DATASET` | unset | Dataset containing pinned production evidence |
-| `HEATSAFE_PRODUCTION_BUNDLE_RUN_ID` | unset | Evidence run identifier |
-| `HEATSAFE_PRODUCTION_BUNDLE_TICK_INDEX` | `40` | Pinned decision evidence point |
-| `HEATSAFE_OPERATOR_BUDGET_CAP_VND` | `3000000` | City-wide planning budget cap |
-| `HEATSAFE_OPERATOR_SPONSOR_PER_DRIVER_VND` | `8000` | Partner support per selected driver |
-
-Credentials and API keys must be supplied through Google Cloud authentication or managed runtime configuration and must not be committed to the repository.

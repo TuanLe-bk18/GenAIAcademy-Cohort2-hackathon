@@ -588,9 +588,20 @@ def score_snapshot(
       TRUE
     FROM drivers;
         """
-        forecast_anchor = "CURRENT_TIMESTAMP()"
         forecast_filter = """
           AND interval_start >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 21 DAY)
+        """
+        # Legacy scenarios (for example the historical heatwave profile) can
+        # intentionally have a data clock behind wall-clock time.  TimesFM's
+        # horizon is future relative to the latest input point, not necessarily
+        # future relative to the day the batch job happens to run.
+        forecast_anchor = f"""
+          (
+            SELECT MAX(interval_start)
+            FROM `{dataset}.demand_history`
+            WHERE scenario_id = @scenario_id
+              {forecast_filter}
+          )
         """
         feature_cleanup = (
             f"DELETE FROM `{dataset}.zone_demand_forecasts` "
@@ -683,11 +694,12 @@ def score_snapshot(
       horizon => 16, confidence_level => 0.9, context_window => 2048
     );
     ASSERT (
-      SELECT COUNT(DISTINCT zone_id) = 10
+      SELECT COUNT(*) = 160
+        AND COUNT(DISTINCT zone_id) = 10
         AND COUNTIF(status != '') = 0
         AND MIN(forecast_at) > {forecast_anchor}
       FROM forecast_rows
-    ) AS 'TimesFM must return ten successful future zone series';
+    ) AS 'TimesFM must return 16 successful future points for each of ten zones';
     MERGE `{dataset}.zone_demand_forecasts` target
     USING forecast_rows source
     ON target.prediction_run_id = source.prediction_run_id
