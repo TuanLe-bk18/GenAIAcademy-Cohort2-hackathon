@@ -213,69 +213,6 @@ The Streamlit console combines:
 
 This helps an operator move from fragmented monitoring to a repeatable operating process: detect early, understand the tradeoff, decide with guardrails, and retain an auditable record.
 
-## Run locally
-
-### Prerequisites
-
-- Python 3.12
-- dependencies from `requirements.txt`
-- Google Cloud CLI and Application Default Credentials for GCP-backed evidence
-- `jq` for the Cloud Run configuration launcher
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-To mirror the deployed Cloud Run configuration locally:
-
-```bash
-gcloud auth login
-gcloud auth application-default login
-./scripts/run_local_like_cloud_run.sh
-```
-
-The launcher copies only allowlisted, non-secret environment settings from the deployed `heatsafe-ops` service and starts the app at <http://127.0.0.1:8501>. It does not mutate Cloud Run or copy credentials.
-
-To start directly with your current environment:
-
-```bash
-streamlit run app.py
-```
-
-## Provision and deploy
-
-Provision the GCS bucket and BigQuery schema:
-
-```bash
-source venv/bin/activate
-export GOOGLE_CLOUD_PROJECT=cohort2track2
-python infra/provision_gcp.py
-```
-
-Train and score after the required source tables are populated:
-
-```bash
-python infra/ml_pipeline.py --all --scenario heatwave
-```
-
-Deploy the Cloud Run service and jobs:
-
-```bash
-chmod +x scripts/deploy_gcp.sh
-./scripts/deploy_gcp.sh
-```
-
-The deployment creates or updates:
-
-- Cloud Run service `heatsafe-ops`;
-- Cloud Run Job `heatsafe-live-ingest`;
-- Cloud Run Job `heatsafe-train-models`;
-- Cloud Run Job `heatsafe-score-snapshot`.
-
-The current deployment keeps these jobs operator-triggered. Run ingestion when source evidence needs refreshing, training after changing training data, and scoring after a new snapshot is available.
-
 ## Project structure
 
 ```text
@@ -292,14 +229,6 @@ infra/                         GCP provisioning and BigQuery ML pipeline
 scripts/                       deploy, launch, and operational tooling
 tests/                         unit and contract tests
 Dockerfile                     Python 3.12 Cloud Run image
-```
-
-## Validation
-
-```bash
-python -m unittest discover -s tests -v
-python -m compileall -q app.py heatsafe infra
-pip check
 ```
 
 ## Key runtime configuration
